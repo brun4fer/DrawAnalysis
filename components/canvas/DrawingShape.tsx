@@ -5,7 +5,7 @@ import Konva from "konva";
 import { Arrow, Ellipse, Group, Line, Rect, Text, Transformer } from "react-konva";
 import type { DrawingObject } from "@/types/drawing";
 import { flattenPoints } from "@/utils/coordinates";
-import { transformAtTime } from "@/utils/interpolation";
+import { getObjectStateAtTime } from "@/utils/temporalRenderer";
 
 interface Props {
   object: DrawingObject;
@@ -21,7 +21,8 @@ interface Props {
 export function DrawingShape({ object, width, height, currentTime, selected, canEdit, onSelect, onChange }: Props) {
   const nodeRef = useRef<Konva.Group>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
-  const transform = transformAtTime(object, currentTime);
+  const temporalState = getObjectStateAtTime(object, currentTime);
+  const transform = temporalState.transform;
 
   useEffect(() => {
     if (selected && transformerRef.current && nodeRef.current) {
@@ -33,7 +34,7 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
   const common = {
     stroke: object.style.stroke,
     strokeWidth: object.style.strokeWidth,
-    opacity: object.style.opacity,
+    opacity: temporalState.opacity,
     dash: object.style.dash,
     lineCap: "round" as const,
     lineJoin: "round" as const,
@@ -56,7 +57,7 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
       case "freeDraw":
         return <Line {...common} points={flattenPoints(data.points, width, height)} tension={0.35} />;
       case "text":
-        return <Text x={data.origin.x * width} y={data.origin.y * height} text={data.text} fontSize={data.fontSize * height} fontStyle="bold" fontFamily="Inter" fill={object.style.stroke} opacity={object.style.opacity} />;
+        return <Text x={data.origin.x * width} y={data.origin.y * height} text={data.text} fontSize={data.fontSize * height} fontStyle="bold" fontFamily="Inter" fill={object.style.stroke} opacity={temporalState.opacity} />;
     }
   })();
 

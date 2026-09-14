@@ -1,7 +1,8 @@
 # TactiDraw / DrawAnalysis
 
-Editor local de análise de vídeo de futebol, construído com Next.js, React,
-TypeScript, Zustand e react-konva.
+Construtor local de apresentações de análise de futebol, construído com Next.js,
+React, TypeScript, Zustand e react-konva. Uma apresentação pode combinar slides
+estáticos, campos táticos, imagens e jogadas em vídeo.
 
 ## Arranque
 
@@ -13,9 +14,24 @@ npm run dev
 Abra `http://localhost:3000` e use **Abrir vídeo**. O ficheiro é lido através de
 um URL local do browser e nunca é enviado para um servidor.
 
-## Funcionalidades da primeira fase
+## Tipos de slide
+
+- título / secção;
+- texto / frase;
+- escalação com 4-3-3, 4-2-3-1, 4-4-2, 3-4-3 e 3-5-2;
+- vídeo / jogada com o editor temporal;
+- pontapé de saída;
+- quadro tático;
+- imagem local.
+
+Use **Add Slide** para abrir o seletor. A coluna esquerda permite selecionar,
+duplicar, eliminar e reordenar por drag and drop. O slide selecionado aparece no
+editor central e as respetivas propriedades surgem à direita.
+
+## Editor de vídeo
 
 - player local com play/pause, scrub, volume, velocidade e fullscreen;
+- corte não destrutivo por slide com pontos IN/OUT e pegas na timeline;
 - navegação por segundos e frame a frame (base inicial de 25 fps);
 - marcador/elipse, seta, linha, triângulo, polígono, retângulo, texto e desenho livre;
 - seleção, deslocação, escala e rotação com Konva Transformer;
@@ -25,7 +41,7 @@ um URL local do browser e nunca é enviado para um servidor.
 - undo/redo global para desenhos e propriedades;
 - modelo de keyframes e interpolação preparado para tracking posterior;
 - entrada unificada por rato, toque e stylus.
-- captura do frame com os desenhos para criar slides de apresentação;
+- captura do frame com os desenhos para criar um slide de imagem;
 - título e pergunta individual para cada slide;
 - ordenação, eliminação e apresentação em ecrã inteiro.
 
@@ -47,23 +63,28 @@ desenho livre continua a usar pressionar → desenhar → soltar, adequado a sty
 
 No polígono, use `Enter` ou duplo clique para fechar a zona.
 
-## Apresentação
+Cada slide de vídeo pode usar apenas um excerto do ficheiro. Mova as pegas verdes
+`IN` e `OUT` na faixa de vídeo ou posicione o playhead e use **Marcar IN** /
+**Marcar OUT**. Ao duplicar um slide de vídeo, o ficheiro local é reutilizado e
+o novo slide pode ter um corte independente.
 
-Pare no momento pretendido, termine os desenhos e carregue em **Criar slide**.
+## Preview da apresentação
+
+Pare no momento pretendido, termine os desenhos e carregue em **Capturar frame**.
 O frame e os desenhos visíveis são combinados numa única imagem, sem as pegas de
-seleção. No separador **Slides** pode escrever a pergunta de cada situação,
-alterar a ordem e iniciar **Apresentar**. Durante a apresentação, use as setas ou
-`Space` para navegar e `Escape` para sair.
+seleção. Cada slide tem duração e pergunta próprias. Use **Preview** para
+percorrer a apresentação; as setas ou `Space` navegam e `Escape` sai.
 
 ## Estrutura
 
 - `components/video`: player e controlos;
+- `components/slides`: lista, seletor, renderizador e editores por tipo;
 - `components/canvas`: renderização, criação e transformação dos desenhos;
 - `components/timeline`: tracks e playhead;
 - `components/properties`: inspector do objeto selecionado;
 - `store`: estado global e histórico;
-- `types`: modelo de dados temporal;
-- `utils`: coordenadas normalizadas e interpolação de keyframes.
+- `types`: modelos de slides e objetos temporais;
+- `utils`: criação de slides, coordenadas e renderização temporal central.
 
 O tracking automático/computer vision não faz parte desta fase. O estado,
 keyframes e interpolação necessários à integração futura já estão modelados.

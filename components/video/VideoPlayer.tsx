@@ -15,9 +15,15 @@ export interface VideoPlayerHandle {
   captureFrame: () => string | null;
 }
 
-interface Props { source: string | null; onChooseVideo: () => void }
+interface Props {
+  source: string | null;
+  clipStart?: number;
+  clipEnd?: number;
+  onChooseVideo: () => void;
+  onDurationReady?: (duration: number) => void;
+}
 
-export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer({ source, onChooseVideo }, ref) {
+export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer({ source, clipStart = 0, clipEnd, onChooseVideo, onDurationReady }, ref) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const areaRef = useRef<HTMLDivElement>(null);
   const fullscreenRef = useRef<HTMLDivElement>(null);
@@ -72,7 +78,14 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
   const toggle = () => {
     const video = videoRef.current;
     if (!video || !source) return;
-    if (video.paused) void video.play(); else video.pause();
+    const effectiveEnd = Math.min(clipEnd ?? video.duration, video.duration);
+    if (video.paused) {
+      if (video.currentTime < clipStart || video.currentTime >= effectiveEnd - .02) {
+        video.currentTime = clipStart;
+        setCurrentTime(clipStart);
+      }
+      void video.play();
+    } else video.pause();
   };
   const registerCapture = useCallback((capture: (() => HTMLCanvasElement | null) | null) => {
     drawingCaptureRef.current = capture;
@@ -111,9 +124,20 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
                 const video = e.currentTarget;
                 setAspect(video.videoWidth / video.videoHeight || 16 / 9);
                 setDuration(video.duration);
+                onDurationReady?.(video.duration);
+                video.currentTime = Math.min(clipStart, video.duration);
+                setCurrentTime(video.currentTime);
                 video.volume = volume;
               }}
-              onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+              onTimeUpdate={(e) => {
+                const video = e.currentTarget;
+                const effectiveEnd = Math.min(clipEnd ?? video.duration, video.duration);
+                if (!video.paused && video.currentTime >= effectiveEnd) {
+                  video.pause();
+                  video.currentTime = effectiveEnd;
+                }
+                setCurrentTime(video.currentTime);
+              }}
               onPlay={() => setIsPlaying(true)}
               onPause={() => setIsPlaying(false)}
               onEnded={() => setIsPlaying(false)}
@@ -136,6 +160,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
         duration={duration}
         volume={volume}
         speed={speed}
+        clipStart={clipStart}
+        clipEnd={Math.min(clipEnd ?? duration, duration)}
         disabled={!source}
         onToggle={toggle}
         onSeek={seek}

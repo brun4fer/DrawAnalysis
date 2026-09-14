@@ -53,6 +53,10 @@ export interface DrawingObject {
   endTime: number;
   trackingEnabled: boolean;
   keyframes: DrawingKeyframe[];
+  animation?: {
+    fadeIn?: number;
+    fadeOut?: number;
+  };
   style: DrawingStyle;
   transform: ObjectTransform;
   data: DrawingData;

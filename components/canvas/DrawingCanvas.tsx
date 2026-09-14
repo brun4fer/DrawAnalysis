@@ -8,6 +8,7 @@ import type { DrawingData, DrawingObject, Point, Tool } from "@/types/drawing";
 import { DEFAULT_STYLE, DEFAULT_TRANSFORM } from "@/types/drawing";
 import { flattenPoints, toNormalized } from "@/utils/coordinates";
 import { createId } from "@/utils/id";
+import { getObjectStateAtTime } from "@/utils/temporalRenderer";
 import { DrawingShape } from "./DrawingShape";
 
 interface Props {
@@ -59,6 +60,7 @@ export function DrawingCanvas({ width, height, registerCapture }: Props) {
       endTime: Math.min(duration || currentTime + 3, currentTime + 3),
       trackingEnabled: false,
       keyframes: [],
+      animation: { fadeIn: 0.12, fadeOut: 0.12 },
       style: { ...DEFAULT_STYLE, dash: [] },
       transform: { ...DEFAULT_TRANSFORM },
       data,
@@ -153,7 +155,7 @@ export function DrawingCanvas({ width, height, registerCapture }: Props) {
     return null;
   })();
 
-  const visible = drawings.filter((drawing) => currentTime >= drawing.startTime && currentTime <= drawing.endTime);
+  const visible = drawings.filter((drawing) => getObjectStateAtTime(drawing, currentTime).visible);
 
   return (
     <Stage

@@ -8,6 +8,8 @@ interface Props {
   duration: number;
   volume: number;
   speed: number;
+  clipStart: number;
+  clipEnd: number;
   disabled: boolean;
   onToggle: () => void;
   onSeek: (time: number) => void;
@@ -35,6 +37,7 @@ export function VideoControls(props: Props) {
       <span className="timecode">{formatTime(props.currentTime, true)}</span>
       <input className="video-scrubber" aria-label="Posição do vídeo" type="range" min={0} max={props.duration || 0} step={0.01} value={props.currentTime} onChange={(e) => props.onSeek(Number(e.target.value))} disabled={props.disabled} />
       <span className="timecode muted">{formatTime(props.duration)}</span>
+      <span className="clip-badge" title="Intervalo do slide">IN {formatTime(props.clipStart, true)} · OUT {formatTime(props.clipEnd, true)}</span>
       <div className="volume-control">
         {props.volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
         <input aria-label="Volume" type="range" min={0} max={1} step={0.05} value={props.volume} onChange={(e) => props.onVolume(Number(e.target.value))} />
