@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Konva from "konva";
 import { Arrow, Ellipse, Layer, Line, Rect, Stage, Text } from "react-konva";
 import { useEditorStore } from "@/store/useEditorStore";
@@ -10,7 +10,11 @@ import { flattenPoints, toNormalized } from "@/utils/coordinates";
 import { createId } from "@/utils/id";
 import { DrawingShape } from "./DrawingShape";
 
-interface Props { width: number; height: number }
+interface Props {
+  width: number;
+  height: number;
+  registerCapture?: (capture: (() => HTMLCanvasElement | null) | null) => void;
+}
 
 interface Draft { tool: Tool; start: Point; points: Point[]; current: Point }
 
@@ -19,9 +23,26 @@ const labelFor = (kind: DrawingObject["type"]) => ({
   polygon: "Zona", rectangle: "Retângulo", text: "Texto", freeDraw: "Traço",
 })[kind];
 
-export function DrawingCanvas({ width, height }: Props) {
+export function DrawingCanvas({ width, height, registerCapture }: Props) {
   const { tool, drawings, selectedId, currentTime, duration, addDrawing, updateDrawing, setSelectedId, setTool } = useEditorStore();
   const [draft, setDraft] = useState<Draft | null>(null);
+  const stageRef = useRef<Konva.Stage>(null);
+
+  useEffect(() => {
+    const capture = () => {
+      const stage = stageRef.current;
+      if (!stage) return null;
+      const selection = stage.find(".selection-transformer");
+      selection.forEach((node) => node.hide());
+      stage.draw();
+      const canvas = stage.toCanvas({ pixelRatio: 1 });
+      selection.forEach((node) => node.show());
+      stage.draw();
+      return canvas;
+    };
+    registerCapture?.(capture);
+    return () => registerCapture?.(null);
+  }, [registerCapture]);
 
   const pointFromStage = (stage: Konva.Stage): Point | null => {
     const pointer = stage.getPointerPosition();
@@ -136,6 +157,7 @@ export function DrawingCanvas({ width, height }: Props) {
 
   return (
     <Stage
+      ref={stageRef}
       width={width}
       height={height}
       className={`drawing-stage tool-${tool}`}

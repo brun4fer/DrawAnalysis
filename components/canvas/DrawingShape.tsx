@@ -97,6 +97,7 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
       {selected && canEdit && (
         <Transformer
           ref={transformerRef}
+          name="selection-transformer"
           rotateEnabled
           flipEnabled={false}
           borderStroke="#ffffff"

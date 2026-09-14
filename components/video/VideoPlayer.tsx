@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Film, Upload } from "lucide-react";
 import { useEditorStore } from "@/store/useEditorStore";
 import { VideoControls } from "./VideoControls";
@@ -12,6 +12,7 @@ export interface VideoPlayerHandle {
   toggle: () => void;
   seekBy: (seconds: number) => void;
   frameBy: (frames: number) => void;
+  captureFrame: () => string | null;
 }
 
 interface Props { source: string | null; onChooseVideo: () => void }
@@ -20,6 +21,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
   const videoRef = useRef<HTMLVideoElement>(null);
   const areaRef = useRef<HTMLDivElement>(null);
   const fullscreenRef = useRef<HTMLDivElement>(null);
+  const drawingCaptureRef = useRef<(() => HTMLCanvasElement | null) | null>(null);
   const [size, setSize] = useState({ width: 960, height: 540 });
   const [aspect, setAspect] = useState(16 / 9);
   const [volume, setVolume] = useState(0.8);
@@ -72,7 +74,29 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
     if (!video || !source) return;
     if (video.paused) void video.play(); else video.pause();
   };
-  useImperativeHandle(ref, () => ({ toggle, seekBy: (seconds) => seek((videoRef.current?.currentTime ?? 0) + seconds), frameBy: (frames) => seek((videoRef.current?.currentTime ?? 0) + frames / 25) }));
+  const registerCapture = useCallback((capture: (() => HTMLCanvasElement | null) | null) => {
+    drawingCaptureRef.current = capture;
+  }, []);
+  const captureFrame = () => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth || !video.videoHeight) return null;
+    video.pause();
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const context = canvas.getContext("2d");
+    if (!context) return null;
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const drawingCanvas = drawingCaptureRef.current?.();
+    if (drawingCanvas) context.drawImage(drawingCanvas, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.92);
+  };
+  useImperativeHandle(ref, () => ({
+    toggle,
+    seekBy: (seconds) => seek((videoRef.current?.currentTime ?? 0) + seconds),
+    frameBy: (frames) => seek((videoRef.current?.currentTime ?? 0) + frames / 25),
+    captureFrame,
+  }));
 
   return (
     <div className="video-workspace" ref={fullscreenRef}>
@@ -94,7 +118,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
               onPause={() => setIsPlaying(false)}
               onEnded={() => setIsPlaying(false)}
             />
-            <div className="canvas-overlay"><DrawingCanvas width={size.width} height={size.height} /></div>
+            <div className="canvas-overlay"><DrawingCanvas width={size.width} height={size.height} registerCapture={registerCapture} /></div>
           </div>
         ) : (
           <button className="empty-video" onClick={onChooseVideo}>

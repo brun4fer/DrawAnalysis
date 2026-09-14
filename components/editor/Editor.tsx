@@ -6,15 +6,20 @@ import { ToolRail } from "./ToolRail";
 import { VideoPlayer, type VideoPlayerHandle } from "@/components/video/VideoPlayer";
 import { PropertiesPanel } from "@/components/properties/PropertiesPanel";
 import { Timeline } from "@/components/timeline/Timeline";
+import { SlidesPanel } from "@/components/presentation/SlidesPanel";
+import { PresentationMode } from "@/components/presentation/PresentationMode";
 import { useEditorStore } from "@/store/useEditorStore";
 import { TOOLS } from "@/components/tools/toolDefinitions";
+import { createId } from "@/utils/id";
 
 export function Editor() {
   const inputRef = useRef<HTMLInputElement>(null);
   const playerRef = useRef<VideoPlayerHandle>(null);
   const [source, setSource] = useState<string | null>(null);
   const [filename, setFilename] = useState("");
-  const { selectedId, removeDrawing, undo, redo, setTool } = useEditorStore();
+  const [bottomTab, setBottomTab] = useState<"timeline" | "slides">("timeline");
+  const [presenting, setPresenting] = useState(false);
+  const { selectedId, removeDrawing, undo, redo, setTool, currentTime, slides, addSlide } = useEditorStore();
 
   useEffect(() => () => { if (source) URL.revokeObjectURL(source); }, [source]);
 
@@ -22,6 +27,7 @@ export function Editor() {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
       if (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      if (presenting) return;
       const modifier = event.ctrlKey || event.metaKey;
       if (modifier && event.key.toLowerCase() === "z") { event.preventDefault(); event.shiftKey ? redo() : undo(); return; }
       if (modifier && event.key.toLowerCase() === "y") { event.preventDefault(); redo(); return; }
@@ -37,7 +43,7 @@ export function Editor() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [redo, removeDrawing, selectedId, setTool, undo]);
+  }, [presenting, redo, removeDrawing, selectedId, setTool, undo]);
 
   const openFile = (file?: File) => {
     if (!file) return;
@@ -46,16 +52,37 @@ export function Editor() {
     setFilename(file.name.replace(/\.[^.]+$/, ""));
   };
 
+  const captureSlide = () => {
+    const imageDataUrl = playerRef.current?.captureFrame();
+    if (!imageDataUrl) return;
+    addSlide({
+      id: createId(),
+      title: `Slide ${slides.length + 1}`,
+      question: "",
+      imageDataUrl,
+      videoTime: currentTime,
+      createdAt: Date.now(),
+    });
+    setBottomTab("slides");
+  };
+
   return (
     <main className="app-shell">
       <input ref={inputRef} className="sr-only" type="file" accept="video/*" onChange={(e) => openFile(e.target.files?.[0])} />
-      <TopBar filename={filename} onOpen={() => inputRef.current?.click()} />
+      <TopBar
+        filename={filename}
+        onOpen={() => inputRef.current?.click()}
+        onCapture={captureSlide}
+        bottomTab={bottomTab}
+        onBottomTab={setBottomTab}
+      />
       <div className="editor-grid">
         <ToolRail />
         <VideoPlayer ref={playerRef} source={source} onChooseVideo={() => inputRef.current?.click()} />
         <PropertiesPanel />
       </div>
-      <Timeline />
+      {bottomTab === "timeline" ? <Timeline /> : <SlidesPanel onPresent={() => setPresenting(true)} />}
+      {presenting && <PresentationMode onClose={() => setPresenting(false)} />}
     </main>
   );
 }

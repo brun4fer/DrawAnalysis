@@ -25,6 +25,9 @@ um URL local do browser e nunca é enviado para um servidor.
 - undo/redo global para desenhos e propriedades;
 - modelo de keyframes e interpolação preparado para tracking posterior;
 - entrada unificada por rato, toque e stylus.
+- captura do frame com os desenhos para criar slides de apresentação;
+- título e pergunta individual para cada slide;
+- ordenação, eliminação e apresentação em ecrã inteiro.
 
 Elipse, retângulo, seta e linha usam o fluxo **clique → mover → clique**. O
 desenho livre continua a usar pressionar → desenhar → soltar, adequado a stylus.
@@ -43,6 +46,14 @@ desenho livre continua a usar pressionar → desenhar → soltar, adequado a sty
 | `V E A L 3 P R T D` | Escolher ferramentas |
 
 No polígono, use `Enter` ou duplo clique para fechar a zona.
+
+## Apresentação
+
+Pare no momento pretendido, termine os desenhos e carregue em **Criar slide**.
+O frame e os desenhos visíveis são combinados numa única imagem, sem as pegas de
+seleção. No separador **Slides** pode escrever a pergunta de cada situação,
+alterar a ordem e iniciar **Apresentar**. Durante a apresentação, use as setas ou
+`Space` para navegar e `Escape` para sair.
 
 ## Estrutura
 
