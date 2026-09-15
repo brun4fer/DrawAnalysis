@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="TactiDraw">
+  <rect width="512" height="512" rx="112" fill="#0d1112"/>
+  <rect x="46" y="46" width="420" height="420" rx="86" fill="#a3ff12"/>
+  <path d="M128 130h256v72h-88v190h-80V202h-88z" fill="#11160a"/>
+  <path d="M80 256h62M370 256h62M256 80v36M256 396v36" stroke="#11160a" stroke-width="18" stroke-linecap="round" opacity=".45"/>
+  <circle cx="256" cy="256" r="54" fill="none" stroke="#11160a" stroke-width="12" opacity=".28"/>
+</svg>

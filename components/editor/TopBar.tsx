@@ -2,6 +2,7 @@
 
 import { Camera, Cloud, Eye, FolderOpen, LogOut, Plus, Redo2, RotateCcw, Save, Undo2 } from "lucide-react";
 import { useEditorStore } from "@/store/useEditorStore";
+import { InstallAppButton } from "@/components/pwa/InstallAppButton";
 
 interface Props {
   filename: string;
@@ -37,6 +38,7 @@ export function TopBar({ filename, isVideoSlide, onOpen, onAddSlide, onPreview, 
       {isVideoSlide && <button className="capture-button" onClick={onCapture} disabled={!filename} title="Criar slide de imagem a partir deste frame"><Camera size={16} /> Capturar frame</button>}
       {isVideoSlide && <button className="open-button secondary-open" onClick={onOpen}><FolderOpen size={16} /> {filename ? "Trocar vídeo" : "Abrir vídeo"}</button>}
       <button className="preview-button" onClick={onPreview} disabled={!slides.length}><Eye size={16} /> Preview</button>
+      <InstallAppButton />
       {account && <div className="account-chip" title={`${account.user.name} · ${account.workspace.name}`}><span>{account.user.name.slice(0, 1).toUpperCase()}</span><div><strong>{account.user.name}</strong><small>{account.workspace.name}</small></div></div>}
       <button className="topbar-action" onClick={onLogout} title="Terminar sessão"><LogOut size={16} /></button>
     </header>
