@@ -67,6 +67,7 @@ export function VideoSlidePreview({ content, slideName }: Props) {
         <video
           ref={videoRef}
           src={content.sourceUrl}
+          crossOrigin="anonymous"
           controls
           autoPlay
           playsInline

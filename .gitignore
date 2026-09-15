@@ -4,3 +4,6 @@ out
 *.log
 .DS_Store
 .env*.local
+.env
+generated/media-client
+*.tsbuildinfo

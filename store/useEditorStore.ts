@@ -38,6 +38,8 @@ interface EditorState {
   moveSlide: (id: string, direction: -1 | 1) => void;
   reorderSlide: (id: string, targetId: string) => void;
   setSelectedSlideId: (id: string | null) => void;
+  replacePresentation: (slides: AnalysisSlide[]) => void;
+  setVideoSource: (id: string, sourceUrl?: string) => void;
 }
 
 const copy = (drawings: DrawingObject[]) => structuredClone(drawings);
@@ -208,4 +210,26 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       drawings: slide?.content.kind === "video" ? copy(slide.content.drawings) : state.drawings,
     };
   }),
+  replacePresentation: (slides) => set(() => {
+    const safeSlides = copySlides(slides);
+    const selectedSlideId = safeSlides[0]?.id ?? null;
+    const first = safeSlides[0];
+    return {
+      slides: safeSlides,
+      selectedSlideId,
+      drawings: first?.content.kind === "video" ? copy(first.content.drawings) : [],
+      selectedId: null,
+      currentTime: 0,
+      duration: 0,
+      isPlaying: false,
+      history: [],
+      future: [],
+      tool: "select",
+    };
+  }),
+  setVideoSource: (id, sourceUrl) => set((state) => ({
+    slides: state.slides.map((slide) => slide.id === id && slide.content.kind === "video"
+      ? { ...slide, content: { ...slide.content, sourceUrl } }
+      : slide),
+  })),
 }));

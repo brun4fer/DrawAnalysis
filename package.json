@@ -4,18 +4,26 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && prisma generate --schema prisma-media/schema.prisma && next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "db:push": "prisma db push",
+    "db:seed": "prisma db seed",
+    "postinstall": "prisma generate && prisma generate --schema prisma-media/schema.prisma"
   },
   "dependencies": {
     "@fontsource-variable/inter": "latest",
+    "@prisma/client": "^6.19.3",
+    "dotenv": "^17.4.2",
     "konva": "latest",
     "lucide-react": "latest",
     "next": "latest",
+    "prisma": "^6.19.3",
     "react": "latest",
     "react-dom": "latest",
     "react-konva": "latest",
+    "tsx": "^4.19.2",
     "zustand": "latest"
   },
   "devDependencies": {
@@ -29,5 +37,8 @@
     "postcss": "latest",
     "tailwindcss": "latest",
     "typescript": "latest"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   }
 }

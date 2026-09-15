@@ -88,3 +88,38 @@ percorrer a apresentação; as setas ou `Space` navegam e `Escape` sai.
 
 O tracking automático/computer vision não faz parte desta fase. O estado,
 keyframes e interpolação necessários à integração futura já estão modelados.
+
+## Contas, workspaces e projetos
+
+A aplicação requer autenticação. Cada registo cria um workspace privado e todas
+as consultas e alterações de projetos são filtradas pelo `workspaceId` da sessão.
+Use **Projetos** para guardar, abrir ou eliminar apresentações. `Ctrl+S` guarda o
+projeto aberto.
+
+O conteúdo binário local não é enviado para a base de dados: URLs temporários,
+frames e imagens em `data:` são removidos do documento antes de guardar. Os
+desenhos, cortes, perguntas, ordem dos slides e referências a vídeos cloud ficam
+guardados no Neon.
+
+## Biblioteca cloud partilhada
+
+No slide de vídeo, **Cloud** abre a biblioteca do workspace. O DrawAnalysis apenas
+lista e reproduz conteúdos existentes com URLs assinados; não inclui endpoints de
+upload. Para associar a conta ao mesmo catálogo usado nas outras aplicações, gere
+um código de utilização única numa aplicação já ligada e cole-o em **Ligar
+workspace**. O código expira ao fim de 30 minutos.
+
+## Configuração
+
+Copie `.env.example` para um ficheiro local ignorado pelo Git e configure:
+
+- `DATABASE_URL`: ligação pooled da base Neon exclusiva do DrawAnalysis;
+- `DIRECT_URL`: ligação direta da mesma base para alterações de schema;
+- `AUTH_SECRET`: segredo aleatório longo para assinar sessões;
+- `INITIAL_ADMIN_*`: conta inicial opcional;
+- `MEDIA_DATABASE_URL` e `MEDIA_DIRECT_URL`: catálogo partilhado;
+- `MEDIA_R2_*`: credenciais R2 necessárias apenas para gerar URLs de leitura;
+- `MEDIA_LIBRARY_APP_ID`: mantenha `draw-analysis`.
+
+Depois execute `npm run db:push`, `npm run db:seed` e `npm run dev`. Para validar
+uma entrega use `npm run lint`, `npm run typecheck` e `npm run build`.

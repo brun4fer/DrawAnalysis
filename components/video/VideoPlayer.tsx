@@ -119,6 +119,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
             <video
               ref={videoRef}
               src={source}
+              crossOrigin="anonymous"
               playsInline
               onLoadedMetadata={(e) => {
                 const video = e.currentTarget;

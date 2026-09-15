@@ -1,0 +1,53 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id                 String   @id @default(cuid())
+  name               String
+  username           String   @unique
+  email              String?  @unique
+  passwordHash       String
+  mustChangePassword Boolean  @default(false)
+  role               String   @default("analyst")
+  workspaceId        String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  projects  Project[]  @relation("ProjectCreator")
+
+  @@index([workspaceId])
+}
+
+model Workspace {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users    User[]
+  projects Project[]
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  workspaceId String
+  createdById String
+  name        String
+  data        Json
+  version     Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy User      @relation("ProjectCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, updatedAt])
+}

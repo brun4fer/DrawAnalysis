@@ -46,6 +46,7 @@ export interface LineupSlideContent {
 export interface VideoSlideContent {
   kind: "video";
   fileName: string;
+  mediaAssetId?: string;
   sourceUrl?: string;
   startTime: number;
   endTime?: number;
