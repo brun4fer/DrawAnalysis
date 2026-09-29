@@ -36,6 +36,11 @@ export function PropertiesPanel() {
 
   const updateStyle = (patch: Partial<typeof object.style>) => updateDrawing(object.id, { style: { ...object.style, ...patch } });
   const updateTransform = (patch: Partial<typeof object.transform>) => updateDrawing(object.id, { transform: { ...object.transform, ...patch } });
+  const applyEffectPreset = (preset: "clean" | "glow" | "shadow") => {
+    if (preset === "clean") updateStyle({ shadowBlur: 0, shadowOpacity: 0, shadowOffsetX: 0, shadowOffsetY: 0 });
+    if (preset === "glow") updateStyle({ shadowColor: object.style.stroke, shadowBlur: 20, shadowOpacity: .9, shadowOffsetX: 0, shadowOffsetY: 0 });
+    if (preset === "shadow") updateStyle({ shadowColor: "#000000", shadowBlur: 12, shadowOpacity: .75, shadowOffsetX: 4, shadowOffsetY: 6 });
+  };
   const duration = Math.max(0, object.endTime - object.startTime);
   const fillColor = object.style.fill.startsWith("#") ? object.style.fill.slice(0, 7) : "#a3ff12";
 
@@ -49,12 +54,17 @@ export function PropertiesPanel() {
 
       <section className="property-section">
         <h3>APARÊNCIA</h3>
+        <div className="effect-presets"><button onClick={() => applyEffectPreset("clean")}>Clean</button><button onClick={() => applyEffectPreset("glow")}>TV Glow</button><button onClick={() => applyEffectPreset("shadow")}>Sombra</button></div>
         <label className="field-row"><FieldLabel>Traço</FieldLabel><input type="color" value={object.style.stroke} onChange={(e) => updateStyle({ stroke: e.target.value })} /><code>{object.style.stroke}</code></label>
         {!["arrow", "line", "freeDraw", "text"].includes(object.type) && (
           <label className="field-row"><FieldLabel>Preench.</FieldLabel><input type="color" value={fillColor} onChange={(e) => updateStyle({ fill: `${e.target.value}33` })} /><code>{fillColor}</code></label>
         )}
         <label className="stacked-field"><span><FieldLabel>Espessura</FieldLabel><b>{object.style.strokeWidth}px</b></span><input type="range" min={1} max={16} value={object.style.strokeWidth} onChange={(e) => updateStyle({ strokeWidth: Number(e.target.value) })} /></label>
         <label className="stacked-field"><span><FieldLabel>Opacidade</FieldLabel><b>{Math.round(object.style.opacity * 100)}%</b></span><input type="range" min={0.1} max={1} step={0.05} value={object.style.opacity} onChange={(e) => updateStyle({ opacity: Number(e.target.value) })} /></label>
+        <label className="field-row"><FieldLabel>Efeito</FieldLabel><input type="color" value={object.style.shadowColor ?? "#000000"} onChange={(e) => updateStyle({ shadowColor: e.target.value })} /><code>{object.style.shadowColor ?? "#000000"}</code></label>
+        <label className="stacked-field"><span><FieldLabel>Suavidade</FieldLabel><b>{object.style.shadowBlur ?? 0}px</b></span><input type="range" min={0} max={40} value={object.style.shadowBlur ?? 0} onChange={(e) => updateStyle({ shadowBlur: Number(e.target.value) })} /></label>
+        <label className="stacked-field"><span><FieldLabel>Força efeito</FieldLabel><b>{Math.round((object.style.shadowOpacity ?? 0) * 100)}%</b></span><input type="range" min={0} max={1} step={.05} value={object.style.shadowOpacity ?? 0} onChange={(e) => updateStyle({ shadowOpacity: Number(e.target.value) })} /></label>
+        <div className="two-fields shadow-offset-fields"><label><FieldLabel>Sombra X</FieldLabel><input type="number" min={-30} max={30} value={object.style.shadowOffsetX ?? 0} onChange={(e) => updateStyle({ shadowOffsetX: Number(e.target.value) })} /></label><label><FieldLabel>Sombra Y</FieldLabel><input type="number" min={-30} max={30} value={object.style.shadowOffsetY ?? 0} onChange={(e) => updateStyle({ shadowOffsetY: Number(e.target.value) })} /></label></div>
         {object.type !== "text" && <label className="toggle-row"><FieldLabel>Linha tracejada</FieldLabel><input type="checkbox" checked={object.style.dash.length > 0} onChange={(e) => updateStyle({ dash: e.target.checked ? [10, 7] : [] })} /><span /></label>}
         {object.data.kind === "text" && <TextContentField value={object.data.text} onChange={(text) => updateDrawing(object.id, { data: { kind: "text", origin: object.data.kind === "text" ? object.data.origin : { x: 0, y: 0 }, fontSize: object.data.kind === "text" ? object.data.fontSize : 0.055, text } })} />}
       </section>
@@ -70,6 +80,8 @@ export function PropertiesPanel() {
           <label><FieldLabel>Fade in</FieldLabel><input type="number" min={0} max={2} step={.1} value={object.animation?.fadeIn ?? 0} onChange={(event) => updateDrawing(object.id, { animation: { ...object.animation, fadeIn: Number(event.target.value) } })} /></label>
           <label><FieldLabel>Fade out</FieldLabel><input type="number" min={0} max={2} step={.1} value={object.animation?.fadeOut ?? 0} onChange={(event) => updateDrawing(object.id, { animation: { ...object.animation, fadeOut: Number(event.target.value) } })} /></label>
         </div>
+        <label className="field-row"><FieldLabel>Animação</FieldLabel><select value={object.animation?.motion ?? "none"} onChange={(event) => updateDrawing(object.id, { animation: { ...object.animation, motion: event.target.value as "none" | "scaleIn" | "pulse" } })}><option value="none">Fade</option><option value="scaleIn">Entrada pop</option><option value="pulse">Pulse</option></select></label>
+        {object.animation?.motion === "pulse" && <><label className="stacked-field"><span><FieldLabel>Intensidade</FieldLabel><b>{Math.round((object.animation.pulseAmount ?? .05) * 100)}%</b></span><input type="range" min={.01} max={.2} step={.01} value={object.animation.pulseAmount ?? .05} onChange={(event) => updateDrawing(object.id, { animation: { ...object.animation, pulseAmount: Number(event.target.value) } })} /></label><label className="stacked-field"><span><FieldLabel>Velocidade</FieldLabel><b>{(object.animation.pulseSpeed ?? 1.4).toFixed(1)}x</b></span><input type="range" min={.2} max={3} step={.1} value={object.animation.pulseSpeed ?? 1.4} onChange={(event) => updateDrawing(object.id, { animation: { ...object.animation, pulseSpeed: Number(event.target.value) } })} /></label></>}
       </section>
 
       <section className="property-section">

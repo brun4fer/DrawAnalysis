@@ -20,7 +20,7 @@ interface Props {
 interface Draft { tool: Tool; start: Point; points: Point[]; current: Point }
 
 const labelFor = (kind: DrawingObject["type"]) => ({
-  ellipse: "Marcador", arrow: "Seta", line: "Linha", triangle: "Triângulo",
+  playerRing: "Ring", spotlight: "Spotlight", ellipse: "Marcador", arrow: "Seta", line: "Linha", triangle: "Triângulo",
   polygon: "Zona", rectangle: "Retângulo", text: "Texto", freeDraw: "Traço",
 })[kind];
 
@@ -52,6 +52,11 @@ export function DrawingCanvas({ width, height, registerCapture }: Props) {
 
   const makeDrawing = useCallback((type: DrawingObject["type"], data: DrawingData) => {
     const count = drawings.filter((item) => item.type === type).length + 1;
+    const effectStyle = type === "playerRing"
+      ? { stroke: "#a3ff12", fill: "#a3ff1240", strokeWidth: 5, shadowColor: "#a3ff12", shadowBlur: 18, shadowOpacity: .85 }
+      : type === "spotlight"
+        ? { stroke: "#fff8c7", fill: "#fff8c733", strokeWidth: 2, shadowColor: "#fff2a8", shadowBlur: 22, shadowOpacity: .6 }
+        : {};
     const object: DrawingObject = {
       id: createId(),
       name: `${labelFor(type)} ${count}`,
@@ -60,8 +65,8 @@ export function DrawingCanvas({ width, height, registerCapture }: Props) {
       endTime: Math.min(duration || currentTime + 3, currentTime + 3),
       trackingEnabled: false,
       keyframes: [],
-      animation: { fadeIn: 0.12, fadeOut: 0.12 },
-      style: { ...DEFAULT_STYLE, dash: [] },
+      animation: { fadeIn: 0.18, fadeOut: 0.18, motion: type === "playerRing" ? "scaleIn" : "none", pulseAmount: .05, pulseSpeed: 1.4 },
+      style: { ...DEFAULT_STYLE, ...effectStyle, dash: [] },
       transform: { ...DEFAULT_TRANSFORM },
       data,
     };
@@ -93,6 +98,14 @@ export function DrawingCanvas({ width, height, registerCapture }: Props) {
     const point = pointFromStage(event.target.getStage()!);
     if (!point) return;
     if (tool === "select") { setSelectedId(null); return; }
+    if (tool === "playerRing") {
+      makeDrawing("playerRing", { kind: "playerRing", center: point, radiusX: .05, radiusY: .018 });
+      return;
+    }
+    if (tool === "spotlight") {
+      makeDrawing("spotlight", { kind: "spotlight", target: point, radiusX: .065, radiusY: .022, beamHeight: .28 });
+      return;
+    }
     if (tool === "text") {
       makeDrawing("text", { kind: "text", origin: point, text: "TEXTO", fontSize: 0.055 });
       return;

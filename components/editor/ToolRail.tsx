@@ -15,6 +15,8 @@ export function ToolRail() {
           ? "Arraste para editar"
           : tool === "text"
             ? "Clique para inserir"
+            : tool === "playerRing" || tool === "spotlight"
+              ? "Clique aos pés do jogador"
             : "Clique · mova · clique";
   return (
     <aside className="tool-rail" aria-label="Ferramentas de desenho">

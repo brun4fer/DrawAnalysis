@@ -1,5 +1,7 @@
 export type Tool =
   | "select"
+  | "playerRing"
+  | "spotlight"
   | "ellipse"
   | "arrow"
   | "line"
@@ -19,6 +21,11 @@ export interface DrawingStyle {
   strokeWidth: number;
   opacity: number;
   dash: number[];
+  shadowColor: string;
+  shadowBlur: number;
+  shadowOpacity: number;
+  shadowOffsetX: number;
+  shadowOffsetY: number;
 }
 
 export interface ObjectTransform {
@@ -40,6 +47,8 @@ export interface DrawingKeyframe {
 }
 
 export type DrawingData =
+  | { kind: "playerRing"; center: Point; radiusX: number; radiusY: number }
+  | { kind: "spotlight"; target: Point; radiusX: number; radiusY: number; beamHeight: number }
   | { kind: "ellipse"; center: Point; radiusX: number; radiusY: number }
   | { kind: "rectangle"; origin: Point; width: number; height: number }
   | { kind: "arrow" | "line" | "triangle" | "polygon" | "freeDraw"; points: Point[] }
@@ -56,6 +65,9 @@ export interface DrawingObject {
   animation?: {
     fadeIn?: number;
     fadeOut?: number;
+    motion?: "none" | "scaleIn" | "pulse";
+    pulseAmount?: number;
+    pulseSpeed?: number;
   };
   style: DrawingStyle;
   transform: ObjectTransform;
@@ -68,6 +80,11 @@ export const DEFAULT_STYLE: DrawingStyle = {
   strokeWidth: 4,
   opacity: 1,
   dash: [],
+  shadowColor: "#000000",
+  shadowBlur: 0,
+  shadowOpacity: 0,
+  shadowOffsetX: 0,
+  shadowOffsetY: 0,
 };
 
 export const DEFAULT_TRANSFORM: ObjectTransform = {

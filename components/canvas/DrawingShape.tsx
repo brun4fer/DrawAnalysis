@@ -18,6 +18,13 @@ interface Props {
   onChange: (patch: Partial<DrawingObject>) => void;
 }
 
+function withAlpha(color: string, alpha: number) {
+  const hex = color.match(/^#([0-9a-f]{6})/i)?.[1];
+  if (!hex) return color;
+  const value = Number.parseInt(hex, 16);
+  return `rgba(${value >> 16}, ${(value >> 8) & 255}, ${value & 255}, ${alpha})`;
+}
+
 export function DrawingShape({ object, width, height, currentTime, selected, canEdit, onSelect, onChange }: Props) {
   const nodeRef = useRef<Konva.Group>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
@@ -38,11 +45,63 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
     dash: object.style.dash,
     lineCap: "round" as const,
     lineJoin: "round" as const,
+    shadowColor: object.style.shadowColor ?? "#000000",
+    shadowBlur: object.style.shadowBlur ?? 0,
+    shadowOpacity: object.style.shadowOpacity ?? 0,
+    shadowOffsetX: object.style.shadowOffsetX ?? 0,
+    shadowOffsetY: object.style.shadowOffsetY ?? 0,
   };
 
   const content = (() => {
     const data = object.data;
     switch (data.kind) {
+      case "playerRing": {
+        const x = data.center.x * width;
+        const y = data.center.y * height;
+        const radiusX = data.radiusX * width;
+        const radiusY = data.radiusY * height;
+        return (
+          <Group>
+            <Ellipse {...common} x={x} y={y} radiusX={radiusX} radiusY={radiusY} fill={withAlpha(object.style.stroke, .16)} />
+            <Ellipse {...common} x={x} y={y} radiusX={radiusX * .72} radiusY={radiusY * .72} fill={withAlpha(object.style.stroke, .06)} stroke={withAlpha(object.style.stroke, .62)} strokeWidth={Math.max(1, object.style.strokeWidth * .45)} shadowEnabled={false} />
+            <Ellipse x={x} y={y - radiusY * .08} radiusX={radiusX * .18} radiusY={radiusY * .18} fill={withAlpha("#ffffff", .72)} opacity={temporalState.opacity} listening={false} />
+          </Group>
+        );
+      }
+      case "spotlight": {
+        const x = data.target.x * width;
+        const y = data.target.y * height;
+        const radiusX = data.radiusX * width;
+        const radiusY = data.radiusY * height;
+        const top = y - data.beamHeight * height;
+        return (
+          <Group>
+            <Line
+              points={[x - radiusX * .18, top, x + radiusX * .18, top, x + radiusX, y, x - radiusX, y]}
+              closed
+              strokeEnabled={false}
+              fillLinearGradientStartPoint={{ x, y: top }}
+              fillLinearGradientEndPoint={{ x, y }}
+              fillLinearGradientColorStops={[0, withAlpha(object.style.stroke, 0), .55, withAlpha(object.style.stroke, .08), 1, withAlpha(object.style.stroke, .28)]}
+              opacity={temporalState.opacity}
+              listening={false}
+            />
+            <Ellipse
+              {...common}
+              x={x}
+              y={y}
+              radiusX={radiusX}
+              radiusY={radiusY}
+              stroke={withAlpha(object.style.stroke, .7)}
+              fillRadialGradientStartPoint={{ x: 0, y: 0 }}
+              fillRadialGradientEndPoint={{ x: 0, y: 0 }}
+              fillRadialGradientStartRadius={0}
+              fillRadialGradientEndRadius={radiusX}
+              fillRadialGradientColorStops={[0, withAlpha(object.style.stroke, .34), .58, withAlpha(object.style.stroke, .16), 1, withAlpha(object.style.stroke, 0)]}
+            />
+          </Group>
+        );
+      }
       case "ellipse":
         return <Ellipse {...common} x={data.center.x * width} y={data.center.y * height} radiusX={data.radiusX * width} radiusY={data.radiusY * height} fill={object.style.fill} />;
       case "rectangle":

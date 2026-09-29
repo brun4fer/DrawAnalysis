@@ -25,9 +25,17 @@ export function getObjectStateAtTime(object: DrawingObject, currentTime: number)
   const fadeOut = Math.max(0, object.animation?.fadeOut ?? 0);
   const inFactor = fadeIn ? Math.min(1, Math.max(0, (currentTime - object.startTime) / fadeIn)) : 1;
   const outFactor = fadeOut ? Math.min(1, Math.max(0, (object.endTime - currentTime) / fadeOut)) : 1;
+  const motion = object.animation?.motion ?? "none";
+  const scaleInFactor = motion === "scaleIn" ? .5 + inFactor * .5 : 1;
+  const pulseAmount = Math.max(0, Math.min(.25, object.animation?.pulseAmount ?? .05));
+  const pulseSpeed = Math.max(.1, object.animation?.pulseSpeed ?? 1.4);
+  const pulseFactor = motion === "pulse"
+    ? 1 + Math.sin(Math.max(0, currentTime - object.startTime) * Math.PI * 2 * pulseSpeed) * pulseAmount
+    : 1;
+  const animatedScale = scaleInFactor * pulseFactor;
   return {
     visible,
-    transform: { x: value("x"), y: value("y"), rotation: value("rotation"), scaleX: value("scaleX"), scaleY: value("scaleY") },
+    transform: { x: value("x"), y: value("y"), rotation: value("rotation"), scaleX: value("scaleX") * animatedScale, scaleY: value("scaleY") * animatedScale },
     opacity: object.style.opacity * Math.min(inFactor, outFactor),
     points,
   };
