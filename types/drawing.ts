@@ -34,6 +34,7 @@ export interface PlayerTrack {
   name: string;
   source: "automatic" | "manual";
   status: "seeded" | "processing" | "ready" | "needs-review";
+  appearanceColor?: [number, number, number];
   samples: PlayerTrackSample[];
 }
 

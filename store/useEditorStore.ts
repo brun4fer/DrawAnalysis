@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import type { DrawingObject, PlayerTrack, Tool } from "@/types/drawing";
+import type { DrawingKeyframe, DrawingObject, PlayerTrack, PlayerTrackSample, Tool } from "@/types/drawing";
 import type { AnalysisSlide } from "@/types/slide";
 import { createId } from "@/utils/id";
 import { createSlide } from "@/utils/slideFactory";
@@ -26,6 +26,8 @@ interface EditorState {
   setIsPlaying: (playing: boolean) => void;
   addDrawing: (drawing: DrawingObject) => void;
   addPlayerTrack: (track: PlayerTrack) => void;
+  appendPlayerTrackingSample: (drawingId: string, trackId: string, sample: PlayerTrackSample, keyframe: DrawingKeyframe) => void;
+  setPlayerTrackStatus: (trackId: string, status: PlayerTrack["status"]) => void;
   updateDrawing: (id: string, patch: Partial<DrawingObject>) => void;
   removeDrawing: (id: string) => void;
   duplicateDrawing: (id: string) => void;
@@ -81,6 +83,48 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     future: [],
     slides: state.slides.map((slide) => slide.id === state.selectedSlideId && slide.content.kind === "video"
       ? { ...slide, content: { ...slide.content, playerTracks: [...(slide.content.playerTracks ?? []), track] } }
+      : slide),
+  })),
+  appendPlayerTrackingSample: (drawingId, trackId, sample, keyframe) => set((state) => {
+    const drawings = state.drawings.map((drawing) => {
+      if (drawing.id !== drawingId) return drawing;
+      const frames = drawing.keyframes.length
+        ? drawing.keyframes
+        : [{ time: drawing.startTime, x: 0, y: 0, scaleX: 1, scaleY: 1 }];
+      const nearbyIndex = frames.findIndex((frame) => Math.abs(frame.time - keyframe.time) < .04);
+      const keyframes = nearbyIndex >= 0
+        ? frames.map((frame, index) => index === nearbyIndex ? keyframe : frame)
+        : [...frames, keyframe].sort((a, b) => a.time - b.time);
+      return { ...drawing, keyframes };
+    });
+    let slides = withVideoDrawings(state.slides, state.selectedSlideId, drawings);
+    slides = slides.map((slide) => slide.id === state.selectedSlideId && slide.content.kind === "video"
+      ? {
+          ...slide,
+          content: {
+            ...slide.content,
+            playerTracks: (slide.content.playerTracks ?? []).map((track) => {
+              if (track.id !== trackId) return track;
+              const nearbyIndex = track.samples.findIndex((item) => Math.abs(item.time - sample.time) < .04);
+              const samples = nearbyIndex >= 0
+                ? track.samples.map((item, index) => index === nearbyIndex ? sample : item)
+                : [...track.samples, sample].sort((a, b) => a.time - b.time);
+              return { ...track, status: "processing" as const, samples };
+            }),
+          },
+        }
+      : slide);
+    return { drawings, slides };
+  }),
+  setPlayerTrackStatus: (trackId, status) => set((state) => ({
+    slides: state.slides.map((slide) => slide.id === state.selectedSlideId && slide.content.kind === "video"
+      ? {
+          ...slide,
+          content: {
+            ...slide.content,
+            playerTracks: (slide.content.playerTracks ?? []).map((track) => track.id === trackId ? { ...track, status } : track),
+          },
+        }
       : slide),
   })),
   updateDrawing: (id, patch) => set((state) => {

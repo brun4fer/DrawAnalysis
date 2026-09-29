@@ -9,7 +9,7 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 }
 
 export function PropertiesPanel() {
-  const { drawings, selectedId, updateDrawing, removeDrawing, duplicateDrawing, slides, selectedSlideId, updateSlide, currentTime, duration: videoDuration } = useEditorStore();
+  const { drawings, selectedId, updateDrawing, removeDrawing, duplicateDrawing, slides, selectedSlideId, updateSlide, setPlayerTrackStatus, currentTime, duration: videoDuration } = useEditorStore();
   const object = drawings.find((drawing) => drawing.id === selectedId);
   const activeSlide = slides.find((slide) => slide.id === selectedSlideId);
 
@@ -99,7 +99,13 @@ export function PropertiesPanel() {
       </section>
 
       <section className="property-section tracking-section">
-        <label className="toggle-row"><span><FieldLabel>Tracking</FieldLabel><small>{playerTrack ? `${playerTrack.name} · âncora nos pés` : "Sem jogador associado"}</small></span><input type="checkbox" checked={object.trackingEnabled} onChange={(e) => updateDrawing(object.id, { trackingEnabled: e.target.checked })} /><span /></label>
+        <label className="toggle-row"><span><FieldLabel>Tracking</FieldLabel><small>{playerTrack ? `${playerTrack.name} · ${object.trackingEnabled ? "a seguir até parar" : "tracking terminado"}` : "Sem jogador associado"}</small></span><input type="checkbox" checked={object.trackingEnabled} onChange={(e) => {
+          const enabled = e.target.checked;
+          updateDrawing(object.id, enabled
+            ? { trackingEnabled: true, endTime: Math.max(object.endTime, videoDuration || currentTime + 3) }
+            : { trackingEnabled: false, endTime: Math.max(object.startTime + .04, currentTime) });
+          if (playerTrack) setPlayerTrackStatus(playerTrack.id, enabled ? "processing" : "ready");
+        }} /><span /></label>
         <div className="keyframe-count">{playerTrack ? `${playerTrack.samples.length} deteção · confiança ${Math.round((playerTrack.samples[0]?.confidence ?? 0) * 100)}%` : `${object.keyframes.length} keyframes`}</div>
       </section>
 

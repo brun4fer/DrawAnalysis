@@ -50,16 +50,71 @@ function makeDetectionCrop(video: HTMLVideoElement, click: Point) {
   return { canvas, sourceX, sourceY, cropWidth, cropHeight };
 }
 
+function makeTrackingCrop(video: HTMLVideoElement, box: NormalizedBox) {
+  const normalizedWidth = clamp(box.width * 5, .08, .26);
+  const normalizedHeight = clamp(box.height * 2.6, .18, .42);
+  const cropWidth = video.videoWidth * normalizedWidth;
+  const cropHeight = video.videoHeight * normalizedHeight;
+  const centerX = (box.x + box.width / 2) * video.videoWidth;
+  const centerY = (box.y + box.height / 2) * video.videoHeight;
+  const sourceX = clamp(centerX - cropWidth / 2, 0, video.videoWidth - cropWidth);
+  const sourceY = clamp(centerY - cropHeight / 2, 0, video.videoHeight - cropHeight);
+  const canvas = document.createElement("canvas");
+  canvas.width = 384;
+  canvas.height = Math.round(canvas.width * cropHeight / cropWidth);
+  canvas.getContext("2d")?.drawImage(video, sourceX, sourceY, cropWidth, cropHeight, 0, 0, canvas.width, canvas.height);
+  return { canvas, sourceX, sourceY, cropWidth, cropHeight };
+}
+
+function sampleJerseyColor(source: HTMLVideoElement | HTMLCanvasElement, box: [number, number, number, number]) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 12;
+  canvas.height = 12;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) return undefined;
+  const [x, y, width, height] = box;
+  try {
+    context.drawImage(source, x + width * .25, y + height * .18, width * .5, height * .38, 0, 0, 12, 12);
+    const pixels = context.getImageData(0, 0, 12, 12).data;
+    let red = 0;
+    let green = 0;
+    let blue = 0;
+    let count = 0;
+    for (let index = 0; index < pixels.length; index += 4) {
+      if (pixels[index + 3] < 128) continue;
+      red += pixels[index];
+      green += pixels[index + 1];
+      blue += pixels[index + 2];
+      count += 1;
+    }
+    return count ? [red / count, green / count, blue / count] as [number, number, number] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function colorDistance(left: [number, number, number], right: [number, number, number]) {
+  return Math.hypot(left[0] - right[0], left[1] - right[1], left[2] - right[2]) / 441.7;
+}
+
 const wait = (milliseconds: number) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 
 export function DrawingCanvas({ width, height, registerCapture, getVideoElement }: Props) {
-  const { tool, drawings, selectedId, currentTime, duration, addDrawing, addPlayerTrack, updateDrawing, setSelectedId, setTool } = useEditorStore();
+  const {
+    tool, drawings, selectedId, currentTime, duration, isPlaying, slides, selectedSlideId,
+    addDrawing, addPlayerTrack, appendPlayerTrackingSample, setPlayerTrackStatus,
+    updateDrawing, setSelectedId, setTool,
+  } = useEditorStore();
   const [draft, setDraft] = useState<Draft | null>(null);
   const [detectionMessage, setDetectionMessage] = useState<string | null>(null);
   const [detectionBoxes, setDetectionBoxes] = useState<NormalizedBox[]>([]);
   const [detectionEffect, setDetectionEffect] = useState<DetectionEffect | null>(null);
   const [detectingPlayer, setDetectingPlayer] = useState(false);
+  const [trackingQuality, setTrackingQuality] = useState<"tracking" | "reacquiring" | null>(null);
   const stageRef = useRef<Konva.Stage>(null);
+  const trackingBusyRef = useRef(false);
+  const lastTrackingFrameRef = useRef<Record<string, number>>({});
+  const trackingMissesRef = useRef<Record<string, number>>({});
 
   useEffect(() => {
     const capture = () => {
@@ -98,7 +153,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       name: `${labelFor(type)} ${count}`,
       type,
       startTime: currentTime,
-      endTime: Math.min(duration || currentTime + 3, currentTime + 3),
+      endTime: options?.trackingEnabled ? Math.max(currentTime + .04, duration || currentTime + 3) : Math.min(duration || currentTime + 3, currentTime + 3),
       trackingEnabled: options?.trackingEnabled ?? false,
       target: options?.target,
       keyframes: [],
@@ -114,6 +169,11 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
 
   const placeRingOnPlayer = useCallback(async (click: Point) => {
     if (detectingPlayer) return;
+    if (drawings.some((drawing) => drawing.type === "playerRing" && drawing.trackingEnabled)) {
+      setDetectionMessage("Já existe um tracking ativo. Termine-o antes de selecionar outro jogador.");
+      window.setTimeout(() => setDetectionMessage(null), 3200);
+      return;
+    }
     setDetectionEffect({ phase: "scanning", click });
     const video = getVideoElement?.();
     if (!video || !video.videoWidth || !video.videoHeight || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
@@ -185,7 +245,13 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         id: trackId,
         name: `Jogador ${drawings.filter((item) => item.target?.kind === "player").length + 1}`,
         source: "automatic",
-        status: "seeded",
+        status: "processing",
+        appearanceColor: sampleJerseyColor(video, [
+          match.box.x * video.videoWidth,
+          match.box.y * video.videoHeight,
+          match.box.width * video.videoWidth,
+          match.box.height * video.videoHeight,
+        ]),
         samples: [{ time: currentTime, bbox: match.box, foot, confidence: match.detection.score }],
       };
       addPlayerTrack(track);
@@ -205,6 +271,121 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       setDetectingPlayer(false);
     }
   }, [addPlayerTrack, currentTime, detectingPlayer, drawings, getVideoElement, makeDrawing]);
+
+  const activeSlide = slides.find((slide) => slide.id === selectedSlideId);
+  const activeTrackingDrawing = [...drawings].reverse().find((drawing) => drawing.type === "playerRing" && drawing.trackingEnabled && drawing.target?.kind === "player");
+  const activePlayerTrack = activeTrackingDrawing?.target?.kind === "player" && activeSlide?.content.kind === "video"
+    ? activeSlide.content.playerTracks?.find((track) => track.id === activeTrackingDrawing.target?.trackId)
+    : undefined;
+
+  useEffect(() => {
+    const drawing = activeTrackingDrawing;
+    const track = activePlayerTrack;
+    const video = getVideoElement?.();
+    if (!drawing || !track || !video || !isPlaying || detectingPlayer || trackingBusyRef.current) return;
+    if (currentTime < drawing.startTime || currentTime > drawing.endTime) return;
+
+    const lastProcessed = lastTrackingFrameRef.current[drawing.id] ?? drawing.startTime;
+    if (currentTime < lastProcessed - .3) lastTrackingFrameRef.current[drawing.id] = currentTime - .2;
+    if (currentTime - (lastTrackingFrameRef.current[drawing.id] ?? drawing.startTime) < .14) return;
+
+    const samplesUpToFrame = track.samples.filter((sample) => sample.time <= currentTime + .04);
+    const previous = samplesUpToFrame.at(-1) ?? track.samples.at(-1);
+    if (!previous) return;
+
+    const capturedTime = currentTime;
+    const crop = makeTrackingCrop(video, previous.bbox);
+    const fullFrame = document.createElement("canvas");
+    fullFrame.width = 640;
+    fullFrame.height = Math.round(640 * video.videoHeight / video.videoWidth);
+    fullFrame.getContext("2d")?.drawImage(video, 0, 0, fullFrame.width, fullFrame.height);
+    lastTrackingFrameRef.current[drawing.id] = capturedTime;
+    trackingBusyRef.current = true;
+
+    void (async () => {
+      try {
+        const recentSamples = samplesUpToFrame.slice(-2);
+        const older = recentSamples.length > 1 ? recentSamples[0] : undefined;
+        const elapsed = older ? Math.max(.04, previous.time - older.time) : 1;
+        const predictionTime = Math.max(0, capturedTime - previous.time);
+        const predictedFoot = {
+          x: clamp(previous.foot.x + (older ? (previous.foot.x - older.foot.x) / elapsed * predictionTime : 0), 0, 1),
+          y: clamp(previous.foot.y + (older ? (previous.foot.y - older.foot.y) / elapsed * predictionTime : 0), 0, 1),
+        };
+
+        const toCandidates = (detections: Awaited<ReturnType<typeof detectPlayers>>, source: HTMLCanvasElement, cropData?: typeof crop) => detections.map((detection) => {
+          const box = cropData ? {
+            x: (cropData.sourceX + detection.bbox[0] / source.width * cropData.cropWidth) / video.videoWidth,
+            y: (cropData.sourceY + detection.bbox[1] / source.height * cropData.cropHeight) / video.videoHeight,
+            width: detection.bbox[2] / source.width * cropData.cropWidth / video.videoWidth,
+            height: detection.bbox[3] / source.height * cropData.cropHeight / video.videoHeight,
+          } : {
+            x: detection.bbox[0] / source.width,
+            y: detection.bbox[1] / source.height,
+            width: detection.bbox[2] / source.width,
+            height: detection.bbox[3] / source.height,
+          };
+          return {
+            detection,
+            box,
+            foot: { x: box.x + box.width / 2, y: box.y + box.height },
+            appearanceColor: sampleJerseyColor(source, detection.bbox),
+          };
+        });
+
+        let candidates = toCandidates(await detectPlayers(crop.canvas), crop.canvas, crop);
+        const maximumDistance = Math.max(.045, previous.bbox.height * 1.8);
+        candidates = candidates.filter((candidate) => Math.hypot(candidate.foot.x - predictedFoot.x, candidate.foot.y - predictedFoot.y) <= maximumDistance);
+
+        if (!candidates.length) {
+          const fullCandidates = toCandidates(await detectPlayers(fullFrame), fullFrame);
+          candidates = fullCandidates.filter((candidate) => Math.hypot(candidate.foot.x - predictedFoot.x, candidate.foot.y - predictedFoot.y) <= Math.max(.09, previous.bbox.height * 2.8));
+        }
+
+        const ranked = candidates.map((candidate) => {
+          const spatial = Math.hypot(candidate.foot.x - predictedFoot.x, candidate.foot.y - predictedFoot.y) / Math.max(.018, previous.bbox.height);
+          const sizeChange = Math.abs(Math.log(Math.max(.15, candidate.box.height / Math.max(.001, previous.bbox.height))));
+          const appearance = track.appearanceColor && candidate.appearanceColor ? colorDistance(track.appearanceColor, candidate.appearanceColor) : 0;
+          return { ...candidate, cost: spatial + sizeChange * .42 + appearance * .7 - candidate.detection.score * .28 };
+        }).sort((left, right) => left.cost - right.cost);
+        const match = ranked[0];
+
+        if (!match) {
+          const misses = (trackingMissesRef.current[drawing.id] ?? 0) + 1;
+          trackingMissesRef.current[drawing.id] = misses;
+          setTrackingQuality("reacquiring");
+          if (misses >= 8) setPlayerTrackStatus(track.id, "needs-review");
+          return;
+        }
+
+        if (!useEditorStore.getState().drawings.find((item) => item.id === drawing.id)?.trackingEnabled) return;
+        trackingMissesRef.current[drawing.id] = 0;
+        setTrackingQuality("tracking");
+        const initial = track.samples[0];
+        const scale = clamp(match.box.height / Math.max(.001, initial.bbox.height), .55, 2.2);
+        appendPlayerTrackingSample(
+          drawing.id,
+          track.id,
+          { time: capturedTime, bbox: match.box, foot: match.foot, confidence: match.detection.score },
+          { time: capturedTime, x: match.foot.x - initial.foot.x, y: match.foot.y - initial.foot.y, scaleX: scale, scaleY: scale },
+        );
+      } catch {
+        setTrackingQuality("reacquiring");
+      } finally {
+        trackingBusyRef.current = false;
+      }
+    })();
+  }, [activePlayerTrack, activeTrackingDrawing, appendPlayerTrackingSample, currentTime, detectingPlayer, getVideoElement, isPlaying, setPlayerTrackStatus]);
+
+  const stopActiveTracking = useCallback(() => {
+    if (!activeTrackingDrawing || activeTrackingDrawing.target?.kind !== "player") return;
+    updateDrawing(activeTrackingDrawing.id, {
+      trackingEnabled: false,
+      endTime: Math.max(activeTrackingDrawing.startTime + .04, currentTime),
+    });
+    setPlayerTrackStatus(activeTrackingDrawing.target.trackId, "ready");
+    setTrackingQuality(null);
+  }, [activeTrackingDrawing, currentTime, setPlayerTrackStatus, updateDrawing]);
 
   const finishPolygon = useCallback(() => {
     if (draft?.tool !== "polygon") return;
@@ -375,6 +556,16 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
             <span>JOGADOR IDENTIFICADO · {Math.round((detectionEffect.score ?? 0) * 100)}%</span>
           </div>
         )}
+      </div>
+    )}
+    {activeTrackingDrawing && activePlayerTrack && (
+      <div className={`player-tracking-hud ${trackingQuality === "reacquiring" ? "is-reacquiring" : ""}`}>
+        <span className="tracking-live-dot" />
+        <div>
+          <strong>{trackingQuality === "reacquiring" ? "A RECUPERAR JOGADOR" : isPlaying ? "TRACKING ATIVO" : "TRACKING PRONTO"}</strong>
+          <small>{isPlaying ? `${activePlayerTrack.samples.length} posições analisadas` : "Reproduza o vídeo para acompanhar"}</small>
+        </div>
+        <button type="button" onClick={stopActiveTracking}>Parar</button>
       </div>
     )}
     {detectionMessage && <div className={`player-detection-toast${detectionEffect?.phase === "scanning" ? " loading" : ""}`}>{detectionMessage}</div>}

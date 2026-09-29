@@ -105,6 +105,12 @@ button:disabled { opacity: .3; cursor: default; }
 @keyframes player-scan-rotate { to { transform: rotate(360deg); } }
 @keyframes player-lock-in { from { opacity: 0; transform: scale(1.55); } to { opacity: 1; transform: scale(1); } }
 @keyframes player-lock-scan { from { top: 4%; } to { top: 96%; } }
+.player-tracking-hud { position: absolute; right: 16px; top: 16px; z-index: 5; display: flex; align-items: center; gap: 9px; min-width: 210px; padding: 8px 9px 8px 11px; border: 1px solid #a3ff1255; border-radius: 7px; background: linear-gradient(135deg, #081108f2, #101712ed); box-shadow: 0 8px 28px #0009, inset 0 1px #ffffff0d; color: #eaffca; pointer-events: auto; backdrop-filter: blur(8px); }
+.player-tracking-hud > div { min-width: 0; flex: 1; }.player-tracking-hud strong, .player-tracking-hud small { display: block; }.player-tracking-hud strong { color: #baff55; font-size: 9px; letter-spacing: .09em; }.player-tracking-hud small { margin-top: 2px; color: #819079; font-size: 8px; }
+.tracking-live-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: #a3ff12; box-shadow: 0 0 0 4px #a3ff1218, 0 0 10px #a3ff12; animation: tracking-live-pulse 1.15s ease-in-out infinite; }
+.player-tracking-hud button { height: 26px; padding: 0 9px; border: 1px solid #ff6b7d55; border-radius: 4px; background: #38141a; color: #ff9baa; font-size: 9px; font-weight: 700; cursor: pointer; }.player-tracking-hud button:hover { border-color: #ff6b7d; background: #4a1820; }
+.player-tracking-hud.is-reacquiring { border-color: #ffb34766; }.player-tracking-hud.is-reacquiring strong { color: #ffc46d; }.player-tracking-hud.is-reacquiring .tracking-live-dot { background: #ffb347; box-shadow: 0 0 0 4px #ffb34718, 0 0 10px #ffb347; }
+@keyframes tracking-live-pulse { 50% { opacity: .45; transform: scale(.78); } }
 .empty-video { width: min(440px, calc(100% - 50px)); min-height: 250px; display: flex; align-items: center; flex-direction: column; justify-content: center; gap: 8px; border: 1px dashed #343b40; border-radius: 11px; color: var(--text); background: #111518b3; cursor: pointer; }
 .empty-video:hover { border-color: #a3ff1277; background: #141a18; }
 .empty-video-icon { width: 58px; height: 58px; display: grid; place-items: center; border: 1px solid #30373a; border-radius: 50%; color: var(--lime); margin-bottom: 5px; background: #171c1f; }
