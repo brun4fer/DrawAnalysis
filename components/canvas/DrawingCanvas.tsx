@@ -97,6 +97,24 @@ function colorDistance(left: [number, number, number], right: [number, number, n
   return Math.hypot(left[0] - right[0], left[1] - right[1], left[2] - right[2]) / 441.7;
 }
 
+function touchesFrameEdge(box: NormalizedBox, margin = .025) {
+  return box.x <= margin
+    || box.y <= margin
+    || box.x + box.width >= 1 - margin
+    || box.y + box.height >= 1 - margin;
+}
+
+function isMovingOutOfFrame(current: PlayerTrack["samples"][number], previous?: PlayerTrack["samples"][number]) {
+  if (!previous) return false;
+  const velocityX = current.foot.x - previous.foot.x;
+  const velocityY = current.foot.y - previous.foot.y;
+  const margin = .015;
+  return (current.bbox.x <= margin && velocityX < -.001)
+    || (current.bbox.x + current.bbox.width >= 1 - margin && velocityX > .001)
+    || (current.bbox.y <= margin && velocityY < -.001)
+    || (current.bbox.y + current.bbox.height >= 1 - margin && velocityY > .001);
+}
+
 const wait = (milliseconds: number) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 
 export function DrawingCanvas({ width, height, registerCapture, getVideoElement }: Props) {
@@ -295,10 +313,6 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
 
     const capturedTime = currentTime;
     const crop = makeTrackingCrop(video, previous.bbox);
-    const fullFrame = document.createElement("canvas");
-    fullFrame.width = 640;
-    fullFrame.height = Math.round(640 * video.videoHeight / video.videoWidth);
-    fullFrame.getContext("2d")?.drawImage(video, 0, 0, fullFrame.width, fullFrame.height);
     lastTrackingFrameRef.current[drawing.id] = capturedTime;
     trackingBusyRef.current = true;
 
@@ -313,17 +327,24 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
           y: clamp(previous.foot.y + (older ? (previous.foot.y - older.foot.y) / elapsed * predictionTime : 0), 0, 1),
         };
 
-        const toCandidates = (detections: Awaited<ReturnType<typeof detectPlayers>>, source: HTMLCanvasElement, cropData?: typeof crop) => detections.map((detection) => {
-          const box = cropData ? {
-            x: (cropData.sourceX + detection.bbox[0] / source.width * cropData.cropWidth) / video.videoWidth,
-            y: (cropData.sourceY + detection.bbox[1] / source.height * cropData.cropHeight) / video.videoHeight,
-            width: detection.bbox[2] / source.width * cropData.cropWidth / video.videoWidth,
-            height: detection.bbox[3] / source.height * cropData.cropHeight / video.videoHeight,
-          } : {
-            x: detection.bbox[0] / source.width,
-            y: detection.bbox[1] / source.height,
-            width: detection.bbox[2] / source.width,
-            height: detection.bbox[3] / source.height,
+        if (isMovingOutOfFrame(previous, older)) {
+          updateDrawing(drawing.id, {
+            trackingEnabled: false,
+            endTime: Math.max(drawing.startTime + .04, previous.time),
+          });
+          setPlayerTrackStatus(track.id, "ready");
+          setTrackingQuality(null);
+          setDetectionMessage("Tracking terminado: o jogador saiu do enquadramento.");
+          window.setTimeout(() => setDetectionMessage(null), 3600);
+          return;
+        }
+
+        const toCandidates = (detections: Awaited<ReturnType<typeof detectPlayers>>, source: HTMLCanvasElement) => detections.map((detection) => {
+          const box = {
+            x: (crop.sourceX + detection.bbox[0] / source.width * crop.cropWidth) / video.videoWidth,
+            y: (crop.sourceY + detection.bbox[1] / source.height * crop.cropHeight) / video.videoHeight,
+            width: detection.bbox[2] / source.width * crop.cropWidth / video.videoWidth,
+            height: detection.bbox[3] / source.height * crop.cropHeight / video.videoHeight,
           };
           return {
             detection,
@@ -333,28 +354,41 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
           };
         });
 
-        let candidates = toCandidates(await detectPlayers(crop.canvas), crop.canvas, crop);
-        const maximumDistance = Math.max(.045, previous.bbox.height * 1.8);
-        candidates = candidates.filter((candidate) => Math.hypot(candidate.foot.x - predictedFoot.x, candidate.foot.y - predictedFoot.y) <= maximumDistance);
-
-        if (!candidates.length) {
-          const fullCandidates = toCandidates(await detectPlayers(fullFrame), fullFrame);
-          candidates = fullCandidates.filter((candidate) => Math.hypot(candidate.foot.x - predictedFoot.x, candidate.foot.y - predictedFoot.y) <= Math.max(.09, previous.bbox.height * 2.8));
-        }
-
-        const ranked = candidates.map((candidate) => {
-          const spatial = Math.hypot(candidate.foot.x - predictedFoot.x, candidate.foot.y - predictedFoot.y) / Math.max(.018, previous.bbox.height);
-          const sizeChange = Math.abs(Math.log(Math.max(.15, candidate.box.height / Math.max(.001, previous.bbox.height))));
+        const maximumDistance = Math.max(.022, previous.bbox.height * .82);
+        const ranked = toCandidates(await detectPlayers(crop.canvas), crop.canvas).map((candidate) => {
+          const absoluteDistance = Math.hypot(candidate.foot.x - predictedFoot.x, candidate.foot.y - predictedFoot.y);
+          const spatial = absoluteDistance / Math.max(.018, previous.bbox.height);
+          const sizeRatio = candidate.box.height / Math.max(.001, previous.bbox.height);
+          const sizeChange = Math.abs(Math.log(Math.max(.15, sizeRatio)));
           const appearance = track.appearanceColor && candidate.appearanceColor ? colorDistance(track.appearanceColor, candidate.appearanceColor) : 0;
-          return { ...candidate, cost: spatial + sizeChange * .42 + appearance * .7 - candidate.detection.score * .28 };
-        }).sort((left, right) => left.cost - right.cost);
-        const match = ranked[0];
+          const personAspect = candidate.box.height * video.videoHeight / Math.max(1, candidate.box.width * video.videoWidth);
+          return { ...candidate, absoluteDistance, sizeRatio, appearance, personAspect, cost: spatial + sizeChange * .58 + appearance * 1.15 - candidate.detection.score * .22 };
+        }).filter((candidate) => candidate.absoluteDistance <= maximumDistance
+          && candidate.sizeRatio >= .62
+          && candidate.sizeRatio <= 1.58
+          && candidate.personAspect >= .82
+          && (!track.appearanceColor || !candidate.appearanceColor || candidate.appearance <= .3)
+        ).sort((left, right) => left.cost - right.cost);
+        const ambiguous = ranked.length > 1 && ranked[1].cost - ranked[0].cost < .14;
+        const match = ambiguous ? undefined : ranked[0];
 
         if (!match) {
           const misses = (trackingMissesRef.current[drawing.id] ?? 0) + 1;
           trackingMissesRef.current[drawing.id] = misses;
           setTrackingQuality("reacquiring");
-          if (misses >= 8) setPlayerTrackStatus(track.id, "needs-review");
+          const leftFrame = touchesFrameEdge(previous.bbox);
+          if (leftFrame || misses >= 4) {
+            updateDrawing(drawing.id, {
+              trackingEnabled: false,
+              endTime: Math.max(drawing.startTime + .04, previous.time),
+            });
+            setPlayerTrackStatus(track.id, leftFrame ? "ready" : "needs-review");
+            setTrackingQuality(null);
+            setDetectionMessage(leftFrame
+              ? "Tracking terminado: o jogador saiu do enquadramento."
+              : "Tracking terminado: deixou de ser possível confirmar a identidade do jogador.");
+            window.setTimeout(() => setDetectionMessage(null), 3600);
+          }
           return;
         }
 
@@ -362,20 +396,45 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         trackingMissesRef.current[drawing.id] = 0;
         setTrackingQuality("tracking");
         const initial = track.samples[0];
-        const scale = clamp(match.box.height / Math.max(.001, initial.bbox.height), .55, 2.2);
+        const predictedBox = {
+          x: previous.bbox.x + predictedFoot.x - previous.foot.x,
+          y: previous.bbox.y + predictedFoot.y - previous.foot.y,
+          width: previous.bbox.width,
+          height: previous.bbox.height,
+        };
+        const detectionWeight = .55;
+        const smoothBox = {
+          x: match.box.x * detectionWeight + predictedBox.x * (1 - detectionWeight),
+          y: match.box.y * detectionWeight + predictedBox.y * (1 - detectionWeight),
+          width: match.box.width * detectionWeight + predictedBox.width * (1 - detectionWeight),
+          height: match.box.height * detectionWeight + predictedBox.height * (1 - detectionWeight),
+        };
+        const smoothFoot = { x: smoothBox.x + smoothBox.width / 2, y: smoothBox.y + smoothBox.height };
+        const scale = clamp(smoothBox.height / Math.max(.001, initial.bbox.height), .55, 2.2);
         appendPlayerTrackingSample(
           drawing.id,
           track.id,
-          { time: capturedTime, bbox: match.box, foot: match.foot, confidence: match.detection.score },
-          { time: capturedTime, x: match.foot.x - initial.foot.x, y: match.foot.y - initial.foot.y, scaleX: scale, scaleY: scale },
+          { time: capturedTime, bbox: smoothBox, foot: smoothFoot, confidence: match.detection.score },
+          { time: capturedTime, x: smoothFoot.x - initial.foot.x, y: smoothFoot.y - initial.foot.y, scaleX: scale, scaleY: scale },
         );
       } catch {
+        const misses = (trackingMissesRef.current[drawing.id] ?? 0) + 1;
+        trackingMissesRef.current[drawing.id] = misses;
         setTrackingQuality("reacquiring");
+        if (touchesFrameEdge(previous.bbox) || misses >= 4) {
+          updateDrawing(drawing.id, { trackingEnabled: false, endTime: Math.max(drawing.startTime + .04, previous.time) });
+          setPlayerTrackStatus(track.id, touchesFrameEdge(previous.bbox) ? "ready" : "needs-review");
+          setTrackingQuality(null);
+          setDetectionMessage(touchesFrameEdge(previous.bbox)
+            ? "Tracking terminado: o jogador saiu do enquadramento."
+            : "Tracking terminado: deixou de ser possível confirmar a identidade do jogador.");
+          window.setTimeout(() => setDetectionMessage(null), 3600);
+        }
       } finally {
         trackingBusyRef.current = false;
       }
     })();
-  }, [activePlayerTrack, activeTrackingDrawing, appendPlayerTrackingSample, currentTime, detectingPlayer, getVideoElement, isPlaying, setPlayerTrackStatus]);
+  }, [activePlayerTrack, activeTrackingDrawing, appendPlayerTrackingSample, currentTime, detectingPlayer, getVideoElement, isPlaying, setPlayerTrackStatus, updateDrawing]);
 
   const stopActiveTracking = useCallback(() => {
     if (!activeTrackingDrawing || activeTrackingDrawing.target?.kind !== "player") return;

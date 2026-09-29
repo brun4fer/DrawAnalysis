@@ -64,6 +64,22 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
 
   useEffect(() => {
     const video = videoRef.current;
+    if (!video || typeof video.requestVideoFrameCallback !== "function") return;
+    let callbackId = 0;
+    let lastPublishedTime = -1;
+    const publishFrameTime: VideoFrameRequestCallback = (_now, metadata) => {
+      if (Math.abs(metadata.mediaTime - lastPublishedTime) >= 1 / 30) {
+        lastPublishedTime = metadata.mediaTime;
+        setCurrentTime(metadata.mediaTime);
+      }
+      callbackId = video.requestVideoFrameCallback(publishFrameTime);
+    };
+    callbackId = video.requestVideoFrameCallback(publishFrameTime);
+    return () => video.cancelVideoFrameCallback(callbackId);
+  }, [source, setCurrentTime]);
+
+  useEffect(() => {
+    const video = videoRef.current;
     if (video && Number.isFinite(video.duration) && Math.abs(video.currentTime - currentTime) > 0.08) {
       video.currentTime = currentTime;
     }

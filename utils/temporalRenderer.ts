@@ -16,6 +16,15 @@ export function getObjectStateAtTime(object: DrawingObject, currentTime: number)
     : 0;
   const value = (key: keyof ObjectTransform) => {
     const base = object.transform[key];
+    const last = frames.at(-1);
+    const previous = frames.at(-2);
+    if (object.trackingEnabled && last && previous && currentTime > last.time && key !== "rotation") {
+      const lastValue = last[key] ?? base;
+      const previousValue = previous[key] ?? base;
+      const frameDuration = Math.max(.04, last.time - previous.time);
+      const predictionDuration = Math.min(.32, currentTime - last.time);
+      return lastValue + (lastValue - previousValue) / frameDuration * predictionDuration;
+    }
     const left = bounds.left?.[key] ?? base;
     const right = bounds.right?.[key] ?? left;
     return left + (right - left) * progress;
