@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import Konva from "konva";
-import { Arrow, Ellipse, Group, Line, Rect, Text, Transformer } from "react-konva";
+import { Arc, Arrow, Ellipse, Group, Line, Rect, Text, Transformer } from "react-konva";
 import type { DrawingObject } from "@/types/drawing";
 import { flattenPoints } from "@/utils/coordinates";
 import { getObjectStateAtTime } from "@/utils/temporalRenderer";
@@ -23,6 +23,10 @@ function withAlpha(color: string, alpha: number) {
   if (!hex) return color;
   const value = Number.parseInt(hex, 16);
   return `rgba(${value >> 16}, ${(value >> 8) & 255}, ${value & 255}, ${alpha})`;
+}
+
+function solidColor(color: string, fallback: string) {
+  return color.match(/^#[0-9a-f]{6}/i)?.[0] ?? fallback;
 }
 
 export function DrawingShape({ object, width, height, currentTime, selected, canEdit, onSelect, onChange }: Props) {
@@ -60,11 +64,68 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         const y = data.center.y * height;
         const radiusX = data.radiusX * width;
         const radiusY = data.radiusY * height;
+        const primaryColor = solidColor(object.style.stroke, "#f7f8f2");
+        const secondaryColor = solidColor(object.style.fill, "#1454c4");
+        const glowColor = solidColor(object.style.shadowColor, "#f1e72b");
+        const glowStrength = object.style.shadowOpacity;
+        const bandRatio = Math.min(.5, .22 + object.style.strokeWidth * .025);
+        const innerRadius = radiusX * (1 - bandRatio);
         return (
-          <Group>
-            <Ellipse {...common} x={x} y={y} radiusX={radiusX} radiusY={radiusY} fill={withAlpha(object.style.stroke, .16)} />
-            <Ellipse {...common} x={x} y={y} radiusX={radiusX * .72} radiusY={radiusY * .72} fill={withAlpha(object.style.stroke, .06)} stroke={withAlpha(object.style.stroke, .62)} strokeWidth={Math.max(1, object.style.strokeWidth * .45)} shadowEnabled={false} />
-            <Ellipse x={x} y={y - radiusY * .08} radiusX={radiusX * .18} radiusY={radiusY * .18} fill={withAlpha("#ffffff", .72)} opacity={temporalState.opacity} listening={false} />
+          <Group opacity={temporalState.opacity}>
+            <Ellipse
+              x={x + object.style.shadowOffsetX}
+              y={y + radiusY * .42 + object.style.shadowOffsetY}
+              radiusX={radiusX * 1.03}
+              radiusY={radiusY * .72}
+              fill="#000000"
+              opacity={.3 * object.style.shadowOpacity}
+              shadowColor="#000000"
+              shadowBlur={Math.max(2, object.style.shadowBlur * .25)}
+              shadowOpacity={.45}
+              listening={false}
+            />
+            <Ellipse
+              x={x}
+              y={y}
+              radiusX={radiusX * 1.14}
+              radiusY={radiusY * 1.25}
+              fillRadialGradientStartPoint={{ x: 0, y: 0 }}
+              fillRadialGradientEndPoint={{ x: 0, y: 0 }}
+              fillRadialGradientStartRadius={0}
+              fillRadialGradientEndRadius={radiusX * 1.14}
+              fillRadialGradientColorStops={[0, withAlpha(glowColor, .5 * glowStrength), .46, withAlpha(glowColor, .3 * glowStrength), 1, withAlpha(glowColor, 0)]}
+              shadowColor={glowColor}
+              shadowBlur={object.style.shadowBlur}
+              shadowOpacity={object.style.shadowOpacity * .75}
+              listening={false}
+            />
+            <Ellipse
+              x={x}
+              y={y}
+              radiusX={innerRadius * .98}
+              radiusY={radiusY * (innerRadius / radiusX) * .98}
+              fill={withAlpha(glowColor, .2 * glowStrength)}
+              listening={false}
+            />
+            <Group x={x} y={y} scaleY={radiusY / radiusX}>
+              {Array.from({ length: 8 }, (_, index) => (
+                <Arc
+                  key={index}
+                  innerRadius={innerRadius}
+                  outerRadius={radiusX}
+                  angle={34}
+                  rotation={-107 + index * 45}
+                  fill={index % 2 === 0 ? primaryColor : secondaryColor}
+                  stroke={withAlpha("#07101b", .48)}
+                  strokeWidth={Math.max(.7, object.style.strokeWidth * .16)}
+                  shadowColor="#000000"
+                  shadowBlur={4}
+                  shadowOffsetY={3}
+                  shadowOpacity={.55}
+                />
+              ))}
+            </Group>
+            <Ellipse x={x} y={y} radiusX={radiusX} radiusY={radiusY} fill="#00000001" />
           </Group>
         );
       }

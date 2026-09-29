@@ -7,7 +7,7 @@ export interface PlayerDetection {
 
 type CocoModel = {
   detect: (
-    input: HTMLVideoElement,
+    input: HTMLVideoElement | HTMLCanvasElement,
     maxNumBoxes?: number,
     minScore?: number,
   ) => Promise<Array<{ bbox: [number, number, number, number]; class: string; score: number }>>;
@@ -36,9 +36,9 @@ async function loadModel(): Promise<CocoModel> {
   return modelPromise;
 }
 
-export async function detectPlayers(video: HTMLVideoElement): Promise<PlayerDetection[]> {
+export async function detectPlayers(input: HTMLVideoElement | HTMLCanvasElement): Promise<PlayerDetection[]> {
   const model = await loadModel();
-  const detections = await model.detect(video, 50, 0.18);
+  const detections = await model.detect(input, 50, 0.18);
   return detections
     .filter((item) => item.class === "person")
     .map(({ bbox, score }) => ({ bbox, score }));

@@ -28,16 +28,32 @@ const labelFor = (kind: DrawingObject["type"]) => ({
 
 const clamp = (value: number, minimum: number, maximum: number) => Math.max(minimum, Math.min(maximum, value));
 
-function distanceToBox(point: Point, box: NormalizedBox) {
-  const dx = Math.max(box.x - point.x, 0, point.x - box.x - box.width);
-  const dy = Math.max(box.y - point.y, 0, point.y - box.y - box.height);
-  return Math.hypot(dx, dy);
+function containsPoint(box: NormalizedBox, point: Point) {
+  const paddingX = Math.min(0.006, box.width * 0.12);
+  const paddingY = Math.min(0.008, box.height * 0.08);
+  return point.x >= box.x - paddingX
+    && point.x <= box.x + box.width + paddingX
+    && point.y >= box.y - paddingY
+    && point.y <= box.y + box.height + paddingY;
+}
+
+function makeDetectionCrop(video: HTMLVideoElement, click: Point) {
+  const cropWidth = video.videoWidth * .22;
+  const cropHeight = video.videoHeight * .45;
+  const sourceX = clamp(click.x * video.videoWidth - cropWidth / 2, 0, video.videoWidth - cropWidth);
+  const sourceY = clamp(click.y * video.videoHeight - cropHeight / 2, 0, video.videoHeight - cropHeight);
+  const canvas = document.createElement("canvas");
+  canvas.width = 384;
+  canvas.height = Math.round(canvas.width * cropHeight / cropWidth);
+  canvas.getContext("2d")?.drawImage(video, sourceX, sourceY, cropWidth, cropHeight, 0, 0, canvas.width, canvas.height);
+  return { canvas, sourceX, sourceY, cropWidth, cropHeight };
 }
 
 export function DrawingCanvas({ width, height, registerCapture, getVideoElement }: Props) {
   const { tool, drawings, selectedId, currentTime, duration, addDrawing, addPlayerTrack, updateDrawing, setSelectedId, setTool } = useEditorStore();
   const [draft, setDraft] = useState<Draft | null>(null);
   const [detectionMessage, setDetectionMessage] = useState<string | null>(null);
+  const [detectionBoxes, setDetectionBoxes] = useState<NormalizedBox[]>([]);
   const [detectingPlayer, setDetectingPlayer] = useState(false);
   const stageRef = useRef<Konva.Stage>(null);
 
@@ -69,7 +85,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
   ) => {
     const count = drawings.filter((item) => item.type === type).length + 1;
     const effectStyle = type === "playerRing"
-      ? { stroke: "#a3ff12", fill: "#a3ff1240", strokeWidth: 5, shadowColor: "#a3ff12", shadowBlur: 18, shadowOpacity: .85 }
+      ? { stroke: "#f7f8f2", fill: "#1454c4", strokeWidth: 5, shadowColor: "#f1e72b", shadowBlur: 26, shadowOpacity: .9 }
       : type === "spotlight"
         ? { stroke: "#fff8c7", fill: "#fff8c733", strokeWidth: 2, shadowColor: "#fff2a8", shadowBlur: 22, shadowOpacity: .6 }
         : {};
@@ -106,7 +122,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     setDetectionMessage("A detetar o jogador neste fotograma…");
     try {
       const detections = await detectPlayers(video);
-      const boxes = detections.map((detection) => ({
+      let boxes = detections.map((detection) => ({
         detection,
         box: {
           x: detection.bbox[0] / video.videoWidth,
@@ -115,15 +131,36 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
           height: detection.bbox[3] / video.videoHeight,
         },
       }));
-      const containing = boxes
-        .filter(({ box }) => click.x >= box.x && click.x <= box.x + box.width && click.y >= box.y && click.y <= box.y + box.height)
-        .sort((a, b) => a.box.width * a.box.height - b.box.width * b.box.height);
-      const nearest = [...boxes].sort((a, b) => distanceToBox(click, a.box) - distanceToBox(click, b.box))[0];
-      const match = containing[0] ?? (nearest && distanceToBox(click, nearest.box) <= clamp(nearest.box.height * 0.45, 0.018, 0.07) ? nearest : null);
+      setDetectionBoxes(boxes.map(({ box }) => box));
+      let match = boxes
+        .filter(({ box }) => containsPoint(box, click))
+        .sort((a, b) => a.box.width * a.box.height - b.box.width * b.box.height)[0];
 
       if (!match) {
-        setDetectionMessage("Não encontrei um jogador nesse ponto. Tente clicar no tronco ou na cabeça.");
-        window.setTimeout(() => setDetectionMessage(null), 3600);
+        setDetectionMessage("A ampliar a zona clicada para procurar o jogador…");
+        const crop = makeDetectionCrop(video, click);
+        const cropDetections = await detectPlayers(crop.canvas);
+        const cropBoxes = cropDetections.map((detection) => ({
+          detection,
+          box: {
+            x: (crop.sourceX + detection.bbox[0] / crop.canvas.width * crop.cropWidth) / video.videoWidth,
+            y: (crop.sourceY + detection.bbox[1] / crop.canvas.height * crop.cropHeight) / video.videoHeight,
+            width: detection.bbox[2] / crop.canvas.width * crop.cropWidth / video.videoWidth,
+            height: detection.bbox[3] / crop.canvas.height * crop.cropHeight / video.videoHeight,
+          },
+        }));
+        boxes = [...boxes, ...cropBoxes];
+        setDetectionBoxes(boxes.map(({ box }) => box));
+        match = cropBoxes
+          .filter(({ box }) => containsPoint(box, click))
+          .sort((a, b) => a.box.width * a.box.height - b.box.width * b.box.height)[0];
+      }
+
+      if (!match) {
+        setDetectionMessage(boxes.length
+          ? "Esse jogador não foi reconhecido. As caixas mostram os jogadores detetados; tente outro ponto do corpo."
+          : "Não encontrei jogadores neste fotograma. Tente avançar alguns frames ou usar uma imagem mais próxima.");
+        window.setTimeout(() => { setDetectionMessage(null); setDetectionBoxes([]); }, 4200);
         return;
       }
 
@@ -131,8 +168,8 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         x: clamp(match.box.x + match.box.width / 2, 0, 1),
         y: clamp(match.box.y + match.box.height, 0, 1),
       };
-      const radiusX = clamp(match.box.width * 1.35, 0.018, 0.07);
-      const radiusY = clamp(radiusX * 0.42, 0.008, 0.028);
+      const radiusX = clamp(match.box.width * 1.7, 0.025, 0.08);
+      const radiusY = clamp(radiusX * 0.58, 0.01, 0.042);
       const trackId = createId();
       const track: PlayerTrack = {
         id: trackId,
@@ -147,9 +184,11 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         { kind: "playerRing", center: foot, radiusX, radiusY },
         { target: { kind: "player", trackId, anchor: "feet" }, trackingEnabled: true },
       );
+      setDetectionBoxes([]);
       setDetectionMessage(`Jogador detetado · ${Math.round(match.detection.score * 100)}%`);
       window.setTimeout(() => setDetectionMessage(null), 2200);
     } catch {
+      setDetectionBoxes([]);
       setDetectionMessage("Não foi possível analisar este fotograma. Confirme o acesso ao vídeo e tente novamente.");
       window.setTimeout(() => setDetectionMessage(null), 4200);
     } finally {
@@ -266,6 +305,20 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       onDblTap={finishPolygon}
     >
       <Layer>
+        {detectionBoxes.map((box, index) => (
+          <Rect
+            key={`detected-player-${index}`}
+            listening={false}
+            x={box.x * width}
+            y={box.y * height}
+            width={box.width * width}
+            height={box.height * height}
+            stroke="#ffb347"
+            strokeWidth={1.5}
+            dash={[5, 4]}
+            fill="#ffb3470d"
+          />
+        ))}
         {visible.map((object) => (
           <DrawingShape
             key={object.id}

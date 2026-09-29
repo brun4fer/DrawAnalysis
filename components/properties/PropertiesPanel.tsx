@@ -43,6 +43,7 @@ export function PropertiesPanel() {
   };
   const duration = Math.max(0, object.endTime - object.startTime);
   const fillColor = object.style.fill.startsWith("#") ? object.style.fill.slice(0, 7) : "#a3ff12";
+  const isPlayerRing = object.type === "playerRing";
   const playerTrack = object.target?.kind === "player" && activeSlide?.content.kind === "video"
     ? activeSlide.content.playerTracks?.find((track) => track.id === object.target?.trackId)
     : undefined;
@@ -58,13 +59,13 @@ export function PropertiesPanel() {
       <section className="property-section">
         <h3>APARÊNCIA</h3>
         <div className="effect-presets"><button onClick={() => applyEffectPreset("clean")}>Clean</button><button onClick={() => applyEffectPreset("glow")}>TV Glow</button><button onClick={() => applyEffectPreset("shadow")}>Sombra</button></div>
-        <label className="field-row"><FieldLabel>Traço</FieldLabel><input type="color" value={object.style.stroke} onChange={(e) => updateStyle({ stroke: e.target.value })} /><code>{object.style.stroke}</code></label>
+        <label className="field-row"><FieldLabel>{isPlayerRing ? "Segmento 1" : "Traço"}</FieldLabel><input type="color" value={object.style.stroke.slice(0, 7)} onChange={(e) => updateStyle({ stroke: e.target.value })} /><code>{object.style.stroke.slice(0, 7)}</code></label>
         {!["arrow", "line", "freeDraw", "text"].includes(object.type) && (
-          <label className="field-row"><FieldLabel>Preench.</FieldLabel><input type="color" value={fillColor} onChange={(e) => updateStyle({ fill: `${e.target.value}33` })} /><code>{fillColor}</code></label>
+          <label className="field-row"><FieldLabel>{isPlayerRing ? "Segmento 2" : "Preench."}</FieldLabel><input type="color" value={fillColor} onChange={(e) => updateStyle({ fill: isPlayerRing ? e.target.value : `${e.target.value}33` })} /><code>{fillColor}</code></label>
         )}
         <label className="stacked-field"><span><FieldLabel>Espessura</FieldLabel><b>{object.style.strokeWidth}px</b></span><input type="range" min={1} max={16} value={object.style.strokeWidth} onChange={(e) => updateStyle({ strokeWidth: Number(e.target.value) })} /></label>
         <label className="stacked-field"><span><FieldLabel>Opacidade</FieldLabel><b>{Math.round(object.style.opacity * 100)}%</b></span><input type="range" min={0.1} max={1} step={0.05} value={object.style.opacity} onChange={(e) => updateStyle({ opacity: Number(e.target.value) })} /></label>
-        <label className="field-row"><FieldLabel>Efeito</FieldLabel><input type="color" value={object.style.shadowColor ?? "#000000"} onChange={(e) => updateStyle({ shadowColor: e.target.value })} /><code>{object.style.shadowColor ?? "#000000"}</code></label>
+        <label className="field-row"><FieldLabel>{isPlayerRing ? "Luz relvado" : "Efeito"}</FieldLabel><input type="color" value={(object.style.shadowColor ?? "#000000").slice(0, 7)} onChange={(e) => updateStyle({ shadowColor: e.target.value })} /><code>{(object.style.shadowColor ?? "#000000").slice(0, 7)}</code></label>
         <label className="stacked-field"><span><FieldLabel>Suavidade</FieldLabel><b>{object.style.shadowBlur ?? 0}px</b></span><input type="range" min={0} max={40} value={object.style.shadowBlur ?? 0} onChange={(e) => updateStyle({ shadowBlur: Number(e.target.value) })} /></label>
         <label className="stacked-field"><span><FieldLabel>Força efeito</FieldLabel><b>{Math.round((object.style.shadowOpacity ?? 0) * 100)}%</b></span><input type="range" min={0} max={1} step={.05} value={object.style.shadowOpacity ?? 0} onChange={(e) => updateStyle({ shadowOpacity: Number(e.target.value) })} /></label>
         <div className="two-fields shadow-offset-fields"><label><FieldLabel>Sombra X</FieldLabel><input type="number" min={-30} max={30} value={object.style.shadowOffsetX ?? 0} onChange={(e) => updateStyle({ shadowOffsetX: Number(e.target.value) })} /></label><label><FieldLabel>Sombra Y</FieldLabel><input type="number" min={-30} max={30} value={object.style.shadowOffsetY ?? 0} onChange={(e) => updateStyle({ shadowOffsetY: Number(e.target.value) })} /></label></div>
