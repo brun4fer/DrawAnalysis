@@ -76,7 +76,7 @@ export interface DrawingKeyframe {
 }
 
 export type DrawingData =
-  | { kind: "playerRing"; center: Point; radiusX: number; radiusY: number }
+  | { kind: "playerRing"; center: Point; radiusX: number; radiusY: number; occlusionWidth?: number }
   | { kind: "spotlight"; target: Point; radiusX: number; radiusY: number; beamHeight: number }
   | { kind: "ellipse"; center: Point; radiusX: number; radiusY: number }
   | { kind: "rectangle"; origin: Point; width: number; height: number }

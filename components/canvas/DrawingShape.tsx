@@ -75,32 +75,52 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         const secondaryColor = solidColor(object.style.fill, "#1454c4");
         const glowColor = solidColor(object.style.shadowColor, "#f1e72b");
         const glowStrength = object.style.shadowOpacity;
-        const bandRatio = Math.min(.5, .22 + object.style.strokeWidth * .025);
-        const innerRadius = radiusX * (1 - bandRatio);
+        const outerBand = Math.min(.34, .17 + object.style.strokeWidth * .018);
+        const outerInnerRadius = radiusX * (1 - outerBand);
+        const innerOuterRadius = radiusX * .62;
+        const innerInnerRadius = radiusX * Math.max(.35, .48 - object.style.strokeWidth * .008);
+        const depthOffset = Math.max(2.5, radiusY * .24);
+        const occlusionPixels = (data.occlusionWidth ?? data.radiusX * .22) * width;
+        const makeSegments = (ringRadius: number) => {
+          const ratio = Math.min(.82, occlusionPixels / Math.max(1, ringRadius * 2));
+          const gapAngle = Math.max(8, Math.min(25, Math.asin(ratio) * 2 * 180 / Math.PI));
+          return Array.from({ length: 8 }, (_, slot) => {
+            const center = -90 + slot * 45;
+            if (slot !== 0) return [{ slot, start: center - 16, angle: 32 }];
+            const partAngle = Math.max(4, 16 - gapAngle / 2);
+            return [
+              { slot, start: center - 16, angle: partAngle },
+              { slot, start: center + gapAngle / 2, angle: partAngle },
+            ];
+          }).flat();
+        };
+        const outerSegments = makeSegments(radiusX);
+        const innerSegments = makeSegments(innerOuterRadius);
         return (
           <Group opacity={temporalState.opacity}>
             <Ellipse
-              x={x + object.style.shadowOffsetX}
-              y={y + radiusY * .42 + object.style.shadowOffsetY}
-              radiusX={radiusX * 1.03}
-              radiusY={radiusY * .72}
+              x={x - radiusX * .28 + object.style.shadowOffsetX}
+              y={y + radiusY * .2 + object.style.shadowOffsetY}
+              radiusX={radiusX * .72}
+              radiusY={radiusY * .25}
+              rotation={-8}
               fill="#000000"
-              opacity={.3 * object.style.shadowOpacity}
+              opacity={.46 * object.style.shadowOpacity}
               shadowColor="#000000"
-              shadowBlur={Math.max(2, object.style.shadowBlur * .25)}
-              shadowOpacity={.45}
+              shadowBlur={Math.max(4, object.style.shadowBlur * .38)}
+              shadowOpacity={.7}
               listening={false}
             />
             <Ellipse
               x={x}
               y={y}
-              radiusX={radiusX * 1.14}
-              radiusY={radiusY * 1.25}
+              radiusX={radiusX * 1.12}
+              radiusY={radiusY * 1.15}
               fillRadialGradientStartPoint={{ x: 0, y: 0 }}
               fillRadialGradientEndPoint={{ x: 0, y: 0 }}
               fillRadialGradientStartRadius={0}
               fillRadialGradientEndRadius={radiusX * 1.14}
-              fillRadialGradientColorStops={[0, withAlpha(glowColor, .5 * glowStrength), .46, withAlpha(glowColor, .3 * glowStrength), 1, withAlpha(glowColor, 0)]}
+              fillRadialGradientColorStops={[0, withAlpha(glowColor, .32 * glowStrength), .48, withAlpha(glowColor, .2 * glowStrength), 1, withAlpha(glowColor, 0)]}
               shadowColor={glowColor}
               shadowBlur={object.style.shadowBlur}
               shadowOpacity={object.style.shadowOpacity * .75}
@@ -108,22 +128,26 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
             />
             <Ellipse
               x={x}
-              y={y}
-              radiusX={innerRadius * .98}
-              radiusY={radiusY * (innerRadius / radiusX) * .98}
-              fill={withAlpha(glowColor, .12 * glowStrength)}
+              y={y + radiusY * .03}
+              radiusX={radiusX * .18}
+              radiusY={radiusY * .18}
+              fill="#000000"
+              opacity={.42}
+              shadowColor="#000000"
+              shadowBlur={Math.max(3, object.style.shadowBlur * .22)}
+              shadowOpacity={.65}
               listening={false}
             />
-            <Group x={x} y={y + Math.max(3, radiusY * .3)} scaleY={radiusY / radiusX} listening={false}>
-              {Array.from({ length: 8 }, (_, index) => {
-                const segmentColor = index % 2 === 0 ? primaryColor : secondaryColor;
+            <Group x={x} y={y + depthOffset} scaleY={radiusY / radiusX} listening={false}>
+              {outerSegments.map((segment, index) => {
+                const segmentColor = segment.slot % 2 === 0 ? primaryColor : secondaryColor;
                 return (
                   <Arc
-                    key={`depth-${index}`}
-                    innerRadius={innerRadius}
+                    key={`outer-depth-${index}`}
+                    innerRadius={outerInnerRadius}
                     outerRadius={radiusX}
-                    angle={34}
-                    rotation={-107 + index * 45}
+                    angle={segment.angle}
+                    rotation={segment.start}
                     fill={shadeColor(segmentColor, -72)}
                     stroke={shadeColor(segmentColor, -105)}
                     strokeWidth={1.2}
@@ -134,17 +158,21 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
                   />
                 );
               })}
+              {innerSegments.map((segment, index) => {
+                const segmentColor = segment.slot % 2 === 0 ? secondaryColor : primaryColor;
+                return <Arc key={`inner-depth-${index}`} innerRadius={innerInnerRadius} outerRadius={innerOuterRadius} angle={segment.angle} rotation={segment.start} fill={shadeColor(segmentColor, -78)} stroke={shadeColor(segmentColor, -110)} strokeWidth={1} />;
+              })}
             </Group>
             <Group x={x} y={y} scaleY={radiusY / radiusX}>
-              {Array.from({ length: 8 }, (_, index) => {
-                const segmentColor = index % 2 === 0 ? primaryColor : secondaryColor;
+              {outerSegments.map((segment, index) => {
+                const segmentColor = segment.slot % 2 === 0 ? primaryColor : secondaryColor;
                 return (
                   <Arc
-                    key={index}
-                    innerRadius={innerRadius}
+                    key={`outer-face-${index}`}
+                    innerRadius={outerInnerRadius}
                     outerRadius={radiusX}
-                    angle={34}
-                    rotation={-107 + index * 45}
+                    angle={segment.angle}
+                    rotation={segment.start}
                     fillLinearGradientStartPoint={{ x: 0, y: -radiusX }}
                     fillLinearGradientEndPoint={{ x: 0, y: radiusX }}
                     fillLinearGradientColorStops={[0, shadeColor(segmentColor, 52), .36, shadeColor(segmentColor, 18), .7, segmentColor, 1, shadeColor(segmentColor, -42)]}
@@ -154,6 +182,27 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
                     shadowBlur={3}
                     shadowOffsetY={2}
                     shadowOpacity={.45}
+                  />
+                );
+              })}
+              {innerSegments.map((segment, index) => {
+                const segmentColor = segment.slot % 2 === 0 ? secondaryColor : primaryColor;
+                return (
+                  <Arc
+                    key={`inner-face-${index}`}
+                    innerRadius={innerInnerRadius}
+                    outerRadius={innerOuterRadius}
+                    angle={segment.angle}
+                    rotation={segment.start}
+                    fillLinearGradientStartPoint={{ x: 0, y: -innerOuterRadius }}
+                    fillLinearGradientEndPoint={{ x: 0, y: innerOuterRadius }}
+                    fillLinearGradientColorStops={[0, shadeColor(segmentColor, 48), .38, shadeColor(segmentColor, 14), .72, segmentColor, 1, shadeColor(segmentColor, -38)]}
+                    stroke={shadeColor(segmentColor, segment.slot % 2 === 0 ? 24 : -24)}
+                    strokeWidth={Math.max(.7, object.style.strokeWidth * .14)}
+                    shadowColor="#000000"
+                    shadowBlur={2}
+                    shadowOffsetY={1.5}
+                    shadowOpacity={.42}
                   />
                 );
               })}

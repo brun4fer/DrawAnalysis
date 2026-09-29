@@ -11,6 +11,7 @@ import { flattenPoints, toNormalized } from "@/utils/coordinates";
 import { createId } from "@/utils/id";
 import { getObjectStateAtTime } from "@/utils/temporalRenderer";
 import { DrawingShape } from "./DrawingShape";
+import { PlayerOcclusionCanvas } from "./PlayerOcclusionCanvas";
 
 interface Props {
   width: number;
@@ -130,6 +131,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
   const [detectingPlayer, setDetectingPlayer] = useState(false);
   const [trackingQuality, setTrackingQuality] = useState<"tracking" | "reacquiring" | null>(null);
   const stageRef = useRef<Konva.Stage>(null);
+  const occlusionCanvasRef = useRef<HTMLCanvasElement>(null);
   const trackingBusyRef = useRef(false);
   const lastTrackingFrameRef = useRef<Record<string, number>>({});
   const trackingMissesRef = useRef<Record<string, number>>({});
@@ -142,6 +144,8 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       selection.forEach((node) => node.hide());
       stage.draw();
       const canvas = stage.toCanvas({ pixelRatio: 1 });
+      const context = canvas.getContext("2d");
+      if (context && occlusionCanvasRef.current) context.drawImage(occlusionCanvasRef.current, 0, 0, canvas.width, canvas.height);
       selection.forEach((node) => node.show());
       stage.draw();
       return canvas;
@@ -166,12 +170,13 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       : type === "spotlight"
         ? { stroke: "#fff8c7", fill: "#fff8c733", strokeWidth: 2, shadowColor: "#fff2a8", shadowBlur: 22, shadowOpacity: .6 }
         : {};
+    const defaultEndTime = type === "playerRing" ? currentTime + 4 : currentTime + 3;
     const object: DrawingObject = {
       id: createId(),
       name: `${labelFor(type)} ${count}`,
       type,
       startTime: currentTime,
-      endTime: options?.trackingEnabled ? Math.max(currentTime + .04, duration || currentTime + 3) : Math.min(duration || currentTime + 3, currentTime + 3),
+      endTime: options?.trackingEnabled ? Math.max(currentTime + .04, duration || defaultEndTime) : Math.min(duration || defaultEndTime, defaultEndTime),
       trackingEnabled: options?.trackingEnabled ?? false,
       target: options?.target,
       keyframes: [],
@@ -263,7 +268,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         id: trackId,
         name: `Jogador ${drawings.filter((item) => item.target?.kind === "player").length + 1}`,
         source: "automatic",
-        status: "processing",
+        status: "seeded",
         appearanceColor: sampleJerseyColor(video, [
           match.box.x * video.videoWidth,
           match.box.y * video.videoHeight,
@@ -275,8 +280,8 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       addPlayerTrack(track);
       makeDrawing(
         "playerRing",
-        { kind: "playerRing", center: foot, radiusX, radiusY },
-        { target: { kind: "player", trackId, anchor: "feet" }, trackingEnabled: true },
+        { kind: "playerRing", center: foot, radiusX, radiusY, occlusionWidth: match.box.width * .7 },
+        { target: { kind: "player", trackId, anchor: "feet" }, trackingEnabled: false },
       );
       setDetectionBoxes([]);
       window.setTimeout(() => { setDetectionMessage(null); setDetectionEffect(null); }, 1500);
@@ -589,6 +594,15 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         {tool === "text" && <Text text="Clique para adicionar texto" x={16} y={16} fill="#fff" opacity={0.5} fontSize={13} />}
       </Layer>
     </Stage>
+    <PlayerOcclusionCanvas
+      ref={occlusionCanvasRef}
+      drawings={drawings}
+      playerTracks={activeSlide?.content.kind === "video" ? activeSlide.content.playerTracks : undefined}
+      currentTime={currentTime}
+      width={width}
+      height={height}
+      getVideoElement={getVideoElement}
+    />
     {detectionEffect && (
       <div className={`player-identification-effect phase-${detectionEffect.phase}`} aria-hidden="true">
         {detectionEffect.phase !== "locked" && (

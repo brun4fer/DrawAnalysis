@@ -84,7 +84,9 @@ button:disabled { opacity: .3; cursor: default; }
 .video-frame video { display: block; width: 100%; height: 100%; object-fit: fill; user-select: none; }
 .canvas-overlay { position: absolute; inset: 0; touch-action: none; }
 .drawing-stage canvas { touch-action: none; }
+.drawing-stage { position: relative; z-index: 1; }
 .drawing-stage:not(.tool-select) canvas { cursor: crosshair; }
+.player-occlusion-canvas { position: absolute; inset: 0; z-index: 2; display: block; width: 100%; height: 100%; pointer-events: none; }
 .drawing-stage.is-detecting canvas { cursor: wait; }
 .player-detection-toast { position: absolute; left: 50%; top: 18px; z-index: 4; transform: translateX(-50%); max-width: min(520px, calc(100% - 32px)); padding: 9px 14px; border: 1px solid #a3ff1266; border-radius: 6px; background: #091008e8; box-shadow: 0 8px 28px #000b; color: #dfffb0; font-size: 11px; font-weight: 650; letter-spacing: .01em; text-align: center; pointer-events: none; }
 .player-detection-toast.loading::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 8px; border: 1px solid #a3ff12; border-right-color: transparent; border-radius: 50%; animation: player-detection-spin .7s linear infinite; }

@@ -2,7 +2,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import dynamic from "next/dynamic";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { VideoSlideContent } from "@/types/slide";
 
 const DrawingPreviewCanvas = dynamic(() => import("@/components/canvas/DrawingPreviewCanvas").then((module) => module.DrawingPreviewCanvas), { ssr: false });
@@ -16,6 +16,7 @@ export function VideoSlidePreview({ content, slideName }: Props) {
   const [currentTime, setCurrentTime] = useState(content.startTime);
   const [aspect, setAspect] = useState(16 / 9);
   const [size, setSize] = useState({ width: 960, height: 540 });
+  const getVideoElement = useCallback(() => videoRef.current, []);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -88,7 +89,7 @@ export function VideoSlidePreview({ content, slideName }: Props) {
           }}
           onSeeked={(event) => setCurrentTime(event.currentTarget.currentTime)}
         />
-        <div className="preview-drawing-overlay"><DrawingPreviewCanvas drawings={content.drawings} currentTime={currentTime} width={size.width} height={size.height} /></div>
+        <div className="preview-drawing-overlay"><DrawingPreviewCanvas drawings={content.drawings} playerTracks={content.playerTracks} currentTime={currentTime} width={size.width} height={size.height} getVideoElement={getVideoElement} /></div>
       </div>
     </div>
   );

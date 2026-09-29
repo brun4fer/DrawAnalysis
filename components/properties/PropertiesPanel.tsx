@@ -99,7 +99,7 @@ export function PropertiesPanel() {
       </section>
 
       <section className="property-section tracking-section">
-        <label className="toggle-row"><span><FieldLabel>Tracking</FieldLabel><small>{playerTrack ? `${playerTrack.name} · ${object.trackingEnabled ? "a seguir até parar" : "tracking terminado"}` : "Sem jogador associado"}</small></span><input type="checkbox" checked={object.trackingEnabled} onChange={(e) => {
+        <label className="toggle-row"><span><FieldLabel>Tracking</FieldLabel><small>{playerTrack ? `${playerTrack.name} · ${object.trackingEnabled ? "a seguir até parar" : playerTrack.status === "seeded" ? "opcional, atualmente desligado" : "tracking terminado"}` : "Sem jogador associado"}</small></span><input type="checkbox" checked={object.trackingEnabled} onChange={(e) => {
           const enabled = e.target.checked;
           updateDrawing(object.id, enabled
             ? { trackingEnabled: true, endTime: Math.max(object.endTime, videoDuration || currentTime + 3) }
