@@ -90,6 +90,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
   const registerCapture = useCallback((capture: (() => HTMLCanvasElement | null) | null) => {
     drawingCaptureRef.current = capture;
   }, []);
+  const getVideoElement = useCallback(() => videoRef.current, []);
   const captureFrame = () => {
     const video = videoRef.current;
     if (!video || !video.videoWidth || !video.videoHeight) return null;
@@ -143,7 +144,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
               onPause={() => setIsPlaying(false)}
               onEnded={() => setIsPlaying(false)}
             />
-            <div className="canvas-overlay"><DrawingCanvas width={size.width} height={size.height} registerCapture={registerCapture} /></div>
+            <div className="canvas-overlay"><DrawingCanvas width={size.width} height={size.height} registerCapture={registerCapture} getVideoElement={getVideoElement} /></div>
           </div>
         ) : (
           <button className="empty-video" onClick={onChooseVideo}>

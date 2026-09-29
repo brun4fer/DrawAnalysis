@@ -15,6 +15,34 @@ export type DrawingType = Exclude<Tool, "select">;
 
 export interface Point { x: number; y: number }
 
+export interface NormalizedBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface PlayerTrackSample {
+  time: number;
+  bbox: NormalizedBox;
+  foot: Point;
+  confidence: number;
+}
+
+export interface PlayerTrack {
+  id: string;
+  name: string;
+  source: "automatic" | "manual";
+  status: "seeded" | "processing" | "ready" | "needs-review";
+  samples: PlayerTrackSample[];
+}
+
+export interface DrawingTarget {
+  kind: "player";
+  trackId: string;
+  anchor: "feet";
+}
+
 export interface DrawingStyle {
   stroke: string;
   fill: string;
@@ -61,6 +89,7 @@ export interface DrawingObject {
   startTime: number;
   endTime: number;
   trackingEnabled: boolean;
+  target?: DrawingTarget;
   keyframes: DrawingKeyframe[];
   animation?: {
     fadeIn?: number;

@@ -1,4 +1,4 @@
-import type { DrawingObject, Point } from "./drawing";
+import type { DrawingObject, PlayerTrack, Point } from "./drawing";
 
 export type SlideType = "title" | "text" | "lineup" | "video" | "kickoff" | "tactical-board" | "image";
 export type SlideAlignment = "left" | "center" | "right";
@@ -52,6 +52,7 @@ export interface VideoSlideContent {
   endTime?: number;
   thumbnail?: string;
   drawings: DrawingObject[];
+  playerTracks?: PlayerTrack[];
 }
 
 export interface BoardSlideContent {

@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Konva from "konva";
 import { Arrow, Ellipse, Layer, Line, Rect, Stage, Text } from "react-konva";
+import { detectPlayers } from "@/lib/playerDetector";
 import { useEditorStore } from "@/store/useEditorStore";
-import type { DrawingData, DrawingObject, Point, Tool } from "@/types/drawing";
+import type { DrawingData, DrawingObject, NormalizedBox, PlayerTrack, Point, Tool } from "@/types/drawing";
 import { DEFAULT_STYLE, DEFAULT_TRANSFORM } from "@/types/drawing";
 import { flattenPoints, toNormalized } from "@/utils/coordinates";
 import { createId } from "@/utils/id";
@@ -15,6 +16,7 @@ interface Props {
   width: number;
   height: number;
   registerCapture?: (capture: (() => HTMLCanvasElement | null) | null) => void;
+  getVideoElement?: () => HTMLVideoElement | null;
 }
 
 interface Draft { tool: Tool; start: Point; points: Point[]; current: Point }
@@ -24,9 +26,19 @@ const labelFor = (kind: DrawingObject["type"]) => ({
   polygon: "Zona", rectangle: "Retângulo", text: "Texto", freeDraw: "Traço",
 })[kind];
 
-export function DrawingCanvas({ width, height, registerCapture }: Props) {
-  const { tool, drawings, selectedId, currentTime, duration, addDrawing, updateDrawing, setSelectedId, setTool } = useEditorStore();
+const clamp = (value: number, minimum: number, maximum: number) => Math.max(minimum, Math.min(maximum, value));
+
+function distanceToBox(point: Point, box: NormalizedBox) {
+  const dx = Math.max(box.x - point.x, 0, point.x - box.x - box.width);
+  const dy = Math.max(box.y - point.y, 0, point.y - box.y - box.height);
+  return Math.hypot(dx, dy);
+}
+
+export function DrawingCanvas({ width, height, registerCapture, getVideoElement }: Props) {
+  const { tool, drawings, selectedId, currentTime, duration, addDrawing, addPlayerTrack, updateDrawing, setSelectedId, setTool } = useEditorStore();
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [detectionMessage, setDetectionMessage] = useState<string | null>(null);
+  const [detectingPlayer, setDetectingPlayer] = useState(false);
   const stageRef = useRef<Konva.Stage>(null);
 
   useEffect(() => {
@@ -50,7 +62,11 @@ export function DrawingCanvas({ width, height, registerCapture }: Props) {
     return pointer ? toNormalized(pointer, width, height) : null;
   };
 
-  const makeDrawing = useCallback((type: DrawingObject["type"], data: DrawingData) => {
+  const makeDrawing = useCallback((
+    type: DrawingObject["type"],
+    data: DrawingData,
+    options?: { target?: DrawingObject["target"]; trackingEnabled?: boolean },
+  ) => {
     const count = drawings.filter((item) => item.type === type).length + 1;
     const effectStyle = type === "playerRing"
       ? { stroke: "#a3ff12", fill: "#a3ff1240", strokeWidth: 5, shadowColor: "#a3ff12", shadowBlur: 18, shadowOpacity: .85 }
@@ -63,7 +79,8 @@ export function DrawingCanvas({ width, height, registerCapture }: Props) {
       type,
       startTime: currentTime,
       endTime: Math.min(duration || currentTime + 3, currentTime + 3),
-      trackingEnabled: false,
+      trackingEnabled: options?.trackingEnabled ?? false,
+      target: options?.target,
       keyframes: [],
       animation: { fadeIn: 0.18, fadeOut: 0.18, motion: type === "playerRing" ? "scaleIn" : "none", pulseAmount: .05, pulseSpeed: 1.4 },
       style: { ...DEFAULT_STYLE, ...effectStyle, dash: [] },
@@ -74,6 +91,71 @@ export function DrawingCanvas({ width, height, registerCapture }: Props) {
     setDraft(null);
     setTool("select");
   }, [addDrawing, currentTime, drawings, duration, setTool]);
+
+  const placeRingOnPlayer = useCallback(async (click: Point) => {
+    if (detectingPlayer) return;
+    const video = getVideoElement?.();
+    if (!video || !video.videoWidth || !video.videoHeight || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      setDetectionMessage("O fotograma do vídeo ainda não está pronto.");
+      window.setTimeout(() => setDetectionMessage(null), 2600);
+      return;
+    }
+
+    video.pause();
+    setDetectingPlayer(true);
+    setDetectionMessage("A detetar o jogador neste fotograma…");
+    try {
+      const detections = await detectPlayers(video);
+      const boxes = detections.map((detection) => ({
+        detection,
+        box: {
+          x: detection.bbox[0] / video.videoWidth,
+          y: detection.bbox[1] / video.videoHeight,
+          width: detection.bbox[2] / video.videoWidth,
+          height: detection.bbox[3] / video.videoHeight,
+        },
+      }));
+      const containing = boxes
+        .filter(({ box }) => click.x >= box.x && click.x <= box.x + box.width && click.y >= box.y && click.y <= box.y + box.height)
+        .sort((a, b) => a.box.width * a.box.height - b.box.width * b.box.height);
+      const nearest = [...boxes].sort((a, b) => distanceToBox(click, a.box) - distanceToBox(click, b.box))[0];
+      const match = containing[0] ?? (nearest && distanceToBox(click, nearest.box) <= clamp(nearest.box.height * 0.45, 0.018, 0.07) ? nearest : null);
+
+      if (!match) {
+        setDetectionMessage("Não encontrei um jogador nesse ponto. Tente clicar no tronco ou na cabeça.");
+        window.setTimeout(() => setDetectionMessage(null), 3600);
+        return;
+      }
+
+      const foot = {
+        x: clamp(match.box.x + match.box.width / 2, 0, 1),
+        y: clamp(match.box.y + match.box.height, 0, 1),
+      };
+      const radiusX = clamp(match.box.width * 1.35, 0.018, 0.07);
+      const radiusY = clamp(radiusX * 0.42, 0.008, 0.028);
+      const trackId = createId();
+      const track: PlayerTrack = {
+        id: trackId,
+        name: `Jogador ${drawings.filter((item) => item.target?.kind === "player").length + 1}`,
+        source: "automatic",
+        status: "seeded",
+        samples: [{ time: currentTime, bbox: match.box, foot, confidence: match.detection.score }],
+      };
+      addPlayerTrack(track);
+      makeDrawing(
+        "playerRing",
+        { kind: "playerRing", center: foot, radiusX, radiusY },
+        { target: { kind: "player", trackId, anchor: "feet" }, trackingEnabled: true },
+      );
+      setDetectionMessage(`Jogador detetado · ${Math.round(match.detection.score * 100)}%`);
+      window.setTimeout(() => setDetectionMessage(null), 2200);
+    } catch {
+      setDetectionMessage("Não foi possível analisar este fotograma. Confirme o acesso ao vídeo e tente novamente.");
+      window.setTimeout(() => setDetectionMessage(null), 4200);
+    } finally {
+      setDetectingPlayer(false);
+    }
+  }, [addPlayerTrack, currentTime, detectingPlayer, drawings, getVideoElement, makeDrawing]);
 
   const finishPolygon = useCallback(() => {
     if (draft?.tool !== "polygon") return;
@@ -99,7 +181,7 @@ export function DrawingCanvas({ width, height, registerCapture }: Props) {
     if (!point) return;
     if (tool === "select") { setSelectedId(null); return; }
     if (tool === "playerRing") {
-      makeDrawing("playerRing", { kind: "playerRing", center: point, radiusX: .05, radiusY: .018 });
+      void placeRingOnPlayer(point);
       return;
     }
     if (tool === "spotlight") {
@@ -171,11 +253,12 @@ export function DrawingCanvas({ width, height, registerCapture }: Props) {
   const visible = drawings.filter((drawing) => getObjectStateAtTime(drawing, currentTime).visible);
 
   return (
+    <>
     <Stage
       ref={stageRef}
       width={width}
       height={height}
-      className={`drawing-stage tool-${tool}`}
+      className={`drawing-stage tool-${tool}${detectingPlayer ? " is-detecting" : ""}`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -203,5 +286,7 @@ export function DrawingCanvas({ width, height, registerCapture }: Props) {
         {tool === "text" && <Text text="Clique para adicionar texto" x={16} y={16} fill="#fff" opacity={0.5} fontSize={13} />}
       </Layer>
     </Stage>
+    {detectionMessage && <div className={`player-detection-toast${detectingPlayer ? " loading" : ""}`}>{detectionMessage}</div>}
+    </>
   );
 }

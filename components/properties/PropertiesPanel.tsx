@@ -43,6 +43,9 @@ export function PropertiesPanel() {
   };
   const duration = Math.max(0, object.endTime - object.startTime);
   const fillColor = object.style.fill.startsWith("#") ? object.style.fill.slice(0, 7) : "#a3ff12";
+  const playerTrack = object.target?.kind === "player" && activeSlide?.content.kind === "video"
+    ? activeSlide.content.playerTracks?.find((track) => track.id === object.target?.trackId)
+    : undefined;
 
   return (
     <aside className="properties-panel">
@@ -95,8 +98,8 @@ export function PropertiesPanel() {
       </section>
 
       <section className="property-section tracking-section">
-        <label className="toggle-row"><span><FieldLabel>Tracking</FieldLabel><small>Preparado para fase seguinte</small></span><input type="checkbox" checked={object.trackingEnabled} onChange={(e) => updateDrawing(object.id, { trackingEnabled: e.target.checked })} /><span /></label>
-        <div className="keyframe-count">{object.keyframes.length} keyframes</div>
+        <label className="toggle-row"><span><FieldLabel>Tracking</FieldLabel><small>{playerTrack ? `${playerTrack.name} · âncora nos pés` : "Sem jogador associado"}</small></span><input type="checkbox" checked={object.trackingEnabled} onChange={(e) => updateDrawing(object.id, { trackingEnabled: e.target.checked })} /><span /></label>
+        <div className="keyframe-count">{playerTrack ? `${playerTrack.samples.length} deteção · confiança ${Math.round((playerTrack.samples[0]?.confidence ?? 0) * 100)}%` : `${object.keyframes.length} keyframes`}</div>
       </section>
 
       <div className="property-actions">

@@ -85,6 +85,10 @@ button:disabled { opacity: .3; cursor: default; }
 .canvas-overlay { position: absolute; inset: 0; touch-action: none; }
 .drawing-stage canvas { touch-action: none; }
 .drawing-stage:not(.tool-select) canvas { cursor: crosshair; }
+.drawing-stage.is-detecting canvas { cursor: wait; }
+.player-detection-toast { position: absolute; left: 50%; top: 18px; z-index: 4; transform: translateX(-50%); max-width: min(520px, calc(100% - 32px)); padding: 9px 14px; border: 1px solid #a3ff1266; border-radius: 6px; background: #091008e8; box-shadow: 0 8px 28px #000b; color: #dfffb0; font-size: 11px; font-weight: 650; letter-spacing: .01em; text-align: center; pointer-events: none; }
+.player-detection-toast.loading::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 8px; border: 1px solid #a3ff12; border-right-color: transparent; border-radius: 50%; animation: player-detection-spin .7s linear infinite; }
+@keyframes player-detection-spin { to { transform: rotate(360deg); } }
 .empty-video { width: min(440px, calc(100% - 50px)); min-height: 250px; display: flex; align-items: center; flex-direction: column; justify-content: center; gap: 8px; border: 1px dashed #343b40; border-radius: 11px; color: var(--text); background: #111518b3; cursor: pointer; }
 .empty-video:hover { border-color: #a3ff1277; background: #141a18; }
 .empty-video-icon { width: 58px; height: 58px; display: grid; place-items: center; border: 1px solid #30373a; border-radius: 50%; color: var(--lime); margin-bottom: 5px; background: #171c1f; }

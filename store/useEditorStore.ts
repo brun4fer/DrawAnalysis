@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import type { DrawingObject, Tool } from "@/types/drawing";
+import type { DrawingObject, PlayerTrack, Tool } from "@/types/drawing";
 import type { AnalysisSlide } from "@/types/slide";
 import { createId } from "@/utils/id";
 import { createSlide } from "@/utils/slideFactory";
@@ -25,6 +25,7 @@ interface EditorState {
   setDuration: (duration: number) => void;
   setIsPlaying: (playing: boolean) => void;
   addDrawing: (drawing: DrawingObject) => void;
+  addPlayerTrack: (track: PlayerTrack) => void;
   updateDrawing: (id: string, patch: Partial<DrawingObject>) => void;
   removeDrawing: (id: string) => void;
   duplicateDrawing: (id: string) => void;
@@ -75,6 +76,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       future: [], drawings, slides: withVideoDrawings(state.slides, state.selectedSlideId, drawings), selectedId: drawing.id,
     };
   }),
+  addPlayerTrack: (track) => set((state) => ({
+    history: [...state.history, { drawings: copy(state.drawings), slides: copySlides(state.slides) }].slice(-80),
+    future: [],
+    slides: state.slides.map((slide) => slide.id === state.selectedSlideId && slide.content.kind === "video"
+      ? { ...slide, content: { ...slide.content, playerTracks: [...(slide.content.playerTracks ?? []), track] } }
+      : slide),
+  })),
   updateDrawing: (id, patch) => set((state) => {
     const drawings = state.drawings.map((drawing) => drawing.id === id ? { ...drawing, ...patch } : drawing);
     return {

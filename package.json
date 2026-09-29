@@ -15,6 +15,11 @@
   "dependencies": {
     "@fontsource-variable/inter": "latest",
     "@prisma/client": "^6.19.3",
+    "@tensorflow-models/coco-ssd": "^2.2.2",
+    "@tensorflow/tfjs-backend-cpu": "^3.21.0",
+    "@tensorflow/tfjs-backend-webgl": "^3.21.0",
+    "@tensorflow/tfjs-converter": "^3.21.0",
+    "@tensorflow/tfjs-core": "^3.21.0",
     "dotenv": "^17.4.2",
     "konva": "latest",
     "lucide-react": "latest",
