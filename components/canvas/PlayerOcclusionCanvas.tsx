@@ -26,9 +26,9 @@ export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(functi
       const track = playerTracks?.find((item) => item.id === drawing.target?.trackId);
       if (!track?.samples.length) continue;
       const sample = track.samples.reduce((nearest, item) => Math.abs(item.time - currentTime) < Math.abs(nearest.time - currentTime) ? item : nearest);
-      if (!drawing.trackingEnabled && Math.abs(sample.time - currentTime) > .45) continue;
+      if (drawing.data.kind !== "playerRing") continue;
       try {
-        drawPlayerForeground(context, video, sample.bbox, width, height);
+        drawPlayerForeground(context, video, sample.bbox, width, height, sample.foot, drawing.data.radiusY);
       } catch {
         context.clearRect(0, 0, canvas.width, canvas.height);
       }

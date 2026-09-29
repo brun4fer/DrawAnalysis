@@ -12,6 +12,7 @@ import { createId } from "@/utils/id";
 import { getObjectStateAtTime } from "@/utils/temporalRenderer";
 import { DrawingShape } from "./DrawingShape";
 import { PlayerOcclusionCanvas } from "./PlayerOcclusionCanvas";
+import { PlayerLabelOverlay } from "./PlayerLabelOverlay";
 
 interface Props {
   width: number;
@@ -166,7 +167,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
   ) => {
     const count = drawings.filter((item) => item.type === type).length + 1;
     const effectStyle = type === "playerRing"
-      ? { stroke: "#f7f8f2", fill: "#1454c4", strokeWidth: 5, shadowColor: "#f1e72b", shadowBlur: 26, shadowOpacity: .9 }
+      ? { stroke: "#f7f8f2", fill: "#1454c4", strokeWidth: 3, shadowColor: "#f1e72b", shadowBlur: 22, shadowOpacity: .82 }
       : type === "spotlight"
         ? { stroke: "#fff8c7", fill: "#fff8c733", strokeWidth: 2, shadowColor: "#fff2a8", shadowBlur: 22, shadowOpacity: .6 }
         : {};
@@ -258,11 +259,11 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       await wait(620);
 
       const foot = {
-        x: clamp(match.box.x + match.box.width / 2, 0, 1),
+        x: clamp(click.x * .72 + (match.box.x + match.box.width / 2) * .28, 0, 1),
         y: clamp(match.box.y + match.box.height, 0, 1),
       };
-      const radiusX = clamp(match.box.width * 1.7, 0.025, 0.08);
-      const radiusY = clamp(radiusX * 0.58, 0.01, 0.042);
+      const radiusX = clamp(match.box.width * 2.2, 0.04, 0.09);
+      const radiusY = clamp(radiusX * .48, .012, .038);
       const trackId = createId();
       const track: PlayerTrack = {
         id: trackId,
@@ -280,7 +281,18 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       addPlayerTrack(track);
       makeDrawing(
         "playerRing",
-        { kind: "playerRing", center: foot, radiusX, radiusY, occlusionWidth: match.box.width * .7 },
+        {
+          kind: "playerRing",
+          center: foot,
+          radiusX,
+          radiusY,
+          occlusionWidth: match.box.width * .7,
+          labelOffsetY: match.box.height + .025,
+          label: { visible: true, number: "", position: "", name: track.name.toUpperCase(), color: "#ffffff", fontSize: .032 },
+          ringDesign: "segmented",
+          spinEnabled: true,
+          spinSpeed: 1,
+        },
         { target: { kind: "player", trackId, anchor: "feet" }, trackingEnabled: false },
       );
       setDetectionBoxes([]);
@@ -585,6 +597,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
             canEdit={tool === "select"}
             onSelect={() => { setSelectedId(object.id); setTool("select"); }}
             onChange={(patch) => updateDrawing(object.id, patch)}
+            renderMode="base"
           />
         ))}
         {preview}
@@ -603,6 +616,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       height={height}
       getVideoElement={getVideoElement}
     />
+    <PlayerLabelOverlay drawings={drawings} currentTime={currentTime} width={width} height={height} />
     {detectionEffect && (
       <div className={`player-identification-effect phase-${detectionEffect.phase}`} aria-hidden="true">
         {detectionEffect.phase !== "locked" && (

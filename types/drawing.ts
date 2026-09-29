@@ -44,6 +44,17 @@ export interface DrawingTarget {
   anchor: "feet";
 }
 
+export interface PlayerLabel {
+  visible: boolean;
+  number: string;
+  position: string;
+  name: string;
+  color: string;
+  fontSize: number;
+}
+
+export type PlayerRingDesign = "segmented" | "doubleLine";
+
 export interface DrawingStyle {
   stroke: string;
   fill: string;
@@ -76,7 +87,7 @@ export interface DrawingKeyframe {
 }
 
 export type DrawingData =
-  | { kind: "playerRing"; center: Point; radiusX: number; radiusY: number; occlusionWidth?: number }
+  | { kind: "playerRing"; center: Point; radiusX: number; radiusY: number; occlusionWidth?: number; labelOffsetY?: number; label?: PlayerLabel; ringDesign?: PlayerRingDesign; spinEnabled?: boolean; spinSpeed?: number }
   | { kind: "spotlight"; target: Point; radiusX: number; radiusY: number; beamHeight: number }
   | { kind: "ellipse"; center: Point; radiusX: number; radiusY: number }
   | { kind: "rectangle"; origin: Point; width: number; height: number }

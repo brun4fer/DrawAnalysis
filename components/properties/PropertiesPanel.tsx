@@ -2,6 +2,7 @@
 
 import { Copy, LocateFixed, Trash2 } from "lucide-react";
 import { useEditorStore } from "@/store/useEditorStore";
+import type { PlayerLabel, PlayerRingDesign } from "@/types/drawing";
 import type { VideoSlideContent } from "@/types/slide";
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
@@ -36,6 +37,28 @@ export function PropertiesPanel() {
 
   const updateStyle = (patch: Partial<typeof object.style>) => updateDrawing(object.id, { style: { ...object.style, ...patch } });
   const updateTransform = (patch: Partial<typeof object.transform>) => updateDrawing(object.id, { transform: { ...object.transform, ...patch } });
+  const updatePlayerLabel = (patch: Partial<PlayerLabel>) => {
+    if (object.data.kind !== "playerRing") return;
+    const label: PlayerLabel = {
+      visible: false,
+      number: "",
+      position: "",
+      name: "JOGADOR",
+      color: "#ffffff",
+      fontSize: .032,
+      ...object.data.label,
+      ...patch,
+    };
+    updateDrawing(object.id, { data: { ...object.data, label } });
+  };
+  const updatePlayerLabelOffset = (labelOffsetY: number) => {
+    if (object.data.kind !== "playerRing") return;
+    updateDrawing(object.id, { data: { ...object.data, labelOffsetY } });
+  };
+  const updatePlayerRingAppearance = (patch: { ringDesign?: PlayerRingDesign; spinEnabled?: boolean; spinSpeed?: number }) => {
+    if (object.data.kind !== "playerRing") return;
+    updateDrawing(object.id, { data: { ...object.data, ...patch } });
+  };
   const applyEffectPreset = (preset: "clean" | "glow" | "shadow") => {
     if (preset === "clean") updateStyle({ shadowBlur: 0, shadowOpacity: 0, shadowOffsetX: 0, shadowOffsetY: 0 });
     if (preset === "glow") updateStyle({ shadowColor: object.style.stroke, shadowBlur: 20, shadowOpacity: .9, shadowOffsetX: 0, shadowOffsetY: 0 });
@@ -58,10 +81,32 @@ export function PropertiesPanel() {
 
       <section className="property-section">
         <h3>APARÊNCIA</h3>
+        {object.data.kind === "playerRing" && (
+          <>
+            <label className="field-row">
+              <FieldLabel>Modelo</FieldLabel>
+              <select value={object.data.ringDesign ?? "segmented"} onChange={(event) => updatePlayerRingAppearance({ ringDesign: event.target.value as PlayerRingDesign })}>
+                <option value="segmented">Segmentado 3D</option>
+                <option value="doubleLine">Duplo fino</option>
+              </select>
+            </label>
+            <label className="toggle-row">
+              <span><FieldLabel>Rotação oposta</FieldLabel><small>Os dois círculos giram entre si</small></span>
+              <input type="checkbox" checked={object.data.spinEnabled !== false} onChange={(event) => updatePlayerRingAppearance({ spinEnabled: event.target.checked })} />
+              <span />
+            </label>
+            {object.data.spinEnabled !== false && (
+              <label className="stacked-field">
+                <span><FieldLabel>Velocidade de rotação</FieldLabel><b>{(object.data.spinSpeed ?? 1).toFixed(1)}x</b></span>
+                <input type="range" min={.2} max={2.5} step={.1} value={object.data.spinSpeed ?? 1} onChange={(event) => updatePlayerRingAppearance({ spinSpeed: Number(event.target.value) })} />
+              </label>
+            )}
+          </>
+        )}
         <div className="effect-presets"><button onClick={() => applyEffectPreset("clean")}>Clean</button><button onClick={() => applyEffectPreset("glow")}>TV Glow</button><button onClick={() => applyEffectPreset("shadow")}>Sombra</button></div>
-        <label className="field-row"><FieldLabel>{isPlayerRing ? "Segmento 1" : "Traço"}</FieldLabel><input type="color" value={object.style.stroke.slice(0, 7)} onChange={(e) => updateStyle({ stroke: e.target.value })} /><code>{object.style.stroke.slice(0, 7)}</code></label>
+        <label className="field-row"><FieldLabel>{isPlayerRing ? "Círculo exterior" : "Traço"}</FieldLabel><input type="color" value={object.style.stroke.slice(0, 7)} onChange={(e) => updateStyle({ stroke: e.target.value })} /><code>{object.style.stroke.slice(0, 7)}</code></label>
         {!["arrow", "line", "freeDraw", "text"].includes(object.type) && (
-          <label className="field-row"><FieldLabel>{isPlayerRing ? "Segmento 2" : "Preench."}</FieldLabel><input type="color" value={fillColor} onChange={(e) => updateStyle({ fill: isPlayerRing ? e.target.value : `${e.target.value}33` })} /><code>{fillColor}</code></label>
+          <label className="field-row"><FieldLabel>{isPlayerRing ? "Círculo interior" : "Preench."}</FieldLabel><input type="color" value={fillColor} onChange={(e) => updateStyle({ fill: isPlayerRing ? e.target.value : `${e.target.value}33` })} /><code>{fillColor}</code></label>
         )}
         <label className="stacked-field"><span><FieldLabel>Espessura</FieldLabel><b>{object.style.strokeWidth}px</b></span><input type="range" min={1} max={16} value={object.style.strokeWidth} onChange={(e) => updateStyle({ strokeWidth: Number(e.target.value) })} /></label>
         <label className="stacked-field"><span><FieldLabel>Opacidade</FieldLabel><b>{Math.round(object.style.opacity * 100)}%</b></span><input type="range" min={0.1} max={1} step={0.05} value={object.style.opacity} onChange={(e) => updateStyle({ opacity: Number(e.target.value) })} /></label>
@@ -69,9 +114,91 @@ export function PropertiesPanel() {
         <label className="stacked-field"><span><FieldLabel>Suavidade</FieldLabel><b>{object.style.shadowBlur ?? 0}px</b></span><input type="range" min={0} max={40} value={object.style.shadowBlur ?? 0} onChange={(e) => updateStyle({ shadowBlur: Number(e.target.value) })} /></label>
         <label className="stacked-field"><span><FieldLabel>Força efeito</FieldLabel><b>{Math.round((object.style.shadowOpacity ?? 0) * 100)}%</b></span><input type="range" min={0} max={1} step={.05} value={object.style.shadowOpacity ?? 0} onChange={(e) => updateStyle({ shadowOpacity: Number(e.target.value) })} /></label>
         <div className="two-fields shadow-offset-fields"><label><FieldLabel>Sombra X</FieldLabel><input type="number" min={-30} max={30} value={object.style.shadowOffsetX ?? 0} onChange={(e) => updateStyle({ shadowOffsetX: Number(e.target.value) })} /></label><label><FieldLabel>Sombra Y</FieldLabel><input type="number" min={-30} max={30} value={object.style.shadowOffsetY ?? 0} onChange={(e) => updateStyle({ shadowOffsetY: Number(e.target.value) })} /></label></div>
-        {object.type !== "text" && <label className="toggle-row"><FieldLabel>Linha tracejada</FieldLabel><input type="checkbox" checked={object.style.dash.length > 0} onChange={(e) => updateStyle({ dash: e.target.checked ? [10, 7] : [] })} /><span /></label>}
+        {!isPlayerRing && object.type !== "text" && <label className="toggle-row"><FieldLabel>Linha tracejada</FieldLabel><input type="checkbox" checked={object.style.dash.length > 0} onChange={(e) => updateStyle({ dash: e.target.checked ? [10, 7] : [] })} /><span /></label>}
         {object.data.kind === "text" && <TextContentField value={object.data.text} onChange={(text) => updateDrawing(object.id, { data: { kind: "text", origin: object.data.kind === "text" ? object.data.origin : { x: 0, y: 0 }, fontSize: object.data.kind === "text" ? object.data.fontSize : 0.055, text } })} />}
       </section>
+
+      {object.data.kind === "playerRing" && (
+        <section className="property-section player-label-section">
+          <h3>IDENTIFICAÇÃO DO JOGADOR</h3>
+          <label className="toggle-row">
+            <span><FieldLabel>Mostrar identificação</FieldLabel><small>Número / posição / nome</small></span>
+            <input
+              type="checkbox"
+              checked={object.data.label?.visible ?? false}
+              onChange={(event) => updatePlayerLabel({ visible: event.target.checked })}
+            />
+            <span />
+          </label>
+          {(object.data.label?.visible ?? false) && (
+            <div className="player-label-fields">
+              <div className="two-fields">
+                <label>
+                  <FieldLabel>Número</FieldLabel>
+                  <input
+                    type="text"
+                    maxLength={3}
+                    placeholder="31"
+                    value={object.data.label?.number ?? ""}
+                    onChange={(event) => updatePlayerLabel({ number: event.target.value })}
+                  />
+                </label>
+                <label>
+                  <FieldLabel>Posição</FieldLabel>
+                  <input
+                    type="text"
+                    maxLength={6}
+                    placeholder="DC"
+                    value={object.data.label?.position ?? ""}
+                    onChange={(event) => updatePlayerLabel({ position: event.target.value })}
+                  />
+                </label>
+              </div>
+              <label className="player-label-name">
+                <FieldLabel>Nome</FieldLabel>
+                <input
+                  type="text"
+                  maxLength={24}
+                  placeholder="SAMPAIO"
+                  value={object.data.label?.name ?? ""}
+                  onChange={(event) => updatePlayerLabel({ name: event.target.value })}
+                />
+              </label>
+              <label className="field-row">
+                <FieldLabel>Cor do texto</FieldLabel>
+                <input
+                  type="color"
+                  value={(object.data.label?.color ?? "#ffffff").slice(0, 7)}
+                  onChange={(event) => updatePlayerLabel({ color: event.target.value })}
+                />
+                <code>{(object.data.label?.color ?? "#ffffff").slice(0, 7)}</code>
+              </label>
+              <label className="stacked-field">
+                <span><FieldLabel>Tamanho</FieldLabel><b>{Math.round((object.data.label?.fontSize ?? .032) * 540)} px</b></span>
+                <input
+                  type="range"
+                  min={.018}
+                  max={.06}
+                  step={.002}
+                  value={object.data.label?.fontSize ?? .032}
+                  onChange={(event) => updatePlayerLabel({ fontSize: Number(event.target.value) })}
+                />
+              </label>
+              <label className="stacked-field">
+                <span><FieldLabel>Altura acima do jogador</FieldLabel><b>{Math.round((object.data.labelOffsetY ?? .12) * 100)}%</b></span>
+                <input
+                  type="range"
+                  min={.04}
+                  max={.35}
+                  step={.005}
+                  value={object.data.labelOffsetY ?? .12}
+                  onChange={(event) => updatePlayerLabelOffset(Number(event.target.value))}
+                />
+              </label>
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="property-section">
         <h3>TEMPO</h3>

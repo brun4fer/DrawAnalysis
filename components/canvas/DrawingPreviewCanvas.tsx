@@ -6,6 +6,7 @@ import type { DrawingObject, PlayerTrack } from "@/types/drawing";
 import { getObjectStateAtTime } from "@/utils/temporalRenderer";
 import { DrawingShape } from "./DrawingShape";
 import { PlayerOcclusionCanvas } from "./PlayerOcclusionCanvas";
+import { PlayerLabelOverlay } from "./PlayerLabelOverlay";
 
 interface Props {
   drawings: DrawingObject[];
@@ -34,11 +35,13 @@ export function DrawingPreviewCanvas({ drawings, playerTracks, currentTime, widt
             canEdit={false}
             onSelect={() => undefined}
             onChange={() => undefined}
+            renderMode="base"
           />
         ))}
       </Layer>
     </Stage>
     <PlayerOcclusionCanvas ref={occlusionCanvasRef} drawings={drawings} playerTracks={playerTracks} currentTime={currentTime} width={width} height={height} getVideoElement={getVideoElement} />
+    <PlayerLabelOverlay drawings={drawings} currentTime={currentTime} width={width} height={height} />
     </>
   );
 }
