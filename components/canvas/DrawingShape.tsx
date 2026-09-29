@@ -29,6 +29,13 @@ function solidColor(color: string, fallback: string) {
   return color.match(/^#[0-9a-f]{6}/i)?.[0] ?? fallback;
 }
 
+function shadeColor(color: string, amount: number) {
+  const hex = solidColor(color, "#808080").slice(1);
+  const value = Number.parseInt(hex, 16);
+  const channel = (shift: number) => Math.max(0, Math.min(255, ((value >> shift) & 255) + amount));
+  return `#${[channel(16), channel(8), channel(0)].map((part) => part.toString(16).padStart(2, "0")).join("")}`;
+}
+
 export function DrawingShape({ object, width, height, currentTime, selected, canEdit, onSelect, onChange }: Props) {
   const nodeRef = useRef<Konva.Group>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
@@ -104,26 +111,52 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
               y={y}
               radiusX={innerRadius * .98}
               radiusY={radiusY * (innerRadius / radiusX) * .98}
-              fill={withAlpha(glowColor, .2 * glowStrength)}
+              fill={withAlpha(glowColor, .12 * glowStrength)}
               listening={false}
             />
+            <Group x={x} y={y + Math.max(3, radiusY * .3)} scaleY={radiusY / radiusX} listening={false}>
+              {Array.from({ length: 8 }, (_, index) => {
+                const segmentColor = index % 2 === 0 ? primaryColor : secondaryColor;
+                return (
+                  <Arc
+                    key={`depth-${index}`}
+                    innerRadius={innerRadius}
+                    outerRadius={radiusX}
+                    angle={34}
+                    rotation={-107 + index * 45}
+                    fill={shadeColor(segmentColor, -72)}
+                    stroke={shadeColor(segmentColor, -105)}
+                    strokeWidth={1.2}
+                    shadowColor="#000000"
+                    shadowBlur={5}
+                    shadowOffsetY={3}
+                    shadowOpacity={.65}
+                  />
+                );
+              })}
+            </Group>
             <Group x={x} y={y} scaleY={radiusY / radiusX}>
-              {Array.from({ length: 8 }, (_, index) => (
-                <Arc
-                  key={index}
-                  innerRadius={innerRadius}
-                  outerRadius={radiusX}
-                  angle={34}
-                  rotation={-107 + index * 45}
-                  fill={index % 2 === 0 ? primaryColor : secondaryColor}
-                  stroke={withAlpha("#07101b", .48)}
-                  strokeWidth={Math.max(.7, object.style.strokeWidth * .16)}
-                  shadowColor="#000000"
-                  shadowBlur={4}
-                  shadowOffsetY={3}
-                  shadowOpacity={.55}
-                />
-              ))}
+              {Array.from({ length: 8 }, (_, index) => {
+                const segmentColor = index % 2 === 0 ? primaryColor : secondaryColor;
+                return (
+                  <Arc
+                    key={index}
+                    innerRadius={innerRadius}
+                    outerRadius={radiusX}
+                    angle={34}
+                    rotation={-107 + index * 45}
+                    fillLinearGradientStartPoint={{ x: 0, y: -radiusX }}
+                    fillLinearGradientEndPoint={{ x: 0, y: radiusX }}
+                    fillLinearGradientColorStops={[0, shadeColor(segmentColor, 52), .36, shadeColor(segmentColor, 18), .7, segmentColor, 1, shadeColor(segmentColor, -42)]}
+                    stroke={shadeColor(segmentColor, index % 2 === 0 ? -25 : 28)}
+                    strokeWidth={Math.max(.8, object.style.strokeWidth * .18)}
+                    shadowColor="#000000"
+                    shadowBlur={3}
+                    shadowOffsetY={2}
+                    shadowOpacity={.45}
+                  />
+                );
+              })}
             </Group>
             <Ellipse x={x} y={y} radiusX={radiusX} radiusY={radiusY} fill="#00000001" />
           </Group>

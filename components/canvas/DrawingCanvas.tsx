@@ -20,6 +20,7 @@ interface Props {
 }
 
 interface Draft { tool: Tool; start: Point; points: Point[]; current: Point }
+interface DetectionEffect { phase: "scanning" | "locked" | "failed"; click: Point; box?: NormalizedBox; score?: number }
 
 const labelFor = (kind: DrawingObject["type"]) => ({
   playerRing: "Ring", spotlight: "Spotlight", ellipse: "Marcador", arrow: "Seta", line: "Linha", triangle: "Triângulo",
@@ -38,8 +39,8 @@ function containsPoint(box: NormalizedBox, point: Point) {
 }
 
 function makeDetectionCrop(video: HTMLVideoElement, click: Point) {
-  const cropWidth = video.videoWidth * .22;
-  const cropHeight = video.videoHeight * .45;
+  const cropWidth = video.videoWidth * .14;
+  const cropHeight = video.videoHeight * .30;
   const sourceX = clamp(click.x * video.videoWidth - cropWidth / 2, 0, video.videoWidth - cropWidth);
   const sourceY = clamp(click.y * video.videoHeight - cropHeight / 2, 0, video.videoHeight - cropHeight);
   const canvas = document.createElement("canvas");
@@ -49,11 +50,14 @@ function makeDetectionCrop(video: HTMLVideoElement, click: Point) {
   return { canvas, sourceX, sourceY, cropWidth, cropHeight };
 }
 
+const wait = (milliseconds: number) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+
 export function DrawingCanvas({ width, height, registerCapture, getVideoElement }: Props) {
   const { tool, drawings, selectedId, currentTime, duration, addDrawing, addPlayerTrack, updateDrawing, setSelectedId, setTool } = useEditorStore();
   const [draft, setDraft] = useState<Draft | null>(null);
   const [detectionMessage, setDetectionMessage] = useState<string | null>(null);
   const [detectionBoxes, setDetectionBoxes] = useState<NormalizedBox[]>([]);
+  const [detectionEffect, setDetectionEffect] = useState<DetectionEffect | null>(null);
   const [detectingPlayer, setDetectingPlayer] = useState(false);
   const stageRef = useRef<Konva.Stage>(null);
 
@@ -98,7 +102,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       trackingEnabled: options?.trackingEnabled ?? false,
       target: options?.target,
       keyframes: [],
-      animation: { fadeIn: 0.18, fadeOut: 0.18, motion: type === "playerRing" ? "scaleIn" : "none", pulseAmount: .05, pulseSpeed: 1.4 },
+      animation: { fadeIn: type === "playerRing" ? .42 : .18, fadeOut: 0.18, motion: type === "playerRing" ? "ringLock" : "none", pulseAmount: .05, pulseSpeed: 1.4 },
       style: { ...DEFAULT_STYLE, ...effectStyle, dash: [] },
       transform: { ...DEFAULT_TRANSFORM },
       data,
@@ -110,59 +114,65 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
 
   const placeRingOnPlayer = useCallback(async (click: Point) => {
     if (detectingPlayer) return;
+    setDetectionEffect({ phase: "scanning", click });
     const video = getVideoElement?.();
     if (!video || !video.videoWidth || !video.videoHeight || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
       setDetectionMessage("O fotograma do vídeo ainda não está pronto.");
-      window.setTimeout(() => setDetectionMessage(null), 2600);
+      setDetectionEffect({ phase: "failed", click });
+      window.setTimeout(() => { setDetectionMessage(null); setDetectionEffect(null); }, 2600);
       return;
     }
 
     video.pause();
     setDetectingPlayer(true);
-    setDetectionMessage("A detetar o jogador neste fotograma…");
+    setDetectionMessage("A analisar a zona selecionada…");
     try {
-      const detections = await detectPlayers(video);
-      let boxes = detections.map((detection) => ({
+      const crop = makeDetectionCrop(video, click);
+      const cropDetections = await detectPlayers(crop.canvas);
+      let boxes = cropDetections.map((detection) => ({
         detection,
         box: {
-          x: detection.bbox[0] / video.videoWidth,
-          y: detection.bbox[1] / video.videoHeight,
-          width: detection.bbox[2] / video.videoWidth,
-          height: detection.bbox[3] / video.videoHeight,
+          x: (crop.sourceX + detection.bbox[0] / crop.canvas.width * crop.cropWidth) / video.videoWidth,
+          y: (crop.sourceY + detection.bbox[1] / crop.canvas.height * crop.cropHeight) / video.videoHeight,
+          width: detection.bbox[2] / crop.canvas.width * crop.cropWidth / video.videoWidth,
+          height: detection.bbox[3] / crop.canvas.height * crop.cropHeight / video.videoHeight,
         },
       }));
-      setDetectionBoxes(boxes.map(({ box }) => box));
       let match = boxes
         .filter(({ box }) => containsPoint(box, click))
         .sort((a, b) => a.box.width * a.box.height - b.box.width * b.box.height)[0];
 
       if (!match) {
-        setDetectionMessage("A ampliar a zona clicada para procurar o jogador…");
-        const crop = makeDetectionCrop(video, click);
-        const cropDetections = await detectPlayers(crop.canvas);
-        const cropBoxes = cropDetections.map((detection) => ({
+        setDetectionMessage("A confirmar o jogador no fotograma completo…");
+        const fullDetections = await detectPlayers(video);
+        const fullBoxes = fullDetections.map((detection) => ({
           detection,
           box: {
-            x: (crop.sourceX + detection.bbox[0] / crop.canvas.width * crop.cropWidth) / video.videoWidth,
-            y: (crop.sourceY + detection.bbox[1] / crop.canvas.height * crop.cropHeight) / video.videoHeight,
-            width: detection.bbox[2] / crop.canvas.width * crop.cropWidth / video.videoWidth,
-            height: detection.bbox[3] / crop.canvas.height * crop.cropHeight / video.videoHeight,
+            x: detection.bbox[0] / video.videoWidth,
+            y: detection.bbox[1] / video.videoHeight,
+            width: detection.bbox[2] / video.videoWidth,
+            height: detection.bbox[3] / video.videoHeight,
           },
         }));
-        boxes = [...boxes, ...cropBoxes];
-        setDetectionBoxes(boxes.map(({ box }) => box));
-        match = cropBoxes
+        boxes = [...boxes, ...fullBoxes];
+        match = fullBoxes
           .filter(({ box }) => containsPoint(box, click))
           .sort((a, b) => a.box.width * a.box.height - b.box.width * b.box.height)[0];
       }
 
       if (!match) {
+        setDetectionBoxes(boxes.map(({ box }) => box));
+        setDetectionEffect({ phase: "failed", click });
         setDetectionMessage(boxes.length
           ? "Esse jogador não foi reconhecido. As caixas mostram os jogadores detetados; tente outro ponto do corpo."
           : "Não encontrei jogadores neste fotograma. Tente avançar alguns frames ou usar uma imagem mais próxima.");
-        window.setTimeout(() => { setDetectionMessage(null); setDetectionBoxes([]); }, 4200);
+        window.setTimeout(() => { setDetectionMessage(null); setDetectionBoxes([]); setDetectionEffect(null); }, 4200);
         return;
       }
+
+      setDetectionEffect({ phase: "locked", click, box: match.box, score: match.detection.score });
+      setDetectionMessage(`Jogador identificado · ${Math.round(match.detection.score * 100)}%`);
+      await wait(620);
 
       const foot = {
         x: clamp(match.box.x + match.box.width / 2, 0, 1),
@@ -185,12 +195,12 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         { target: { kind: "player", trackId, anchor: "feet" }, trackingEnabled: true },
       );
       setDetectionBoxes([]);
-      setDetectionMessage(`Jogador detetado · ${Math.round(match.detection.score * 100)}%`);
-      window.setTimeout(() => setDetectionMessage(null), 2200);
+      window.setTimeout(() => { setDetectionMessage(null); setDetectionEffect(null); }, 1500);
     } catch {
       setDetectionBoxes([]);
+      setDetectionEffect({ phase: "failed", click });
       setDetectionMessage("Não foi possível analisar este fotograma. Confirme o acesso ao vídeo e tente novamente.");
-      window.setTimeout(() => setDetectionMessage(null), 4200);
+      window.setTimeout(() => { setDetectionMessage(null); setDetectionEffect(null); }, 4200);
     } finally {
       setDetectingPlayer(false);
     }
@@ -339,7 +349,35 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         {tool === "text" && <Text text="Clique para adicionar texto" x={16} y={16} fill="#fff" opacity={0.5} fontSize={13} />}
       </Layer>
     </Stage>
-    {detectionMessage && <div className={`player-detection-toast${detectingPlayer ? " loading" : ""}`}>{detectionMessage}</div>}
+    {detectionEffect && (
+      <div className={`player-identification-effect phase-${detectionEffect.phase}`} aria-hidden="true">
+        {detectionEffect.phase !== "locked" && (
+          <div
+            className="player-scan-reticle"
+            style={{ left: `${detectionEffect.click.x * 100}%`, top: `${detectionEffect.click.y * 100}%` }}
+          >
+            <i className="scan-ring scan-ring-a" />
+            <i className="scan-ring scan-ring-b" />
+            <i className="scan-crosshair" />
+          </div>
+        )}
+        {detectionEffect.phase === "locked" && detectionEffect.box && (
+          <div
+            className="player-lock-box"
+            style={{
+              left: `${detectionEffect.box.x * 100}%`,
+              top: `${detectionEffect.box.y * 100}%`,
+              width: `${detectionEffect.box.width * 100}%`,
+              height: `${detectionEffect.box.height * 100}%`,
+            }}
+          >
+            <i className="lock-scan-line" />
+            <span>JOGADOR IDENTIFICADO · {Math.round((detectionEffect.score ?? 0) * 100)}%</span>
+          </div>
+        )}
+      </div>
+    )}
+    {detectionMessage && <div className={`player-detection-toast${detectionEffect?.phase === "scanning" ? " loading" : ""}`}>{detectionMessage}</div>}
     </>
   );
 }

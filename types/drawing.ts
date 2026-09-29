@@ -94,7 +94,7 @@ export interface DrawingObject {
   animation?: {
     fadeIn?: number;
     fadeOut?: number;
-    motion?: "none" | "scaleIn" | "pulse";
+    motion?: "none" | "scaleIn" | "ringLock" | "pulse";
     pulseAmount?: number;
     pulseSpeed?: number;
   };

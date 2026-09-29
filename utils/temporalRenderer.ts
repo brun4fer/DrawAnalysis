@@ -26,7 +26,13 @@ export function getObjectStateAtTime(object: DrawingObject, currentTime: number)
   const inFactor = fadeIn ? Math.min(1, Math.max(0, (currentTime - object.startTime) / fadeIn)) : 1;
   const outFactor = fadeOut ? Math.min(1, Math.max(0, (object.endTime - currentTime) / fadeOut)) : 1;
   const motion = object.animation?.motion ?? "none";
-  const scaleInFactor = motion === "scaleIn" ? .5 + inFactor * .5 : 1;
+  const entranceProgress = 1 - Math.pow(1 - inFactor, 3);
+  const scaleInFactor = motion === "scaleIn"
+    ? .5 + inFactor * .5
+    : motion === "ringLock"
+      ? .62 + entranceProgress * .38
+      : 1;
+  const rotationOffset = motion === "ringLock" ? -18 * (1 - entranceProgress) : 0;
   const pulseAmount = Math.max(0, Math.min(.25, object.animation?.pulseAmount ?? .05));
   const pulseSpeed = Math.max(.1, object.animation?.pulseSpeed ?? 1.4);
   const pulseFactor = motion === "pulse"
@@ -35,7 +41,7 @@ export function getObjectStateAtTime(object: DrawingObject, currentTime: number)
   const animatedScale = scaleInFactor * pulseFactor;
   return {
     visible,
-    transform: { x: value("x"), y: value("y"), rotation: value("rotation"), scaleX: value("scaleX") * animatedScale, scaleY: value("scaleY") * animatedScale },
+    transform: { x: value("x"), y: value("y"), rotation: value("rotation") + rotationOffset, scaleX: value("scaleX") * animatedScale, scaleY: value("scaleY") * animatedScale },
     opacity: object.style.opacity * Math.min(inFactor, outFactor),
     points,
   };
