@@ -117,7 +117,7 @@ export interface DrawingObject {
 
 export const DEFAULT_STYLE: DrawingStyle = {
   stroke: "#a3ff12",
-  fill: "#a3ff1233",
+  fill: "#a3ff1280",
   strokeWidth: 4,
   opacity: 1,
   dash: [],

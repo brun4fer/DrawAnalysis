@@ -177,7 +177,9 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       ? { stroke: "#f7f8f2", fill: "#1454c4", strokeWidth: 3, shadowColor: "#f1e72b", shadowBlur: 22, shadowOpacity: .82 }
       : type === "spotlight"
         ? { stroke: "#fff8c7", fill: "#fff8c733", strokeWidth: 2, shadowColor: "#fff2a8", shadowBlur: 22, shadowOpacity: .6 }
-        : {};
+        : type === "arrow"
+          ? { strokeWidth: 7, shadowColor: "#000000", shadowBlur: 10, shadowOpacity: .62, shadowOffsetX: 3, shadowOffsetY: 5 }
+          : {};
     const timelinePoint = timelineTimeToSource(currentTime, activeFreezeFramesRef.current);
     const isFreezeDrawing = Boolean(timelinePoint.freeze && timelinePoint.freezeStart !== undefined && timelinePoint.freezeEnd !== undefined);
     const drawingStartTime = isFreezeDrawing ? timelinePoint.freezeStart! : currentTime;
@@ -196,7 +198,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       trackingEnabled: options?.trackingEnabled ?? false,
       target: options?.target,
       keyframes: [],
-      animation: { fadeIn: type === "playerRing" ? .42 : .18, fadeOut: isFreezeDrawing ? 0 : .18, motion: type === "playerRing" ? "ringLock" : "none", pulseAmount: .05, pulseSpeed: 1.4 },
+      animation: { fadeIn: 0, fadeOut: 0, motion: "none", pulseAmount: .05, pulseSpeed: 1.4 },
       style: { ...DEFAULT_STYLE, ...effectStyle, dash: [] },
       transform: { ...DEFAULT_TRANSFORM },
       data,

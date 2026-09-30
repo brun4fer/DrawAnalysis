@@ -84,8 +84,8 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         const innerRotation = data.spinEnabled === false ? 0 : -elapsed * 72 * spinSpeed;
         const outerBand = Math.min(.23, .11 + object.style.strokeWidth * .012);
         const outerInnerRadius = radiusX * (1 - outerBand);
-        const innerOuterRadius = radiusX * .63;
-        const innerInnerRadius = radiusX * Math.max(.52, .575 - object.style.strokeWidth * .0045);
+        const innerOuterRadius = radiusX * .77;
+        const innerInnerRadius = radiusX * Math.max(.67, .71 - object.style.strokeWidth * .0045);
         const depthOffset = Math.max(.7, radiusY * .055);
         const makeSegments = (inner = false) => Array.from({ length: 8 }, (_, slot) => {
             const center = -90 + slot * 45;
@@ -285,8 +285,8 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
                 {fineInnerSegments.map((segment, index) => (
                   <Arc
                     key={`fine-inner-depth-${index}`}
-                    innerRadius={radiusX * .66}
-                    outerRadius={radiusX * .72}
+                    innerRadius={radiusX * .78}
+                    outerRadius={radiusX * .84}
                     angle={segment.angle}
                     rotation={segment.start + innerRotation}
                     fill={shadeColor(secondaryColor, -72)}
@@ -314,8 +314,8 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
                 {fineInnerSegments.map((segment, index) => (
                   <Arc
                     key={`fine-inner-face-${index}`}
-                    innerRadius={radiusX * .66}
-                    outerRadius={radiusX * .72}
+                    innerRadius={radiusX * .78}
+                    outerRadius={radiusX * .84}
                     angle={segment.angle}
                     rotation={segment.start + innerRotation}
                     fill={secondaryColor}
@@ -370,8 +370,113 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         return <Ellipse {...common} x={data.center.x * width} y={data.center.y * height} radiusX={data.radiusX * width} radiusY={data.radiusY * height} fill={object.style.fill} />;
       case "rectangle":
         return <Rect {...common} x={data.origin.x * width} y={data.origin.y * height} width={data.width * width} height={data.height * height} fill={object.style.fill} />;
-      case "arrow":
-        return <Arrow {...common} points={flattenPoints(data.points, width, height)} fill={object.style.stroke} pointerLength={12} pointerWidth={12} />;
+      case "arrow": {
+        const points = flattenPoints(data.points, width, height);
+        if (points.length < 4) return null;
+        const startX = points[0];
+        const startY = points[1];
+        const endX = points[points.length - 2];
+        const endY = points[points.length - 1];
+        const deltaX = endX - startX;
+        const deltaY = endY - startY;
+        const length = Math.max(1, Math.hypot(deltaX, deltaY));
+        const directionX = deltaX / length;
+        const directionY = deltaY / length;
+        const normalX = -directionY;
+        const normalY = directionX;
+        const faceColor = solidColor(object.style.stroke, "#a3ff12");
+        const shaftHalf = Math.max(3, object.style.strokeWidth * .58);
+        const headLength = Math.min(length * .42, Math.max(15, object.style.strokeWidth * 3.2));
+        const headHalf = Math.max(shaftHalf * 2.35, 9);
+        const headBaseX = endX - directionX * headLength;
+        const headBaseY = endY - directionY * headLength;
+        const depthX = Math.max(2, object.style.strokeWidth * .42);
+        const depthY = Math.max(3, object.style.strokeWidth * .68);
+        const facePoints = [
+          startX + normalX * shaftHalf, startY + normalY * shaftHalf,
+          headBaseX + normalX * shaftHalf, headBaseY + normalY * shaftHalf,
+          headBaseX + normalX * headHalf, headBaseY + normalY * headHalf,
+          endX, endY,
+          headBaseX - normalX * headHalf, headBaseY - normalY * headHalf,
+          headBaseX - normalX * shaftHalf, headBaseY - normalY * shaftHalf,
+          startX - normalX * shaftHalf, startY - normalY * shaftHalf,
+        ];
+        const offset = (source: number[], x: number, y: number) => source.map((value, index) => value + (index % 2 === 0 ? x : y));
+        const pointerLength = Math.max(15, object.style.strokeWidth * 3.1);
+        const pointerWidth = Math.max(17, object.style.strokeWidth * 3.5);
+
+        if (object.style.dash.length) {
+          return (
+            <Group opacity={temporalState.opacity}>
+              <Arrow points={offset(points, depthX + object.style.shadowOffsetX, depthY + object.style.shadowOffsetY)} stroke="#000000" fill="#000000" strokeWidth={object.style.strokeWidth + 4} dash={object.style.dash} pointerLength={pointerLength} pointerWidth={pointerWidth} opacity={.32} shadowColor="#000000" shadowBlur={Math.max(6, object.style.shadowBlur)} shadowOpacity={.75} listening={false} />
+              <Arrow points={offset(points, depthX, depthY)} stroke={shadeColor(faceColor, -90)} fill={shadeColor(faceColor, -90)} strokeWidth={object.style.strokeWidth + 2.5} dash={object.style.dash} pointerLength={pointerLength} pointerWidth={pointerWidth} listening={false} />
+              <Arrow points={points} stroke={faceColor} fill={faceColor} strokeWidth={object.style.strokeWidth} dash={object.style.dash} pointerLength={pointerLength} pointerWidth={pointerWidth} lineCap="round" lineJoin="round" />
+            </Group>
+          );
+        }
+
+        return (
+          <Group opacity={temporalState.opacity}>
+            <Line
+              points={offset(facePoints, depthX + object.style.shadowOffsetX * .5, depthY + object.style.shadowOffsetY * .5)}
+              closed
+              fill="#000000"
+              opacity={Math.max(.24, object.style.shadowOpacity * .46)}
+              shadowColor="#000000"
+              shadowBlur={Math.max(7, object.style.shadowBlur)}
+              shadowOffsetX={object.style.shadowOffsetX}
+              shadowOffsetY={object.style.shadowOffsetY}
+              shadowOpacity={Math.max(.45, object.style.shadowOpacity)}
+              listening={false}
+            />
+            <Line
+              points={offset(facePoints, depthX, depthY)}
+              closed
+              fill={shadeColor(faceColor, -88)}
+              stroke={shadeColor(faceColor, -112)}
+              strokeWidth={1.3}
+              lineJoin="round"
+              listening={false}
+            />
+            <Line
+              points={facePoints}
+              closed
+              fillLinearGradientStartPoint={{ x: startX - normalX * headHalf, y: startY - normalY * headHalf }}
+              fillLinearGradientEndPoint={{ x: startX + normalX * headHalf, y: startY + normalY * headHalf }}
+              fillLinearGradientColorStops={[0, shadeColor(faceColor, -32), .28, faceColor, .62, shadeColor(faceColor, 48), 1, shadeColor(faceColor, -20)]}
+              stroke={shadeColor(faceColor, -38)}
+              strokeWidth={1.2}
+              lineJoin="round"
+            />
+            <Line
+              points={[
+                startX + normalX * shaftHalf * .72, startY + normalY * shaftHalf * .72,
+                headBaseX + normalX * shaftHalf * .72, headBaseY + normalY * shaftHalf * .72,
+                headBaseX + normalX * headHalf * .82, headBaseY + normalY * headHalf * .82,
+                endX, endY,
+              ]}
+              stroke={withAlpha(shadeColor(faceColor, 78), .78)}
+              strokeWidth={Math.max(1, object.style.strokeWidth * .18)}
+              lineCap="round"
+              lineJoin="round"
+              listening={false}
+            />
+            <Line
+              points={[
+                endX, endY,
+                headBaseX - normalX * headHalf * .9, headBaseY - normalY * headHalf * .9,
+                headBaseX - normalX * shaftHalf * .82, headBaseY - normalY * shaftHalf * .82,
+                startX - normalX * shaftHalf * .82, startY - normalY * shaftHalf * .82,
+              ]}
+              stroke={withAlpha(shadeColor(faceColor, -82), .82)}
+              strokeWidth={Math.max(1, object.style.strokeWidth * .2)}
+              lineCap="round"
+              lineJoin="round"
+              listening={false}
+            />
+          </Group>
+        );
+      }
       case "line":
         return <Line {...common} points={flattenPoints(data.points, width, height)} />;
       case "triangle":
