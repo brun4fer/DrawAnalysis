@@ -4,6 +4,7 @@ import { Copy, LocateFixed, Trash2 } from "lucide-react";
 import { useEditorStore } from "@/store/useEditorStore";
 import type { PlayerLabel, PlayerRingDesign } from "@/types/drawing";
 import type { VideoSlideContent } from "@/types/slide";
+import { getSourceDuration, sourceTimeToTimeline, timelineTimeToSource } from "@/utils/videoTimeline";
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return <span className="field-label">{children}</span>;
@@ -53,7 +54,7 @@ export function PropertiesPanel() {
   };
   const updatePlayerLabelOffset = (labelOffsetY: number) => {
     if (object.data.kind !== "playerRing") return;
-    updateDrawing(object.id, { data: { ...object.data, labelOffsetY } });
+    updateDrawing(object.id, { data: { ...object.data, labelOffsetY: Math.max(.03, Math.min(.55, labelOffsetY)) } });
   };
   const updatePlayerRingAppearance = (patch: { ringDesign?: PlayerRingDesign; spinEnabled?: boolean; spinSpeed?: number }) => {
     if (object.data.kind !== "playerRing") return;
@@ -67,6 +68,7 @@ export function PropertiesPanel() {
   const duration = Math.max(0, object.endTime - object.startTime);
   const fillColor = object.style.fill.startsWith("#") ? object.style.fill.slice(0, 7) : "#a3ff12";
   const isPlayerRing = object.type === "playerRing";
+  const playerLabelOffset = object.data.kind === "playerRing" ? object.data.labelOffsetY ?? .12 : .12;
   const playerTrack = object.target?.kind === "player" && activeSlide?.content.kind === "video"
     ? activeSlide.content.playerTracks?.find((track) => track.id === object.target?.trackId)
     : undefined;
@@ -184,17 +186,21 @@ export function PropertiesPanel() {
                   onChange={(event) => updatePlayerLabel({ fontSize: Number(event.target.value) })}
                 />
               </label>
-              <label className="stacked-field">
-                <span><FieldLabel>Altura acima do jogador</FieldLabel><b>{Math.round((object.data.labelOffsetY ?? .12) * 100)}%</b></span>
+              <label className="stacked-field player-label-height">
+                <span><FieldLabel>Posição vertical do texto</FieldLabel><b>{Math.round(playerLabelOffset * 100)}%</b></span>
                 <input
                   type="range"
-                  min={.04}
-                  max={.35}
+                  min={.03}
+                  max={.55}
                   step={.005}
-                  value={object.data.labelOffsetY ?? .12}
+                  value={playerLabelOffset}
                   onChange={(event) => updatePlayerLabelOffset(Number(event.target.value))}
                 />
               </label>
+              <div className="player-label-position-buttons">
+                <button type="button" onClick={() => updatePlayerLabelOffset(playerLabelOffset - .015)}>↓ Descer texto</button>
+                <button type="button" onClick={() => updatePlayerLabelOffset(playerLabelOffset + .015)}>↑ Subir texto</button>
+              </div>
             </div>
           )}
         </section>
@@ -257,16 +263,20 @@ function VideoSlidePresentationSettings({ content, slideDuration, question, curr
   videoDuration: number;
   onUpdate: (patch: { content?: VideoSlideContent; duration?: number; question?: string }) => void;
 }) {
-  const endTime = content.endTime ?? videoDuration;
+  const freezeFrames = content.freezeFrames ?? [];
+  const sourceDuration = getSourceDuration(videoDuration, freezeFrames);
+  const endTime = content.endTime ?? sourceDuration;
+  const currentSourceTime = timelineTimeToSource(currentTime, freezeFrames).sourceTime;
+  const presentationDuration = sourceTimeToTimeline(endTime, freezeFrames) - sourceTimeToTimeline(content.startTime, freezeFrames);
   return (
     <section className="property-section video-presentation-settings">
       <h3>CORTE DO VÍDEO</h3>
       <div className="two-fields">
         <label><FieldLabel>Entrada</FieldLabel><input type="number" min={0} max={endTime} step={.04} value={content.startTime.toFixed(2)} onChange={(event) => onUpdate({ content: { ...content, startTime: Math.max(0, Math.min(Number(event.target.value), endTime - .08)) } })} /></label>
-        <label><FieldLabel>Saída</FieldLabel><input type="number" min={content.startTime + .08} max={videoDuration} step={.04} value={endTime.toFixed(2)} onChange={(event) => onUpdate({ content: { ...content, endTime: Math.max(content.startTime + .08, Math.min(Number(event.target.value), videoDuration)) } })} /></label>
+        <label><FieldLabel>Saída</FieldLabel><input type="number" min={content.startTime + .08} max={sourceDuration} step={.04} value={endTime.toFixed(2)} onChange={(event) => onUpdate({ content: { ...content, endTime: Math.max(content.startTime + .08, Math.min(Number(event.target.value), sourceDuration)) } })} /></label>
       </div>
-      <div className="mark-controls"><button disabled={!videoDuration || currentTime >= endTime - .08} onClick={() => onUpdate({ content: { ...content, startTime: currentTime } })}>Marcar IN</button><button disabled={!videoDuration || currentTime <= content.startTime + .08} onClick={() => onUpdate({ content: { ...content, endTime: currentTime } })}>Marcar OUT</button></div>
-      <div className="duration-readout"><span>Duração do corte</span><strong>{Math.max(0, endTime - content.startTime).toFixed(2)} s</strong></div>
+      <div className="mark-controls"><button disabled={!videoDuration || currentSourceTime >= endTime - .08} onClick={() => onUpdate({ content: { ...content, startTime: currentSourceTime } })}>Marcar IN</button><button disabled={!videoDuration || currentSourceTime <= content.startTime + .08} onClick={() => onUpdate({ content: { ...content, endTime: currentSourceTime } })}>Marcar OUT</button></div>
+      <div className="duration-readout"><span>Duração com pausas</span><strong>{Math.max(0, presentationDuration).toFixed(2)} s</strong></div>
       <label className="slide-prop-field"><span>Duração do slide</span><div><input type="number" min={1} max={60} step={.5} value={slideDuration} onChange={(event) => onUpdate({ duration: Math.max(1, Number(event.target.value)) })} /><i>s</i></div></label>
       <label className="slide-prop-field vertical"><span>Pergunta deste slide</span><textarea rows={3} placeholder="O que quer perguntar à equipa?" value={question} onChange={(event) => onUpdate({ question: event.target.value })} /></label>
     </section>

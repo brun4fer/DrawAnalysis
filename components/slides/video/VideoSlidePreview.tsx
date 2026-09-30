@@ -2,8 +2,9 @@
 /* eslint-disable @next/next/no-img-element */
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { VideoSlideContent } from "@/types/slide";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { FreezeFrame, VideoSlideContent } from "@/types/slide";
+import { freezeRange, orderedFreezeFrames, sourceTimeToTimeline } from "@/utils/videoTimeline";
 
 const DrawingPreviewCanvas = dynamic(() => import("@/components/canvas/DrawingPreviewCanvas").then((module) => module.DrawingPreviewCanvas), { ssr: false });
 
@@ -13,7 +14,12 @@ export function VideoSlidePreview({ content, slideName }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const animationRef = useRef<number | null>(null);
-  const [currentTime, setCurrentTime] = useState(content.startTime);
+  const freezeAnimationRef = useRef<number | null>(null);
+  const holdingFreezeRef = useRef(false);
+  const completedFreezesRef = useRef<Set<string>>(new Set());
+  const lastSourceTimeRef = useRef(content.startTime);
+  const freezes = useMemo(() => orderedFreezeFrames(content.freezeFrames), [content.freezeFrames]);
+  const [currentTime, setCurrentTime] = useState(sourceTimeToTimeline(content.startTime, freezes));
   const [aspect, setAspect] = useState(16 / 9);
   const [size, setSize] = useState({ width: 960, height: 540 });
   const getVideoElement = useCallback(() => videoRef.current, []);
@@ -34,21 +40,65 @@ export function VideoSlidePreview({ content, slideName }: Props) {
     return () => observer.disconnect();
   }, [aspect]);
 
-  useEffect(() => () => {
+  const cancelAnimations = useCallback(() => {
     if (animationRef.current !== null) cancelAnimationFrame(animationRef.current);
+    if (freezeAnimationRef.current !== null) cancelAnimationFrame(freezeAnimationRef.current);
+    animationRef.current = null;
+    freezeAnimationRef.current = null;
+    holdingFreezeRef.current = false;
   }, []);
+
+  useEffect(() => () => cancelAnimations(), [cancelAnimations]);
+
+  const playFreeze = (freeze: FreezeFrame) => {
+    const video = videoRef.current;
+    if (!video) return;
+    const range = freezeRange(freeze, freezes);
+    holdingFreezeRef.current = true;
+    video.currentTime = freeze.sourceTime;
+    video.pause();
+    setCurrentTime(range.start);
+    const startedAt = performance.now();
+    const hold = (now: number) => {
+      if (!holdingFreezeRef.current) return;
+      const timelineTime = Math.min(range.end, range.start + (now - startedAt) / 1000);
+      setCurrentTime(timelineTime);
+      if (timelineTime >= range.end - .001) {
+        holdingFreezeRef.current = false;
+        freezeAnimationRef.current = null;
+        completedFreezesRef.current.add(freeze.id);
+        video.currentTime = Math.min(video.duration, freeze.sourceTime + .002);
+        lastSourceTimeRef.current = video.currentTime;
+        void video.play().catch(() => undefined);
+        return;
+      }
+      freezeAnimationRef.current = requestAnimationFrame(hold);
+    };
+    freezeAnimationRef.current = requestAnimationFrame(hold);
+  };
 
   const syncDrawings = () => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || holdingFreezeRef.current) return;
     const endTime = content.endTime ?? video.duration;
     if (video.currentTime >= endTime) {
       video.pause();
       video.currentTime = endTime;
-      setCurrentTime(endTime);
+      setCurrentTime(sourceTimeToTimeline(endTime, freezes));
       return;
     }
-    setCurrentTime(video.currentTime);
+    const sourceTime = video.currentTime;
+    const nextFreeze = freezes.find((freeze) => !completedFreezesRef.current.has(freeze.id)
+      && freeze.sourceTime >= content.startTime
+      && freeze.sourceTime < endTime
+      && lastSourceTimeRef.current <= freeze.sourceTime + .01
+      && sourceTime >= freeze.sourceTime - .012);
+    lastSourceTimeRef.current = sourceTime;
+    if (nextFreeze && !video.paused) {
+      playFreeze(nextFreeze);
+      return;
+    }
+    setCurrentTime(sourceTimeToTimeline(sourceTime, freezes));
     if (!video.paused) animationRef.current = requestAnimationFrame(syncDrawings);
   };
 
@@ -76,7 +126,9 @@ export function VideoSlidePreview({ content, slideName }: Props) {
             const video = event.currentTarget;
             setAspect(video.videoWidth / video.videoHeight || 16 / 9);
             video.currentTime = content.startTime;
-            setCurrentTime(content.startTime);
+            lastSourceTimeRef.current = content.startTime;
+            completedFreezesRef.current.clear();
+            setCurrentTime(sourceTimeToTimeline(content.startTime, freezes));
             void video.play().catch(() => undefined);
           }}
           onPlay={() => {
@@ -84,10 +136,17 @@ export function VideoSlidePreview({ content, slideName }: Props) {
             animationRef.current = requestAnimationFrame(syncDrawings);
           }}
           onPause={() => {
+            if (holdingFreezeRef.current) return;
             if (animationRef.current !== null) cancelAnimationFrame(animationRef.current);
-            setCurrentTime(videoRef.current?.currentTime ?? content.startTime);
+            setCurrentTime(sourceTimeToTimeline(videoRef.current?.currentTime ?? content.startTime, freezes));
           }}
-          onSeeked={(event) => setCurrentTime(event.currentTarget.currentTime)}
+          onSeeked={(event) => {
+            if (holdingFreezeRef.current) return;
+            const sourceTime = event.currentTarget.currentTime;
+            lastSourceTimeRef.current = sourceTime;
+            completedFreezesRef.current = new Set(freezes.filter((freeze) => freeze.sourceTime < sourceTime).map((freeze) => freeze.id));
+            setCurrentTime(sourceTimeToTimeline(sourceTime, freezes));
+          }}
         />
         <div className="preview-drawing-overlay"><DrawingPreviewCanvas drawings={content.drawings} playerTracks={content.playerTracks} currentTime={currentTime} width={size.width} height={size.height} getVideoElement={getVideoElement} /></div>
       </div>

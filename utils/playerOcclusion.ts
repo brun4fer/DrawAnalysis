@@ -8,6 +8,7 @@ export function drawPlayerForeground(
   canvasHeight: number,
   foot: Point,
   ringRadiusY: number,
+  occlusionWidth?: number,
 ) {
   const x = box.x * canvasWidth;
   const y = box.y * canvasHeight;
@@ -16,7 +17,7 @@ export function drawPlayerForeground(
   const footX = foot.x * canvasWidth;
   const footY = foot.y * canvasHeight;
   const ringHeight = Math.max(4, ringRadiusY * canvasHeight);
-  const lowerBodyWidth = Math.max(10, bodyWidth * .92);
+  const lowerBodyWidth = Math.max(10, bodyWidth * 1.08, (occlusionWidth ?? 0) * canvasWidth * 1.12);
   context.save();
   context.beginPath();
   context.ellipse(x + bodyWidth * .5, y + bodyHeight * .1, bodyWidth * .19, bodyHeight * .085, 0, 0, Math.PI * 2);
@@ -61,7 +62,7 @@ export function drawPlayerForeground(
   context.lineTo(footX - lowerBodyWidth * .52, footY + ringHeight * .42);
   context.closePath();
   context.moveTo(footX + lowerBodyWidth * .56, footY - ringHeight * .08);
-  context.ellipse(footX, footY - ringHeight * .08, lowerBodyWidth * .56, Math.max(3, ringHeight * .62), 0, 0, Math.PI * 2);
+  context.ellipse(footX, footY - ringHeight * .12, lowerBodyWidth * .58, Math.max(3, ringHeight * .82), 0, 0, Math.PI * 2);
   context.clip();
   context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, canvasWidth, canvasHeight);
   context.restore();

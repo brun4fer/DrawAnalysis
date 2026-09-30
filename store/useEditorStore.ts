@@ -2,9 +2,10 @@
 
 import { create } from "zustand";
 import type { DrawingKeyframe, DrawingObject, PlayerTrack, PlayerTrackSample, Tool } from "@/types/drawing";
-import type { AnalysisSlide } from "@/types/slide";
+import type { AnalysisSlide, FreezeFrame } from "@/types/slide";
 import { createId } from "@/utils/id";
 import { createSlide } from "@/utils/slideFactory";
+import { sourceTimeToTimeline } from "@/utils/videoTimeline";
 
 interface Snapshot { drawings: DrawingObject[]; slides: AnalysisSlide[] }
 
@@ -43,6 +44,7 @@ interface EditorState {
   setSelectedSlideId: (id: string | null) => void;
   replacePresentation: (slides: AnalysisSlide[]) => void;
   setVideoSource: (id: string, sourceUrl?: string) => void;
+  insertFreezeFrame: (sourceTime: number, duration: number) => void;
 }
 
 const copy = (drawings: DrawingObject[]) => structuredClone(drawings);
@@ -284,4 +286,37 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       ? { ...slide, content: { ...slide.content, sourceUrl } }
       : slide),
   })),
+  insertFreezeFrame: (sourceTime, requestedDuration) => set((state) => {
+    const freezeDuration = Math.max(.25, Math.min(30, requestedDuration));
+    const activeSlide = state.slides.find((slide) => slide.id === state.selectedSlideId);
+    if (!activeSlide || activeSlide.content.kind !== "video") return state;
+    const existingFreezes = activeSlide.content.freezeFrames ?? [];
+    const insertionTime = sourceTimeToTimeline(sourceTime, existingFreezes);
+    const freeze: FreezeFrame = { id: createId(), sourceTime, duration: freezeDuration };
+    const shiftTime = (time: number, includeBoundary: boolean) => includeBoundary ? time >= insertionTime : time > insertionTime;
+    const drawings = state.drawings.map((drawing) => ({
+      ...drawing,
+      startTime: shiftTime(drawing.startTime, false) ? drawing.startTime + freezeDuration : drawing.startTime,
+      endTime: shiftTime(drawing.endTime, true) ? drawing.endTime + freezeDuration : drawing.endTime,
+      keyframes: drawing.keyframes.map((keyframe) => shiftTime(keyframe.time, false) ? { ...keyframe, time: keyframe.time + freezeDuration } : keyframe),
+    }));
+    const playerTracks = (activeSlide.content.playerTracks ?? []).map((track) => ({
+      ...track,
+      samples: track.samples.map((sample) => shiftTime(sample.time, false) ? { ...sample, time: sample.time + freezeDuration } : sample),
+    }));
+    const freezeFrames = [...existingFreezes, freeze].sort((left, right) => left.sourceTime - right.sourceTime);
+    const slides = state.slides.map((slide) => slide.id === activeSlide.id && slide.content.kind === "video"
+      ? { ...slide, content: { ...slide.content, drawings, playerTracks, freezeFrames } }
+      : slide);
+    return {
+      history: [...state.history, { drawings: copy(state.drawings), slides: copySlides(state.slides) }].slice(-80),
+      future: [],
+      drawings,
+      slides,
+      duration: state.duration + freezeDuration,
+      currentTime: insertionTime + Math.min(.01, freezeDuration / 2),
+      isPlaying: false,
+      selectedId: null,
+    };
+  }),
 }));

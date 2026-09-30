@@ -1,26 +1,49 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { ChevronDown, Layers3, Lock, Minus, Plus, Scissors } from "lucide-react";
+import { ChevronDown, Layers3, Lock, Minus, PauseCircle, Plus, Scissors, X } from "lucide-react";
 import { useEditorStore } from "@/store/useEditorStore";
 import { formatTime } from "@/components/video/VideoControls";
+import { freezeRange, getSourceDuration, sourceTimeToTimeline, timelineTimeToSource } from "@/utils/videoTimeline";
 
 const MIN_DURATION = 0.08;
 
 export function Timeline() {
-  const { drawings, duration, currentTime, selectedId, setCurrentTime, setSelectedId, updateDrawing, slides, selectedSlideId, updateSlide } = useEditorStore();
+  const { drawings, duration, currentTime, selectedId, setCurrentTime, setSelectedId, setIsPlaying, updateDrawing, slides, selectedSlideId, updateSlide, insertFreezeFrame } = useEditorStore();
   const trackRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
+  const [freezeDialogOpen, setFreezeDialogOpen] = useState(false);
+  const [freezeDuration, setFreezeDuration] = useState(2);
+  const [freezeTargetSourceTime, setFreezeTargetSourceTime] = useState(0);
   const safeDuration = Math.max(duration, 1);
   const timelineWidth = `${zoom * 100}%`;
   const activeSlide = slides.find((slide) => slide.id === selectedSlideId);
   const videoContent = activeSlide?.content.kind === "video" ? activeSlide.content : null;
-  const clipStart = Math.max(0, videoContent?.startTime ?? 0);
-  const clipEnd = Math.min(duration || safeDuration, (videoContent?.endTime ?? duration) || safeDuration);
+  const freezeFrames = videoContent?.freezeFrames ?? [];
+  const sourceDuration = getSourceDuration(duration, freezeFrames);
+  const sourceClipStart = Math.max(0, videoContent?.startTime ?? 0);
+  const sourceClipEnd = Math.min(sourceDuration || safeDuration, (videoContent?.endTime ?? sourceDuration) || safeDuration);
+  const clipStart = sourceTimeToTimeline(sourceClipStart, freezeFrames);
+  const clipEnd = sourceTimeToTimeline(sourceClipEnd, freezeFrames);
+  const currentPoint = timelineTimeToSource(currentTime, freezeFrames);
 
   const updateClip = (startTime: number, endTime: number) => {
     if (!activeSlide || !videoContent) return;
-    updateSlide(activeSlide.id, { content: { ...videoContent, startTime, endTime } });
+    updateSlide(activeSlide.id, { content: { ...videoContent, startTime: timelineTimeToSource(startTime, freezeFrames).sourceTime, endTime: timelineTimeToSource(endTime, freezeFrames).sourceTime } });
+  };
+
+  const addFreeze = () => {
+    const seconds = Math.max(.25, Math.min(30, Number(freezeDuration)));
+    if (!Number.isFinite(seconds) || currentPoint.freeze) return;
+    insertFreezeFrame(freezeTargetSourceTime, seconds);
+    setFreezeDialogOpen(false);
+  };
+
+  const openFreezeDialog = () => {
+    if (currentPoint.freeze) return;
+    setIsPlaying(false);
+    setFreezeTargetSourceTime(currentPoint.sourceTime);
+    setFreezeDialogOpen(true);
   };
 
   const seekFromPointer = (clientX: number) => {
@@ -81,6 +104,7 @@ export function Timeline() {
   const ticks = Array.from({ length: 11 }, (_, index) => index / 10 * safeDuration);
 
   return (
+    <>
     <section className="timeline-panel">
       <div className="timeline-toolbar">
         <div className="timeline-title"><Layers3 size={15} /> TIMELINE <span>{drawings.length} objetos</span></div>
@@ -92,6 +116,7 @@ export function Timeline() {
           <code>{formatTime(clipEnd, true)}</code>
           <button disabled={!duration || currentTime <= clipStart + MIN_DURATION} onClick={() => updateClip(clipStart, currentTime)}>Marcar OUT</button>
           <b>{Math.max(0, clipEnd - clipStart).toFixed(2)}s</b>
+          <button className="freeze-frame-button" disabled={!duration || Boolean(currentPoint.freeze)} onClick={openFreezeDialog}><PauseCircle size={12} /> Parar imagem</button>
         </div>
         <div className="timeline-tools"><Lock size={14} /><button onClick={() => setZoom(Math.max(1, zoom - 0.25))}><Minus size={14} /></button><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom(Math.min(3, zoom + 0.25))}><Plus size={14} /></button></div>
       </div>
@@ -108,6 +133,10 @@ export function Timeline() {
             </div>
             <div className="video-track">
               <div className="video-wave">{Array.from({ length: 80 }, (_, i) => <i key={i} style={{ height: `${22 + (i * 17) % 58}%` }} />)}</div>
+              {freezeFrames.map((freeze) => {
+                const range = freezeRange(freeze, freezeFrames);
+                return <button key={freeze.id} className="freeze-frame-clip" style={{ left: `${range.start / safeDuration * 100}%`, width: `${Math.max(.7, freeze.duration / safeDuration * 100)}%` }} onPointerDown={(event) => { event.stopPropagation(); setCurrentTime(range.start + freeze.duration / 2); }} title={`Imagem parada durante ${freeze.duration.toFixed(1)} segundos`}><PauseCircle size={10} /><span>{freeze.duration.toFixed(1)}s</span></button>;
+              })}
               <div className="clip-outside left" style={{ width: `${clipStart / safeDuration * 100}%` }} />
               <div className="clip-outside right" style={{ width: `${Math.max(0, safeDuration - clipEnd) / safeDuration * 100}%` }} />
               <div className="video-trim-range" style={{ left: `${clipStart / safeDuration * 100}%`, width: `${Math.max(.2, (clipEnd - clipStart) / safeDuration * 100)}%` }} onPointerDown={(event) => beginClipTrim(event, "move")}>
@@ -133,5 +162,19 @@ export function Timeline() {
         </div>
       </div>
     </section>
+    {freezeDialogOpen && (
+      <div className="freeze-dialog-backdrop" onPointerDown={() => setFreezeDialogOpen(false)}>
+        <div className="freeze-dialog" onPointerDown={(event) => event.stopPropagation()}>
+          <button className="freeze-dialog-close" onClick={() => setFreezeDialogOpen(false)} aria-label="Fechar"><X size={17} /></button>
+          <span className="freeze-dialog-icon"><PauseCircle size={24} /></span>
+          <h2>Parar a imagem</h2>
+          <p>Durante quanto tempo quer manter este fotograma parado?</p>
+          <label><span>Duração</span><div><input autoFocus type="number" min={.25} max={30} step={.25} value={freezeDuration} onChange={(event) => setFreezeDuration(Number(event.target.value))} /><i>segundos</i></div></label>
+          <small>Os desenhos criados nesta pausa aparecem apenas enquanto a imagem estiver parada.</small>
+          <div className="freeze-dialog-actions"><button onClick={() => setFreezeDialogOpen(false)}>Cancelar</button><button onClick={addFreeze}>Adicionar pausa</button></div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

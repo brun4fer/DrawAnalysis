@@ -53,6 +53,13 @@ export interface VideoSlideContent {
   thumbnail?: string;
   drawings: DrawingObject[];
   playerTracks?: PlayerTrack[];
+  freezeFrames?: FreezeFrame[];
+}
+
+export interface FreezeFrame {
+  id: string;
+  sourceTime: number;
+  duration: number;
 }
 
 export interface BoardSlideContent {

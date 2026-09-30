@@ -10,6 +10,7 @@ import { DEFAULT_STYLE, DEFAULT_TRANSFORM } from "@/types/drawing";
 import { flattenPoints, toNormalized } from "@/utils/coordinates";
 import { createId } from "@/utils/id";
 import { getObjectStateAtTime } from "@/utils/temporalRenderer";
+import { timelineTimeToSource } from "@/utils/videoTimeline";
 import { DrawingShape } from "./DrawingShape";
 import { PlayerOcclusionCanvas } from "./PlayerOcclusionCanvas";
 import { PlayerLabelOverlay } from "./PlayerLabelOverlay";
@@ -136,6 +137,12 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
   const trackingBusyRef = useRef(false);
   const lastTrackingFrameRef = useRef<Record<string, number>>({});
   const trackingMissesRef = useRef<Record<string, number>>({});
+  const activeSlide = slides.find((slide) => slide.id === selectedSlideId);
+  const activeVideoContent = activeSlide?.content.kind === "video" ? activeSlide.content : null;
+  const activeFreezeFrames = activeVideoContent?.freezeFrames;
+  const activeFreezeFramesRef = useRef(activeFreezeFrames);
+
+  useEffect(() => { activeFreezeFramesRef.current = activeFreezeFrames; }, [activeFreezeFrames]);
 
   useEffect(() => {
     const capture = () => {
@@ -171,17 +178,25 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       : type === "spotlight"
         ? { stroke: "#fff8c7", fill: "#fff8c733", strokeWidth: 2, shadowColor: "#fff2a8", shadowBlur: 22, shadowOpacity: .6 }
         : {};
+    const timelinePoint = timelineTimeToSource(currentTime, activeFreezeFramesRef.current);
+    const isFreezeDrawing = Boolean(timelinePoint.freeze && timelinePoint.freezeStart !== undefined && timelinePoint.freezeEnd !== undefined);
+    const drawingStartTime = isFreezeDrawing ? timelinePoint.freezeStart! : currentTime;
     const defaultEndTime = type === "playerRing" ? currentTime + 4 : currentTime + 3;
+    const drawingEndTime = isFreezeDrawing
+      ? timelinePoint.freezeEnd!
+      : options?.trackingEnabled
+        ? Math.max(currentTime + .04, duration || defaultEndTime)
+        : Math.min(duration || defaultEndTime, defaultEndTime);
     const object: DrawingObject = {
       id: createId(),
       name: `${labelFor(type)} ${count}`,
       type,
-      startTime: currentTime,
-      endTime: options?.trackingEnabled ? Math.max(currentTime + .04, duration || defaultEndTime) : Math.min(duration || defaultEndTime, defaultEndTime),
+      startTime: drawingStartTime,
+      endTime: drawingEndTime,
       trackingEnabled: options?.trackingEnabled ?? false,
       target: options?.target,
       keyframes: [],
-      animation: { fadeIn: type === "playerRing" ? .42 : .18, fadeOut: 0.18, motion: type === "playerRing" ? "ringLock" : "none", pulseAmount: .05, pulseSpeed: 1.4 },
+      animation: { fadeIn: type === "playerRing" ? .42 : .18, fadeOut: isFreezeDrawing ? 0 : .18, motion: type === "playerRing" ? "ringLock" : "none", pulseAmount: .05, pulseSpeed: 1.4 },
       style: { ...DEFAULT_STYLE, ...effectStyle, dash: [] },
       transform: { ...DEFAULT_TRANSFORM },
       data,
@@ -286,8 +301,8 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
           center: foot,
           radiusX,
           radiusY,
-          occlusionWidth: match.box.width * .7,
-          labelOffsetY: match.box.height + .025,
+          occlusionWidth: match.box.width * 1.05,
+          labelOffsetY: match.box.height + .055,
           label: { visible: true, number: "", position: "", name: track.name.toUpperCase(), color: "#ffffff", fontSize: .032 },
           ringDesign: "segmented",
           spinEnabled: true,
@@ -307,7 +322,6 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     }
   }, [addPlayerTrack, currentTime, detectingPlayer, drawings, getVideoElement, makeDrawing]);
 
-  const activeSlide = slides.find((slide) => slide.id === selectedSlideId);
   const activeTrackingDrawing = [...drawings].reverse().find((drawing) => drawing.type === "playerRing" && drawing.trackingEnabled && drawing.target?.kind === "player");
   const activePlayerTrack = activeTrackingDrawing?.target?.kind === "player" && activeSlide?.content.kind === "video"
     ? activeSlide.content.playerTracks?.find((track) => track.id === activeTrackingDrawing.target?.trackId)

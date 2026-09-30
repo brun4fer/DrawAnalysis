@@ -11,8 +11,9 @@ export function getObjectStateAtTime(object: DrawingObject, currentTime: number)
   const visible = currentTime >= object.startTime && currentTime <= object.endTime;
   const frames = [...object.keyframes].sort((a, b) => a.time - b.time);
   const bounds = surroundingFrames(frames, currentTime);
+  const frameGap = bounds.left && bounds.right ? bounds.right.time - bounds.left.time : 0;
   const progress = bounds.left && bounds.right && bounds.left !== bounds.right
-    ? (currentTime - bounds.left.time) / Math.max(.001, bounds.right.time - bounds.left.time)
+    ? frameGap > .45 ? 0 : (currentTime - bounds.left.time) / Math.max(.001, frameGap)
     : 0;
   const value = (key: keyof ObjectTransform) => {
     const base = object.transform[key];

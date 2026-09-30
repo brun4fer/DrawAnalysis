@@ -164,6 +164,7 @@ export function Editor() {
                 source={source}
                 clipStart={selectedSlide.content.startTime}
                 clipEnd={selectedSlide.content.endTime}
+                freezeFrames={selectedSlide.content.freezeFrames}
                 onChooseVideo={() => inputRef.current?.click()}
                 onDurationReady={(videoDuration) => {
                   if (selectedSlide.content.kind === "video" && selectedSlide.content.endTime === undefined) updateSlide(selectedSlide.id, { content: { ...selectedSlide.content, endTime: videoDuration } });

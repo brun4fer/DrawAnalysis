@@ -190,14 +190,14 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
             />
             <Ellipse
               x={x}
-              y={y + radiusY * .03}
-              radiusX={radiusX * .13}
-              radiusY={radiusY * .12}
+              y={y + radiusY * .02}
+              radiusX={radiusX * .27}
+              radiusY={radiusY * .16}
               fill="#000000"
-              opacity={.24}
+              opacity={.34}
               shadowColor="#000000"
-              shadowBlur={Math.max(3, object.style.shadowBlur * .22)}
-              shadowOpacity={.65}
+              shadowBlur={Math.max(4, object.style.shadowBlur * .3)}
+              shadowOpacity={.72}
               listening={false}
             />
             <Group visible={ringDesign === "segmented"} x={x} y={y + depthOffset} scaleY={radiusY / radiusX} listening={false}>
