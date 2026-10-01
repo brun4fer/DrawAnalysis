@@ -4,6 +4,7 @@ export type Tool =
   | "spotlight"
   | "ellipse"
   | "arrow"
+  | "longBallArrow"
   | "line"
   | "triangle"
   | "polygon"
@@ -53,7 +54,7 @@ export interface PlayerLabel {
   fontSize: number;
 }
 
-export type PlayerRingDesign = "segmented" | "doubleLine";
+export type PlayerRingDesign = "segmented" | "doubleLine" | "broadcast" | "broadcastGlow";
 
 export interface DrawingStyle {
   stroke: string;
@@ -91,6 +92,7 @@ export type DrawingData =
   | { kind: "spotlight"; target: Point; radiusX: number; radiusY: number; beamHeight: number }
   | { kind: "ellipse"; center: Point; radiusX: number; radiusY: number }
   | { kind: "rectangle"; origin: Point; width: number; height: number }
+  | { kind: "longBallArrow"; start: Point; end: Point; curveHeight: number }
   | { kind: "arrow" | "line" | "triangle" | "polygon" | "freeDraw"; points: Point[] }
   | { kind: "text"; origin: Point; text: string; fontSize: number };
 

@@ -18,7 +18,9 @@ export function ToolRail() {
             : tool === "playerRing"
               ? "Clique no jogador · deteção automática"
               : tool === "spotlight"
-                ? "Clique aos pés do jogador"
+                ? "Clique no jogador · ajuste automático"
+                : tool === "longBallArrow"
+                  ? "Clique na origem · clique no destino"
             : "Clique · mova · clique";
   return (
     <aside className="tool-rail" aria-label="Ferramentas de desenho">

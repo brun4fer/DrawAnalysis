@@ -26,7 +26,7 @@ interface Draft { tool: Tool; start: Point; points: Point[]; current: Point }
 interface DetectionEffect { phase: "scanning" | "locked" | "failed"; click: Point; box?: NormalizedBox; score?: number }
 
 const labelFor = (kind: DrawingObject["type"]) => ({
-  playerRing: "Ring", spotlight: "Spotlight", ellipse: "Marcador", arrow: "Seta", line: "Linha", triangle: "Triângulo",
+  playerRing: "Ring", spotlight: "Spotlight", ellipse: "Marcador", arrow: "Seta", longBallArrow: "Bola longa", line: "Linha", triangle: "Triângulo",
   polygon: "Zona", rectangle: "Retângulo", text: "Texto", freeDraw: "Traço",
 })[kind];
 
@@ -120,6 +120,47 @@ function isMovingOutOfFrame(current: PlayerTrack["samples"][number], previous?: 
 
 const wait = (milliseconds: number) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 
+type PlayerDetection = Awaited<ReturnType<typeof detectPlayers>>[number];
+interface PlayerDetectionMatch { detection: PlayerDetection; box: NormalizedBox }
+
+async function detectPlayerAtPoint(video: HTMLVideoElement, click: Point) {
+  const crop = makeDetectionCrop(video, click);
+  const cropDetections = await detectPlayers(crop.canvas);
+  let boxes: PlayerDetectionMatch[] = cropDetections.map((detection) => ({
+    detection,
+    box: {
+      x: (crop.sourceX + detection.bbox[0] / crop.canvas.width * crop.cropWidth) / video.videoWidth,
+      y: (crop.sourceY + detection.bbox[1] / crop.canvas.height * crop.cropHeight) / video.videoHeight,
+      width: detection.bbox[2] / crop.canvas.width * crop.cropWidth / video.videoWidth,
+      height: detection.bbox[3] / crop.canvas.height * crop.cropHeight / video.videoHeight,
+    },
+  }));
+  let match = boxes
+    .filter(({ box }) => containsPoint(box, click))
+    .sort((a, b) => a.box.width * a.box.height - b.box.width * b.box.height)[0];
+  let usedFullFrame = false;
+
+  if (!match) {
+    usedFullFrame = true;
+    const fullDetections = await detectPlayers(video);
+    const fullBoxes: PlayerDetectionMatch[] = fullDetections.map((detection) => ({
+      detection,
+      box: {
+        x: detection.bbox[0] / video.videoWidth,
+        y: detection.bbox[1] / video.videoHeight,
+        width: detection.bbox[2] / video.videoWidth,
+        height: detection.bbox[3] / video.videoHeight,
+      },
+    }));
+    boxes = [...boxes, ...fullBoxes];
+    match = fullBoxes
+      .filter(({ box }) => containsPoint(box, click))
+      .sort((a, b) => a.box.width * a.box.height - b.box.width * b.box.height)[0];
+  }
+
+  return { match, boxes, usedFullFrame };
+}
+
 export function DrawingCanvas({ width, height, registerCapture, getVideoElement }: Props) {
   const {
     tool, drawings, selectedId, currentTime, duration, isPlaying, slides, selectedSlideId,
@@ -177,8 +218,8 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       ? { stroke: "#f7f8f2", fill: "#1454c4", strokeWidth: 3, shadowColor: "#f1e72b", shadowBlur: 22, shadowOpacity: .82 }
       : type === "spotlight"
         ? { stroke: "#fff8c7", fill: "#fff8c733", strokeWidth: 2, shadowColor: "#fff2a8", shadowBlur: 22, shadowOpacity: .6 }
-        : type === "arrow"
-          ? { strokeWidth: 7, shadowColor: "#000000", shadowBlur: 10, shadowOpacity: .62, shadowOffsetX: 3, shadowOffsetY: 5 }
+        : type === "arrow" || type === "longBallArrow"
+          ? { stroke: "#65d9ff", strokeWidth: 5, shadowColor: "#000000", shadowBlur: 10, shadowOpacity: .68, shadowOffsetX: 3, shadowOffsetY: 5 }
           : {};
     const timelinePoint = timelineTimeToSource(currentTime, activeFreezeFramesRef.current);
     const isFreezeDrawing = Boolean(timelinePoint.freeze && timelinePoint.freezeStart !== undefined && timelinePoint.freezeEnd !== undefined);
@@ -228,38 +269,11 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     setDetectingPlayer(true);
     setDetectionMessage("A analisar a zona selecionada…");
     try {
-      const crop = makeDetectionCrop(video, click);
-      const cropDetections = await detectPlayers(crop.canvas);
-      let boxes = cropDetections.map((detection) => ({
-        detection,
-        box: {
-          x: (crop.sourceX + detection.bbox[0] / crop.canvas.width * crop.cropWidth) / video.videoWidth,
-          y: (crop.sourceY + detection.bbox[1] / crop.canvas.height * crop.cropHeight) / video.videoHeight,
-          width: detection.bbox[2] / crop.canvas.width * crop.cropWidth / video.videoWidth,
-          height: detection.bbox[3] / crop.canvas.height * crop.cropHeight / video.videoHeight,
-        },
-      }));
-      let match = boxes
-        .filter(({ box }) => containsPoint(box, click))
-        .sort((a, b) => a.box.width * a.box.height - b.box.width * b.box.height)[0];
-
-      if (!match) {
+      const result = await detectPlayerAtPoint(video, click);
+      if (result.usedFullFrame) {
         setDetectionMessage("A confirmar o jogador no fotograma completo…");
-        const fullDetections = await detectPlayers(video);
-        const fullBoxes = fullDetections.map((detection) => ({
-          detection,
-          box: {
-            x: detection.bbox[0] / video.videoWidth,
-            y: detection.bbox[1] / video.videoHeight,
-            width: detection.bbox[2] / video.videoWidth,
-            height: detection.bbox[3] / video.videoHeight,
-          },
-        }));
-        boxes = [...boxes, ...fullBoxes];
-        match = fullBoxes
-          .filter(({ box }) => containsPoint(box, click))
-          .sort((a, b) => a.box.width * a.box.height - b.box.width * b.box.height)[0];
       }
+      const { match, boxes } = result;
 
       if (!match) {
         setDetectionBoxes(boxes.map(({ box }) => box));
@@ -306,7 +320,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
           occlusionWidth: match.box.width * 1.05,
           labelOffsetY: match.box.height + .055,
           label: { visible: true, number: "", position: "", name: track.name.toUpperCase(), color: "#ffffff", fontSize: .032 },
-          ringDesign: "segmented",
+          ringDesign: "broadcast",
           spinEnabled: true,
           spinSpeed: 1,
         },
@@ -323,6 +337,56 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       setDetectingPlayer(false);
     }
   }, [addPlayerTrack, currentTime, detectingPlayer, drawings, getVideoElement, makeDrawing]);
+
+  const placeSpotlightOnPlayer = useCallback(async (click: Point) => {
+    if (detectingPlayer) return;
+    const video = getVideoElement?.();
+    setDetectionEffect({ phase: "scanning", click });
+    if (!video || !video.videoWidth || !video.videoHeight || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      setDetectionMessage("O fotograma do vídeo ainda não está pronto.");
+      setDetectionEffect({ phase: "failed", click });
+      window.setTimeout(() => { setDetectionMessage(null); setDetectionEffect(null); }, 2600);
+      return;
+    }
+
+    video.pause();
+    setDetectingPlayer(true);
+    setDetectionMessage("A ajustar o spotlight ao jogador…");
+    try {
+      const { match, boxes } = await detectPlayerAtPoint(video, click);
+      if (!match) {
+        setDetectionBoxes(boxes.map(({ box }) => box));
+        setDetectionEffect({ phase: "failed", click });
+        setDetectionMessage("Não consegui ajustar o spotlight a esse jogador. Tente clicar no centro do corpo.");
+        window.setTimeout(() => { setDetectionMessage(null); setDetectionBoxes([]); setDetectionEffect(null); }, 4200);
+        return;
+      }
+
+      const target = {
+        x: clamp(match.box.x + match.box.width / 2, 0, 1),
+        y: clamp(match.box.y + match.box.height, 0, 1),
+      };
+      setDetectionEffect({ phase: "locked", click, box: match.box, score: match.detection.score });
+      setDetectionMessage(`Spotlight ajustado · ${Math.round(match.detection.score * 100)}%`);
+      await wait(420);
+      makeDrawing("spotlight", {
+        kind: "spotlight",
+        target,
+        radiusX: clamp(match.box.width * 1.35, .028, .085),
+        radiusY: clamp(match.box.width * .34, .009, .026),
+        beamHeight: clamp(match.box.height * 1.18, .12, .42),
+      });
+      setDetectionBoxes([]);
+      window.setTimeout(() => { setDetectionMessage(null); setDetectionEffect(null); }, 1500);
+    } catch {
+      setDetectionBoxes([]);
+      setDetectionEffect({ phase: "failed", click });
+      setDetectionMessage("Não foi possível analisar este fotograma para o spotlight.");
+      window.setTimeout(() => { setDetectionMessage(null); setDetectionEffect(null); }, 3600);
+    } finally {
+      setDetectingPlayer(false);
+    }
+  }, [detectingPlayer, getVideoElement, makeDrawing]);
 
   const activeTrackingDrawing = [...drawings].reverse().find((drawing) => drawing.type === "playerRing" && drawing.trackingEnabled && drawing.target?.kind === "player");
   const activePlayerTrack = activeTrackingDrawing?.target?.kind === "player" && activeSlide?.content.kind === "video"
@@ -507,7 +571,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       return;
     }
     if (tool === "spotlight") {
-      makeDrawing("spotlight", { kind: "spotlight", target: point, radiusX: .065, radiusY: .022, beamHeight: .28 });
+      void placeSpotlightOnPlayer(point);
       return;
     }
     if (tool === "text") {
@@ -525,7 +589,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       return;
     }
 
-    if (["ellipse", "rectangle", "arrow", "line"].includes(tool) && draft?.tool === tool) {
+    if (["ellipse", "rectangle", "arrow", "longBallArrow", "line"].includes(tool) && draft?.tool === tool) {
       const dx = point.x - draft.start.x;
       const dy = point.y - draft.start.y;
       if (tool === "ellipse") makeDrawing("ellipse", {
@@ -541,6 +605,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         height: Math.max(0.01, Math.abs(dy)),
       });
       if (tool === "arrow" || tool === "line") makeDrawing(tool, { kind: tool, points: [draft.start, point] });
+      if (tool === "longBallArrow") makeDrawing("longBallArrow", { kind: "longBallArrow", start: draft.start, end: point, curveHeight: .13 });
       return;
     }
     setDraft({ tool, start: point, points: [point], current: point });
@@ -566,6 +631,17 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     if (tool === "ellipse") return <Ellipse listening={false} {...style} x={(draft.start.x + draft.current.x) / 2 * width} y={(draft.start.y + draft.current.y) / 2 * height} radiusX={Math.abs(draft.current.x - draft.start.x) / 2 * width} radiusY={Math.abs(draft.current.y - draft.start.y) / 2 * height} />;
     if (tool === "rectangle") return <Rect listening={false} {...style} x={Math.min(draft.start.x, draft.current.x) * width} y={Math.min(draft.start.y, draft.current.y) * height} width={Math.abs(draft.current.x - draft.start.x) * width} height={Math.abs(draft.current.y - draft.start.y) * height} />;
     if (tool === "arrow") return <Arrow listening={false} {...style} fill={DEFAULT_STYLE.stroke} points={flattenPoints([draft.start, draft.current], width, height)} pointerLength={12} pointerWidth={12} />;
+    if (tool === "longBallArrow") {
+      const start = { x: draft.start.x * width, y: draft.start.y * height };
+      const end = { x: draft.current.x * width, y: draft.current.y * height };
+      const control = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 - height * .26 };
+      const points = Array.from({ length: 25 }, (_, index) => {
+        const t = index / 24;
+        const inverse = 1 - t;
+        return { x: inverse * inverse * start.x + 2 * inverse * t * control.x + t * t * end.x, y: inverse * inverse * start.y + 2 * inverse * t * control.y + t * t * end.y };
+      }).flatMap(({ x, y }) => [x, y]);
+      return <Arrow listening={false} {...style} fill={DEFAULT_STYLE.stroke} points={points} pointerLength={12} pointerWidth={12} />;
+    }
     if (tool === "line") return <Line listening={false} {...style} points={flattenPoints([draft.start, draft.current], width, height)} />;
     if (tool === "freeDraw") return <Line listening={false} {...style} points={flattenPoints(draft.points, width, height)} tension={0.35} />;
     if (tool === "triangle" || tool === "polygon") return <Line listening={false} {...style} points={flattenPoints([...draft.points, draft.current], width, height)} closed={tool === "triangle" && draft.points.length === 2} />;
