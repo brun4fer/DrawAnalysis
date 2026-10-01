@@ -2,10 +2,12 @@ export type Tool =
   | "select"
   | "playerRing"
   | "spotlight"
+  | "zoom"
   | "ellipse"
   | "arrow"
   | "longBallArrow"
   | "line"
+  | "glimpse"
   | "triangle"
   | "polygon"
   | "rectangle"
@@ -55,6 +57,18 @@ export interface PlayerLabel {
 }
 
 export type PlayerRingDesign = "segmented" | "doubleLine" | "broadcast" | "broadcastGlow";
+export type LineDesign = "single" | "dual" | "fadeShadow";
+export type ZoneDesign = "solid" | "striped";
+export type TextDesign = "flat" | "ground3d";
+
+export interface ActionLabel {
+  visible: boolean;
+  value: string;
+  position: number;
+  color: string;
+  backgroundColor: string;
+  fontSize: number;
+}
 
 export interface DrawingStyle {
   stroke: string;
@@ -90,11 +104,16 @@ export interface DrawingKeyframe {
 export type DrawingData =
   | { kind: "playerRing"; center: Point; radiusX: number; radiusY: number; occlusionWidth?: number; labelOffsetY?: number; label?: PlayerLabel; ringDesign?: PlayerRingDesign; spinEnabled?: boolean; spinSpeed?: number }
   | { kind: "spotlight"; target: Point; radiusX: number; radiusY: number; beamHeight: number }
+  | { kind: "zoom"; center: Point; radius: number; zoom: number }
   | { kind: "ellipse"; center: Point; radiusX: number; radiusY: number }
-  | { kind: "rectangle"; origin: Point; width: number; height: number }
+  | { kind: "rectangle"; origin: Point; width: number; height: number; fillDesign?: ZoneDesign; stripeColor?: string; stripeSpacing?: number; stripeAngle?: number }
   | { kind: "longBallArrow"; start: Point; end: Point; curveHeight: number }
-  | { kind: "arrow" | "line" | "triangle" | "polygon" | "freeDraw"; points: Point[] }
-  | { kind: "text"; origin: Point; text: string; fontSize: number };
+  | { kind: "line"; points: Point[]; lineDesign?: LineDesign; secondaryColor?: string }
+  | { kind: "glimpse"; origin: Point; target: Point; spread: number }
+  | { kind: "polygon"; points: Point[]; zoneDesign?: ZoneDesign; stripeColor?: string; stripeSpacing?: number; stripeAngle?: number }
+  | { kind: "triangle"; points: Point[]; fillDesign?: ZoneDesign; stripeColor?: string; stripeSpacing?: number; stripeAngle?: number }
+  | { kind: "arrow" | "freeDraw"; points: Point[] }
+  | { kind: "text"; origin: Point; text: string; fontSize: number; textDesign?: TextDesign; groundTilt?: number; groundDepth?: number };
 
 export interface DrawingObject {
   id: string;
@@ -112,6 +131,7 @@ export interface DrawingObject {
     pulseAmount?: number;
     pulseSpeed?: number;
   };
+  actionLabel?: ActionLabel;
   style: DrawingStyle;
   transform: ObjectTransform;
   data: DrawingData;

@@ -83,6 +83,62 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
     shadowOffsetY: object.style.shadowOffsetY ?? 0,
   };
 
+  const renderPatternShape = (
+    points: number[],
+    design: "solid" | "striped",
+    stripeColorValue?: string,
+    stripeSpacingValue?: number,
+    stripeAngleValue?: number,
+    keyPrefix = "shape",
+  ) => {
+    if (design === "solid") return <Line {...common} points={points} closed fill={object.style.fill} />;
+    const xValues = points.filter((_, index) => index % 2 === 0);
+    const yValues = points.filter((_, index) => index % 2 === 1);
+    const minX = Math.min(...xValues);
+    const maxX = Math.max(...xValues);
+    const minY = Math.min(...yValues);
+    const maxY = Math.max(...yValues);
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    const span = Math.hypot(maxX - minX, maxY - minY) + Math.min(width, height) * .2;
+    const spacing = Math.max(5, (stripeSpacingValue ?? .014) * Math.min(width, height));
+    const angle = (stripeAngleValue ?? 58) * Math.PI / 180;
+    const directionX = Math.cos(angle);
+    const directionY = Math.sin(angle);
+    const normalX = -directionY;
+    const normalY = directionX;
+    const stripeCount = Math.ceil(span * 2 / spacing);
+    const stripeColor = solidColor(stripeColorValue ?? "#ffffff", "#ffffff");
+    const stripes = Array.from({ length: stripeCount + 1 }, (_, index) => {
+      const offset = (index - stripeCount / 2) * spacing;
+      return [
+        centerX + normalX * offset - directionX * span,
+        centerY + normalY * offset - directionY * span,
+        centerX + normalX * offset + directionX * span,
+        centerY + normalY * offset + directionY * span,
+      ];
+    });
+    return (
+      <Group>
+        <Line {...common} points={points} closed fill={withAlpha(solidColor(object.style.fill, object.style.stroke), .12)} />
+        <Group
+          opacity={temporalState.opacity}
+          listening={false}
+          clipFunc={(context) => {
+            context.beginPath();
+            context.moveTo(points[0], points[1]);
+            for (let index = 2; index < points.length; index += 2) context.lineTo(points[index], points[index + 1]);
+            context.closePath();
+          }}
+        >
+          {stripes.map((stripePoints, index) => (
+            <Line key={`${keyPrefix}-stripe-${index}`} points={stripePoints} stroke={withAlpha(stripeColor, .72)} strokeWidth={Math.max(2.2, spacing * .48)} listening={false} />
+          ))}
+        </Group>
+      </Group>
+    );
+  };
+
   const content = (() => {
     const data = object.data;
     if (renderMode === "playerLabel" && data.kind !== "playerRing") return null;
@@ -482,6 +538,21 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
           </Group>
         );
       }
+      case "zoom": {
+        const radius = data.radius * Math.min(width, height);
+        return (
+          <Ellipse
+            x={data.center.x * width}
+            y={data.center.y * height}
+            radiusX={radius}
+            radiusY={radius}
+            fill="#ffffff01"
+            stroke={selected ? "#a3ff12" : "#ffffff01"}
+            strokeWidth={selected ? 1.5 : 1}
+            dash={selected ? [5, 4] : []}
+          />
+        );
+      }
       case "ellipse": {
         const x = data.center.x * width;
         const y = data.center.y * height;
@@ -528,8 +599,21 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
           </Group>
         );
       }
-      case "rectangle":
-        return <Rect {...common} x={data.origin.x * width} y={data.origin.y * height} width={data.width * width} height={data.height * height} fill={object.style.fill} />;
+      case "rectangle": {
+        const x = data.origin.x * width;
+        const y = data.origin.y * height;
+        const rectangleWidth = data.width * width;
+        const rectangleHeight = data.height * height;
+        if ((data.fillDesign ?? "solid") === "solid") return <Rect {...common} x={x} y={y} width={rectangleWidth} height={rectangleHeight} fill={object.style.fill} />;
+        return renderPatternShape(
+          [x, y, x + rectangleWidth, y, x + rectangleWidth, y + rectangleHeight, x, y + rectangleHeight],
+          "striped",
+          data.stripeColor,
+          data.stripeSpacing,
+          data.stripeAngle,
+          "rectangle",
+        );
+      }
       case "arrow": {
         const points = flattenPoints(data.points, width, height);
         if (points.length < 4) return null;
@@ -673,16 +757,259 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
           </Group>
         );
       }
-      case "line":
-        return <Line {...common} points={flattenPoints(data.points, width, height)} />;
+      case "line": {
+        const points = flattenPoints(data.points, width, height);
+        if (points.length < 4) return null;
+        const design = data.lineDesign ?? "single";
+        if (design === "single") return <Line {...common} points={points} />;
+
+        const primaryColor = solidColor(object.style.stroke, "#a3ff12");
+        const secondaryColor = solidColor(data.secondaryColor ?? "#ffffff", "#ffffff");
+        if (design === "dual") {
+          const startX = points[0];
+          const startY = points[1];
+          const endX = points[points.length - 2];
+          const endY = points[points.length - 1];
+          const deltaX = endX - startX;
+          const deltaY = endY - startY;
+          const lineLength = Math.max(1, Math.hypot(deltaX, deltaY));
+          let normalX = -deltaY / lineLength;
+          let normalY = deltaX / lineLength;
+          if (normalY < 0 || (Math.abs(normalY) < .001 && normalX < 0)) {
+            normalX *= -1;
+            normalY *= -1;
+          }
+          const mainWidth = Math.max(object.style.strokeWidth + 3, object.style.strokeWidth * 1.65);
+          const accentWidth = Math.max(1.15, object.style.strokeWidth * .32);
+          const accentOffset = mainWidth / 2 - accentWidth * .15;
+          const accentPoints = offsetPoints(points, normalX * accentOffset, normalY * accentOffset);
+          return (
+            <Group opacity={temporalState.opacity}>
+              <Line
+                points={offsetPoints(points, normalX * 1.4, normalY * 1.4)}
+                stroke={shadeColor(primaryColor, -72)}
+                strokeWidth={mainWidth + 1.4}
+                dash={object.style.dash}
+                lineCap="round"
+                lineJoin="round"
+                shadowColor={object.style.shadowColor}
+                shadowBlur={object.style.shadowBlur}
+                shadowOpacity={object.style.shadowOpacity}
+                shadowOffsetX={object.style.shadowOffsetX}
+                shadowOffsetY={object.style.shadowOffsetY}
+                listening={false}
+              />
+              <Line
+                points={points}
+                stroke={primaryColor}
+                strokeWidth={mainWidth}
+                dash={object.style.dash}
+                lineCap="round"
+                lineJoin="round"
+              />
+              <Line
+                points={accentPoints}
+                stroke={secondaryColor}
+                strokeWidth={accentWidth}
+                dash={object.style.dash}
+                lineCap="round"
+                lineJoin="round"
+                listening={false}
+              />
+            </Group>
+          );
+        }
+
+        const startX = points[0];
+        const startY = points[1];
+        const endX = points[points.length - 2];
+        const endY = points[points.length - 1];
+        const shadowX = object.style.shadowOffsetX || 3;
+        const shadowY = object.style.shadowOffsetY || 5;
+        return (
+          <Group opacity={temporalState.opacity}>
+            <Line
+              points={offsetPoints(points, shadowX, shadowY)}
+              strokeWidth={object.style.strokeWidth + 3.5}
+              dash={object.style.dash}
+              lineCap="round"
+              lineJoin="round"
+              strokeLinearGradientStartPoint={{ x: startX, y: startY }}
+              strokeLinearGradientEndPoint={{ x: endX, y: endY }}
+              strokeLinearGradientColorStops={[0, "rgba(0,0,0,0)", .16, "rgba(0,0,0,.42)", .5, "rgba(0,0,0,.66)", .84, "rgba(0,0,0,.42)", 1, "rgba(0,0,0,0)"]}
+              shadowColor="#000000"
+              shadowBlur={Math.max(9, object.style.shadowBlur)}
+              shadowOpacity={Math.max(.48, object.style.shadowOpacity)}
+              listening={false}
+            />
+            <Line
+              points={points}
+              strokeWidth={object.style.strokeWidth}
+              dash={object.style.dash}
+              lineCap="round"
+              lineJoin="round"
+              strokeLinearGradientStartPoint={{ x: startX, y: startY }}
+              strokeLinearGradientEndPoint={{ x: endX, y: endY }}
+              strokeLinearGradientColorStops={[0, withAlpha(primaryColor, 0), .14, withAlpha(primaryColor, .48), .28, primaryColor, .72, primaryColor, .86, withAlpha(primaryColor, .48), 1, withAlpha(primaryColor, 0)]}
+            />
+          </Group>
+        );
+      }
+      case "glimpse": {
+        const originX = data.origin.x * width;
+        const originY = data.origin.y * height;
+        const targetX = data.target.x * width;
+        const targetY = data.target.y * height;
+        const deltaX = targetX - originX;
+        const deltaY = targetY - originY;
+        const length = Math.max(12, Math.hypot(deltaX, deltaY));
+        const rotation = Math.atan2(deltaY, deltaX) * 180 / Math.PI - data.spread / 2;
+        const color = solidColor(object.style.stroke, "#ffffff");
+        return (
+          <Group opacity={temporalState.opacity}>
+            <Arc
+              x={originX}
+              y={originY}
+              innerRadius={0}
+              outerRadius={length}
+              angle={data.spread}
+              rotation={rotation}
+              fillLinearGradientStartPoint={{ x: 0, y: 0 }}
+              fillLinearGradientEndPoint={{ x: length, y: 0 }}
+              fillLinearGradientColorStops={[0, withAlpha(color, .38), .42, withAlpha(color, .25), .78, withAlpha(color, .1), 1, withAlpha(color, 0)]}
+              shadowColor={color}
+              shadowBlur={Math.max(12, object.style.shadowBlur)}
+              shadowOpacity={Math.max(.28, object.style.shadowOpacity * .65)}
+              listening={false}
+            />
+            <Arc
+              x={originX}
+              y={originY}
+              innerRadius={0}
+              outerRadius={length * .96}
+              angle={data.spread * .7}
+              rotation={rotation + data.spread * .15}
+              fillLinearGradientStartPoint={{ x: 0, y: 0 }}
+              fillLinearGradientEndPoint={{ x: length, y: 0 }}
+              fillLinearGradientColorStops={[0, withAlpha(color, .34), .5, withAlpha(color, .18), 1, withAlpha(color, 0)]}
+            />
+          </Group>
+        );
+      }
       case "triangle":
-      case "polygon":
-        return <Line {...common} points={flattenPoints(data.points, width, height)} closed fill={object.style.fill} />;
+        return renderPatternShape(flattenPoints(data.points, width, height), data.fillDesign ?? "solid", data.stripeColor, data.stripeSpacing, data.stripeAngle, "triangle");
+      case "polygon": {
+        const points = flattenPoints(data.points, width, height);
+        return renderPatternShape(points, data.zoneDesign ?? "solid", data.stripeColor, data.stripeSpacing, data.stripeAngle, "zone");
+      }
       case "freeDraw":
         return <Line {...common} points={flattenPoints(data.points, width, height)} tension={0.35} />;
-      case "text":
-        return <Text x={data.origin.x * width} y={data.origin.y * height} text={data.text} fontSize={data.fontSize * height} fontStyle="bold" fontFamily="Inter" fill={object.style.stroke} opacity={temporalState.opacity} />;
+      case "text": {
+        const x = data.origin.x * width;
+        const y = data.origin.y * height;
+        const fontSize = data.fontSize * height;
+        if ((data.textDesign ?? "flat") === "flat") return <Text x={x} y={y} text={data.text} fontSize={fontSize} fontStyle="bold" fontFamily="Inter" fill={object.style.stroke} opacity={temporalState.opacity} />;
+        const depth = data.groundDepth ?? 7;
+        const faceColor = solidColor(object.style.stroke, "#ffffff");
+        const depthColor = solidColor(object.style.shadowColor, "#000000");
+        const tiltRadians = (data.groundTilt ?? -12) * Math.PI / 180;
+        return (
+          <Group x={x} y={y} scaleY={.76} skewX={tiltRadians} opacity={temporalState.opacity}>
+            <Text
+              x={depth + object.style.shadowOffsetX}
+              y={depth + object.style.shadowOffsetY}
+              text={data.text}
+              fontSize={fontSize}
+              fontStyle="bold italic"
+              fontFamily="Inter, Arial, sans-serif"
+              fill="#000000"
+              opacity={.38}
+              shadowColor="#000000"
+              shadowBlur={Math.max(7, object.style.shadowBlur)}
+              shadowOpacity={.72}
+              listening={false}
+            />
+            {Array.from({ length: Math.max(2, Math.round(depth)) }, (_, index) => (
+              <Text
+                key={`text-depth-${index}`}
+                x={depth - index}
+                y={depth - index}
+                text={data.text}
+                fontSize={fontSize}
+                fontStyle="bold italic"
+                fontFamily="Inter, Arial, sans-serif"
+                fill={shadeColor(depthColor, index * 3)}
+                listening={false}
+              />
+            ))}
+            <Text
+              text={data.text}
+              fontSize={fontSize}
+              fontStyle="bold italic"
+              fontFamily="Inter, Arial, sans-serif"
+              fill={faceColor}
+              shadowColor="#000000"
+              shadowBlur={2}
+              shadowOffsetX={1}
+              shadowOffsetY={1}
+              shadowOpacity={.62}
+            />
+          </Group>
+        );
+      }
     }
+  })();
+
+  const actionLabelNode = (() => {
+    const label = object.actionLabel;
+    if (renderMode === "playerLabel" || !label?.visible) return null;
+    const position = Math.max(0, Math.min(1, label.position));
+    let anchor: { x: number; y: number } | null = null;
+    if ((object.data.kind === "line" || object.data.kind === "arrow") && object.data.points.length >= 2) {
+      const start = object.data.points[0];
+      const end = object.data.points[object.data.points.length - 1];
+      anchor = { x: (start.x + (end.x - start.x) * position) * width, y: (start.y + (end.y - start.y) * position) * height };
+    } else if (object.data.kind === "longBallArrow") {
+      const curve = quadraticCurvePoints(
+        { x: object.data.start.x * width, y: object.data.start.y * height },
+        { x: object.data.end.x * width, y: object.data.end.y * height },
+        object.data.curveHeight,
+        height,
+      );
+      const index = Math.min(curve.length / 2 - 1, Math.round(position * (curve.length / 2 - 1)));
+      anchor = { x: curve[index * 2], y: curve[index * 2 + 1] };
+    }
+    if (!anchor) return null;
+    const fontSize = Math.max(10, label.fontSize * height);
+    const radius = Math.max(8, fontSize * .72);
+    return (
+      <Group x={anchor.x} y={anchor.y} opacity={temporalState.opacity} listening={false}>
+        <Ellipse
+          radiusX={radius}
+          radiusY={radius}
+          fill={label.backgroundColor}
+          stroke={withAlpha(label.color, .82)}
+          strokeWidth={Math.max(1, fontSize * .08)}
+          shadowColor="#000000"
+          shadowBlur={5}
+          shadowOffsetY={2}
+          shadowOpacity={.7}
+        />
+        <Text
+          x={-radius}
+          y={-fontSize * .56}
+          width={radius * 2}
+          height={fontSize * 1.15}
+          align="center"
+          verticalAlign="middle"
+          text={label.value}
+          fontSize={fontSize}
+          fontStyle="bold"
+          fontFamily="Inter, Arial, sans-serif"
+          fill={label.color}
+        />
+      </Group>
+    );
   })();
 
   return (
@@ -718,6 +1045,7 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         }}
       >
         {content}
+        {actionLabelNode}
       </Group>
       {selected && canEdit && (
         <Transformer

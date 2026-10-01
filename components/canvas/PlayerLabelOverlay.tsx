@@ -1,5 +1,7 @@
 "use client";
 
+import { forwardRef } from "react";
+import Konva from "konva";
 import { Layer, Stage } from "react-konva";
 import type { DrawingObject } from "@/types/drawing";
 import { getObjectStateAtTime } from "@/utils/temporalRenderer";
@@ -12,11 +14,11 @@ interface Props {
   height: number;
 }
 
-export function PlayerLabelOverlay({ drawings, currentTime, width, height }: Props) {
+export const PlayerLabelOverlay = forwardRef<Konva.Stage, Props>(function PlayerLabelOverlay({ drawings, currentTime, width, height }, ref) {
   const labels = drawings.filter((drawing) => drawing.type === "playerRing" && getObjectStateAtTime(drawing, currentTime).visible);
 
   return (
-    <Stage width={width} height={height} listening={false} className="drawing-stage player-label-stage">
+    <Stage ref={ref} width={width} height={height} listening={false} className="drawing-stage player-label-stage">
       <Layer listening={false}>
         {labels.map((drawing) => (
           <DrawingShape
@@ -35,4 +37,4 @@ export function PlayerLabelOverlay({ drawings, currentTime, width, height }: Pro
       </Layer>
     </Stage>
   );
-}
+});

@@ -2,7 +2,7 @@
 
 import { Copy, LocateFixed, Trash2 } from "lucide-react";
 import { useEditorStore } from "@/store/useEditorStore";
-import type { PlayerLabel, PlayerRingDesign } from "@/types/drawing";
+import type { ActionLabel, LineDesign, PlayerLabel, PlayerRingDesign, TextDesign, ZoneDesign } from "@/types/drawing";
 import type { VideoSlideContent } from "@/types/slide";
 import { getSourceDuration, sourceTimeToTimeline, timelineTimeToSource } from "@/utils/videoTimeline";
 
@@ -71,6 +71,46 @@ export function PropertiesPanel() {
     if (object.data.kind !== "playerRing") return;
     updateDrawing(object.id, { data: { ...object.data, ...patch } });
   };
+  const updateLineAppearance = (patch: { lineDesign?: LineDesign; secondaryColor?: string }) => {
+    if (object.data.kind !== "line") return;
+    updateDrawing(object.id, { data: { ...object.data, ...patch } });
+  };
+  const updatePatternAppearance = (patch: { design?: ZoneDesign; stripeColor?: string; stripeSpacing?: number; stripeAngle?: number }) => {
+    if (object.data.kind === "polygon") {
+      const { design, ...stripePatch } = patch;
+      updateDrawing(object.id, { data: { ...object.data, ...stripePatch, ...(design ? { zoneDesign: design } : {}) } });
+      return;
+    }
+    if (object.data.kind === "triangle" || object.data.kind === "rectangle") {
+      const { design, ...stripePatch } = patch;
+      updateDrawing(object.id, { data: { ...object.data, ...stripePatch, ...(design ? { fillDesign: design } : {}) } });
+    }
+  };
+  const updateTextAppearance = (patch: { textDesign?: TextDesign; groundTilt?: number; groundDepth?: number }) => {
+    if (object.data.kind !== "text") return;
+    updateDrawing(object.id, { data: { ...object.data, ...patch } });
+  };
+  const updateActionLabel = (patch: Partial<ActionLabel>) => {
+    const actionIndex = drawings.filter((drawing) => ["line", "arrow", "longBallArrow"].includes(drawing.type)).findIndex((drawing) => drawing.id === object.id) + 1;
+    const actionLabel: ActionLabel = {
+      visible: false,
+      value: String(Math.max(1, actionIndex)),
+      position: .5,
+      color: "#ffffff",
+      backgroundColor: "#174ea6",
+      fontSize: .022,
+      ...object.actionLabel,
+      ...patch,
+    };
+    updateDrawing(object.id, { actionLabel });
+  };
+  const updateGlimpseLength = (length: number) => {
+    if (object.data.kind !== "glimpse") return;
+    const deltaX = object.data.target.x - object.data.origin.x;
+    const deltaY = object.data.target.y - object.data.origin.y;
+    const currentLength = Math.max(.001, Math.hypot(deltaX, deltaY));
+    updateDrawing(object.id, { data: { ...object.data, target: { x: object.data.origin.x + deltaX / currentLength * length, y: object.data.origin.y + deltaY / currentLength * length } } });
+  };
   const applyEffectPreset = (preset: "clean" | "glow" | "shadow") => {
     if (preset === "clean") updateStyle({ shadowBlur: 0, shadowOpacity: 0, shadowOffsetX: 0, shadowOffsetY: 0 });
     if (preset === "glow") updateStyle({ shadowColor: object.style.stroke, shadowBlur: 20, shadowOpacity: .9, shadowOffsetX: 0, shadowOffsetY: 0 });
@@ -81,8 +121,20 @@ export function PropertiesPanel() {
   const fillOpacity = fillOpacityOf(object.style.fill);
   const isPlayerRing = object.type === "playerRing";
   const hasFixedBlackShadow = object.type === "arrow" || object.type === "longBallArrow";
-  const supportsFill = !["arrow", "longBallArrow", "line", "freeDraw", "text", "playerRing"].includes(object.type);
+  const supportsFill = !["arrow", "longBallArrow", "line", "freeDraw", "text", "playerRing", "zoom", "glimpse"].includes(object.type);
+  const supportsActionLabel = ["line", "arrow", "longBallArrow"].includes(object.type);
+  const glimpseLength = object.data.kind === "glimpse" ? Math.hypot(object.data.target.x - object.data.origin.x, object.data.target.y - object.data.origin.y) : .2;
   const playerLabelOffset = object.data.kind === "playerRing" ? object.data.labelOffsetY ?? .12 : .12;
+  const patternData = object.data.kind === "polygon" || object.data.kind === "triangle" || object.data.kind === "rectangle" ? object.data : null;
+  const supportsPatternFill = patternData !== null;
+  const patternDesign = object.data.kind === "polygon"
+    ? object.data.zoneDesign ?? "solid"
+    : object.data.kind === "triangle" || object.data.kind === "rectangle"
+      ? object.data.fillDesign ?? "solid"
+      : "solid";
+  const stripeColor = patternData?.stripeColor ?? "#ffffff";
+  const stripeAngle = patternData?.stripeAngle ?? 58;
+  const stripeSpacing = patternData?.stripeSpacing ?? .014;
   const playerTrack = object.target?.kind === "player" && activeSlide?.content.kind === "video"
     ? activeSlide.content.playerTracks?.find((track) => track.id === object.target?.trackId)
     : undefined;
@@ -121,9 +173,57 @@ export function PropertiesPanel() {
             )}
           </>
         )}
+        {supportsPatternFill && (
+          <>
+            <label className="field-row">
+              <FieldLabel>{object.data.kind === "polygon" ? "Modelo da zona" : "Modelo do preenchimento"}</FieldLabel>
+              <select value={patternDesign} onChange={(event) => updatePatternAppearance({ design: event.target.value as ZoneDesign })}>
+                <option value="solid">Preenchimento</option>
+                <option value="striped">Riscas de espaço</option>
+              </select>
+            </label>
+            {patternDesign === "striped" && (
+              <>
+                <label className="field-row"><FieldLabel>Cor das riscas</FieldLabel><input type="color" value={stripeColor.slice(0, 7)} onChange={(event) => updatePatternAppearance({ stripeColor: event.target.value })} /><code>{stripeColor.slice(0, 7)}</code></label>
+                <label className="stacked-field"><span><FieldLabel>Direção das riscas</FieldLabel><b>{Math.round(stripeAngle)}°</b></span><input type="range" min={0} max={180} step={1} value={stripeAngle} onChange={(event) => updatePatternAppearance({ stripeAngle: Number(event.target.value) })} /></label>
+                <label className="stacked-field"><span><FieldLabel>Espaçamento</FieldLabel><b>{Math.round(stripeSpacing * 540)}px</b></span><input type="range" min={.006} max={.04} step={.001} value={stripeSpacing} onChange={(event) => updatePatternAppearance({ stripeSpacing: Number(event.target.value) })} /></label>
+              </>
+            )}
+          </>
+        )}
+        {object.data.kind === "text" && (
+          <>
+            <label className="field-row">
+              <FieldLabel>Modelo do texto</FieldLabel>
+              <select value={object.data.textDesign ?? "flat"} onChange={(event) => updateTextAppearance({ textDesign: event.target.value as TextDesign })}>
+                <option value="flat">Texto normal</option>
+                <option value="ground3d">3D no relvado</option>
+              </select>
+            </label>
+            {(object.data.textDesign ?? "flat") === "ground3d" && (
+              <>
+                <label className="stacked-field"><span><FieldLabel>Inclinação no relvado</FieldLabel><b>{Math.round(object.data.groundTilt ?? -12)}°</b></span><input type="range" min={-35} max={35} step={1} value={object.data.groundTilt ?? -12} onChange={(event) => updateTextAppearance({ groundTilt: Number(event.target.value) })} /></label>
+                <label className="stacked-field"><span><FieldLabel>Profundidade 3D</FieldLabel><b>{Math.round(object.data.groundDepth ?? 7)}px</b></span><input type="range" min={2} max={16} step={1} value={object.data.groundDepth ?? 7} onChange={(event) => updateTextAppearance({ groundDepth: Number(event.target.value) })} /></label>
+              </>
+            )}
+          </>
+        )}
         <div className="effect-presets"><button onClick={() => applyEffectPreset("clean")}>Clean</button><button onClick={() => applyEffectPreset("glow")}>TV Glow</button><button onClick={() => applyEffectPreset("shadow")}>Sombra</button></div>
-        <label className="field-row"><FieldLabel>{isPlayerRing ? "Círculo exterior" : "Traço"}</FieldLabel><input type="color" value={object.style.stroke.slice(0, 7)} onChange={(e) => updateStyle({ stroke: e.target.value })} /><code>{object.style.stroke.slice(0, 7)}</code></label>
-        {!["arrow", "longBallArrow", "line", "freeDraw", "text"].includes(object.type) && (
+        {object.data.kind === "line" && (
+          <label className="field-row">
+            <FieldLabel>Modelo da linha</FieldLabel>
+            <select value={object.data.lineDesign ?? "single"} onChange={(event) => updateLineAppearance({ lineDesign: event.target.value as LineDesign })}>
+              <option value="single">Uma cor</option>
+              <option value="dual">Duas cores</option>
+              <option value="fadeShadow">Sombra e fade</option>
+            </select>
+          </label>
+        )}
+        <label className="field-row"><FieldLabel>{isPlayerRing ? "Círculo exterior" : object.data.kind === "line" ? "Cor principal" : object.data.kind === "text" ? "Cor do texto" : object.data.kind === "zoom" ? "Cor da moldura" : object.data.kind === "glimpse" ? "Cor da visão" : "Traço"}</FieldLabel><input type="color" value={object.style.stroke.slice(0, 7)} onChange={(e) => updateStyle({ stroke: e.target.value })} /><code>{object.style.stroke.slice(0, 7)}</code></label>
+        {object.data.kind === "line" && object.data.lineDesign === "dual" && (
+          <label className="field-row"><FieldLabel>Cor da linha fina</FieldLabel><input type="color" value={(object.data.secondaryColor ?? "#ffffff").slice(0, 7)} onChange={(event) => updateLineAppearance({ secondaryColor: event.target.value })} /><code>{(object.data.secondaryColor ?? "#ffffff").slice(0, 7)}</code></label>
+        )}
+        {!["arrow", "longBallArrow", "line", "freeDraw", "text", "zoom", "glimpse"].includes(object.type) && (
           <label className="field-row"><FieldLabel>{isPlayerRing ? "Círculo interior" : "Preench."}</FieldLabel><input type="color" value={fillColor} onChange={(e) => updateStyle({ fill: isPlayerRing ? e.target.value : withFillOpacity(e.target.value, fillOpacity) })} /><code>{fillColor}</code></label>
         )}
         {supportsFill && <label className="stacked-field"><span><FieldLabel>Opacidade do preenchimento</FieldLabel><b>{Math.round(fillOpacity * 100)}%</b></span><input type="range" min={0} max={1} step={.05} value={fillOpacity} onChange={(event) => updateStyle({ fill: withFillOpacity(object.style.fill, Number(event.target.value)) })} /></label>}
@@ -135,7 +235,7 @@ export function PropertiesPanel() {
         <label className="stacked-field"><span><FieldLabel>Suavidade</FieldLabel><b>{object.style.shadowBlur ?? 0}px</b></span><input type="range" min={0} max={40} value={object.style.shadowBlur ?? 0} onChange={(e) => updateStyle({ shadowBlur: Number(e.target.value) })} /></label>
         <label className="stacked-field"><span><FieldLabel>Força efeito</FieldLabel><b>{Math.round((object.style.shadowOpacity ?? 0) * 100)}%</b></span><input type="range" min={0} max={1} step={.05} value={object.style.shadowOpacity ?? 0} onChange={(e) => updateStyle({ shadowOpacity: Number(e.target.value) })} /></label>
         <div className="two-fields shadow-offset-fields"><label><FieldLabel>Sombra X</FieldLabel><input type="number" min={-30} max={30} value={object.style.shadowOffsetX ?? 0} onChange={(e) => updateStyle({ shadowOffsetX: Number(e.target.value) })} /></label><label><FieldLabel>Sombra Y</FieldLabel><input type="number" min={-30} max={30} value={object.style.shadowOffsetY ?? 0} onChange={(e) => updateStyle({ shadowOffsetY: Number(e.target.value) })} /></label></div>
-        {!isPlayerRing && object.type !== "text" && <label className="field-row"><FieldLabel>Estilo linha</FieldLabel><select value={object.style.dash.length ? "dashed" : "solid"} onChange={(event) => updateStyle({ dash: event.target.value === "dashed" ? [10, 7] : [] })}><option value="solid">Linha contínua</option><option value="dashed">Tracejado</option></select></label>}
+        {!isPlayerRing && !["text", "zoom", "glimpse", "spotlight"].includes(object.type) && <label className="field-row"><FieldLabel>Estilo linha</FieldLabel><select value={object.style.dash.length ? "dashed" : "solid"} onChange={(event) => updateStyle({ dash: event.target.value === "dashed" ? [10, 7] : [] })}><option value="solid">Linha contínua</option><option value="dashed">Tracejado</option></select></label>}
         {object.data.kind === "spotlight" && (
           <>
             <label className="stacked-field"><span><FieldLabel>Largura no jogador</FieldLabel><b>{Math.round(object.data.radiusX * 200)}%</b></span><input type="range" min={.02} max={.14} step={.002} value={object.data.radiusX} onChange={(event) => object.data.kind === "spotlight" && updateDrawing(object.id, { data: { ...object.data, radiusX: Number(event.target.value) } })} /></label>
@@ -146,8 +246,40 @@ export function PropertiesPanel() {
         {object.data.kind === "longBallArrow" && (
           <label className="stacked-field"><span><FieldLabel>Altura da trajetória</FieldLabel><b>{Math.round(object.data.curveHeight * 100)}%</b></span><input type="range" min={.02} max={.34} step={.01} value={object.data.curveHeight} onChange={(event) => object.data.kind === "longBallArrow" && updateDrawing(object.id, { data: { ...object.data, curveHeight: Number(event.target.value) } })} /></label>
         )}
-        {object.data.kind === "text" && <TextContentField value={object.data.text} onChange={(text) => updateDrawing(object.id, { data: { kind: "text", origin: object.data.kind === "text" ? object.data.origin : { x: 0, y: 0 }, fontSize: object.data.kind === "text" ? object.data.fontSize : 0.055, text } })} />}
+        {object.data.kind === "zoom" && (
+          <>
+            <label className="stacked-field"><span><FieldLabel>Ampliação</FieldLabel><b>{object.data.zoom.toFixed(1)}x</b></span><input type="range" min={1.2} max={4} step={.1} value={object.data.zoom} onChange={(event) => object.data.kind === "zoom" && updateDrawing(object.id, { data: { ...object.data, zoom: Number(event.target.value) } })} /></label>
+            <label className="stacked-field"><span><FieldLabel>Tamanho da lupa</FieldLabel><b>{Math.round(object.data.radius * 200)}%</b></span><input type="range" min={.06} max={.28} step={.005} value={object.data.radius} onChange={(event) => object.data.kind === "zoom" && updateDrawing(object.id, { data: { ...object.data, radius: Number(event.target.value) } })} /></label>
+          </>
+        )}
+        {object.data.kind === "glimpse" && (
+          <>
+            <label className="stacked-field"><span><FieldLabel>Abertura da visão</FieldLabel><b>{Math.round(object.data.spread)}°</b></span><input type="range" min={12} max={100} step={1} value={object.data.spread} onChange={(event) => object.data.kind === "glimpse" && updateDrawing(object.id, { data: { ...object.data, spread: Number(event.target.value) } })} /></label>
+            <label className="stacked-field"><span><FieldLabel>Distância da visão</FieldLabel><b>{Math.round(glimpseLength * 100)}%</b></span><input type="range" min={.03} max={.55} step={.01} value={glimpseLength} onChange={(event) => updateGlimpseLength(Number(event.target.value))} /></label>
+          </>
+        )}
+        {object.data.kind === "text" && <TextContentField value={object.data.text} onChange={(text) => object.data.kind === "text" && updateDrawing(object.id, { data: { ...object.data, text } })} />}
       </section>
+
+      {supportsActionLabel && (
+        <section className="property-section">
+          <h3>NÚMERO DA AÇÃO</h3>
+          <label className="toggle-row">
+            <span><FieldLabel>Mostrar número</FieldLabel><small>Marcador sobre a linha ou seta</small></span>
+            <input type="checkbox" checked={object.actionLabel?.visible ?? false} onChange={(event) => updateActionLabel({ visible: event.target.checked })} />
+            <span />
+          </label>
+          {(object.actionLabel?.visible ?? false) && (
+            <>
+              <label className="field-row"><FieldLabel>Número / ação</FieldLabel><input type="text" maxLength={4} value={object.actionLabel?.value ?? "1"} onChange={(event) => updateActionLabel({ value: event.target.value })} /></label>
+              <label className="stacked-field"><span><FieldLabel>Posição na linha</FieldLabel><b>{Math.round((object.actionLabel?.position ?? .5) * 100)}%</b></span><input type="range" min={.05} max={.95} step={.01} value={object.actionLabel?.position ?? .5} onChange={(event) => updateActionLabel({ position: Number(event.target.value) })} /></label>
+              <label className="stacked-field"><span><FieldLabel>Tamanho</FieldLabel><b>{Math.round((object.actionLabel?.fontSize ?? .022) * 540)}px</b></span><input type="range" min={.014} max={.05} step={.002} value={object.actionLabel?.fontSize ?? .022} onChange={(event) => updateActionLabel({ fontSize: Number(event.target.value) })} /></label>
+              <label className="field-row"><FieldLabel>Cor do número</FieldLabel><input type="color" value={(object.actionLabel?.color ?? "#ffffff").slice(0, 7)} onChange={(event) => updateActionLabel({ color: event.target.value })} /><code>{(object.actionLabel?.color ?? "#ffffff").slice(0, 7)}</code></label>
+              <label className="field-row"><FieldLabel>Cor do marcador</FieldLabel><input type="color" value={(object.actionLabel?.backgroundColor ?? "#174ea6").slice(0, 7)} onChange={(event) => updateActionLabel({ backgroundColor: event.target.value })} /><code>{(object.actionLabel?.backgroundColor ?? "#174ea6").slice(0, 7)}</code></label>
+            </>
+          )}
+        </section>
+      )}
 
       {object.data.kind === "playerRing" && (
         <section className="property-section player-label-section">

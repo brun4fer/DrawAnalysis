@@ -14,6 +14,7 @@ import { timelineTimeToSource } from "@/utils/videoTimeline";
 import { DrawingShape } from "./DrawingShape";
 import { PlayerOcclusionCanvas } from "./PlayerOcclusionCanvas";
 import { PlayerLabelOverlay } from "./PlayerLabelOverlay";
+import { ZoomLensCanvas } from "./ZoomLensCanvas";
 
 interface Props {
   width: number;
@@ -26,7 +27,7 @@ interface Draft { tool: Tool; start: Point; points: Point[]; current: Point }
 interface DetectionEffect { phase: "scanning" | "locked" | "failed"; click: Point; box?: NormalizedBox; score?: number }
 
 const labelFor = (kind: DrawingObject["type"]) => ({
-  playerRing: "Ring", spotlight: "Spotlight", ellipse: "Marcador", arrow: "Seta", longBallArrow: "Bola longa", line: "Linha", triangle: "Triângulo",
+  playerRing: "Ring", spotlight: "Spotlight", zoom: "Zoom", ellipse: "Marcador", arrow: "Seta", longBallArrow: "Bola longa", line: "Linha", glimpse: "Visão", triangle: "Triângulo",
   polygon: "Zona", rectangle: "Retângulo", text: "Texto", freeDraw: "Traço",
 })[kind];
 
@@ -175,6 +176,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
   const [trackingQuality, setTrackingQuality] = useState<"tracking" | "reacquiring" | null>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const occlusionCanvasRef = useRef<HTMLCanvasElement>(null);
+  const zoomCanvasRef = useRef<HTMLCanvasElement>(null);
   const trackingBusyRef = useRef(false);
   const lastTrackingFrameRef = useRef<Record<string, number>>({});
   const trackingMissesRef = useRef<Record<string, number>>({});
@@ -195,6 +197,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       const canvas = stage.toCanvas({ pixelRatio: 1 });
       const context = canvas.getContext("2d");
       if (context && occlusionCanvasRef.current) context.drawImage(occlusionCanvasRef.current, 0, 0, canvas.width, canvas.height);
+      if (context && zoomCanvasRef.current) context.drawImage(zoomCanvasRef.current, 0, 0, canvas.width, canvas.height);
       selection.forEach((node) => node.show());
       stage.draw();
       return canvas;
@@ -214,10 +217,15 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     options?: { target?: DrawingObject["target"]; trackingEnabled?: boolean },
   ) => {
     const count = drawings.filter((item) => item.type === type).length + 1;
+    const actionCount = drawings.filter((item) => ["line", "arrow", "longBallArrow"].includes(item.type)).length + 1;
     const effectStyle = type === "playerRing"
       ? { stroke: "#f7f8f2", fill: "#1454c4", strokeWidth: 3, shadowColor: "#f1e72b", shadowBlur: 22, shadowOpacity: .82 }
       : type === "spotlight"
         ? { stroke: "#fff8c7", fill: "#fff8c733", strokeWidth: 2, shadowColor: "#fff2a8", shadowBlur: 22, shadowOpacity: .6 }
+        : type === "zoom"
+          ? { stroke: "#ffffff", fill: "#ffffff12", strokeWidth: 4, shadowColor: "#000000", shadowBlur: 12, shadowOpacity: .82, shadowOffsetX: 2, shadowOffsetY: 5 }
+          : type === "glimpse"
+            ? { stroke: "#ffffff", fill: "#ffffff38", strokeWidth: 2, shadowColor: "#ffffff", shadowBlur: 18, shadowOpacity: .6 }
         : type === "arrow" || type === "longBallArrow"
           ? { stroke: "#65d9ff", strokeWidth: 5, shadowColor: "#000000", shadowBlur: 10, shadowOpacity: .68, shadowOffsetX: 3, shadowOffsetY: 5 }
           : {};
@@ -240,6 +248,9 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       target: options?.target,
       keyframes: [],
       animation: { fadeIn: 0, fadeOut: 0, motion: "none", pulseAmount: .05, pulseSpeed: 1.4 },
+      actionLabel: ["line", "arrow", "longBallArrow"].includes(type)
+        ? { visible: false, value: String(actionCount), position: .5, color: "#ffffff", backgroundColor: "#174ea6", fontSize: .022 }
+        : undefined,
       style: { ...DEFAULT_STYLE, ...effectStyle, dash: [] },
       transform: { ...DEFAULT_TRANSFORM },
       data,
@@ -550,7 +561,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       const previous = all[index - 1];
       return Math.hypot(point.x - previous.x, point.y - previous.y) > 0.003;
     });
-    if (points.length >= 3) makeDrawing("polygon", { kind: "polygon", points });
+    if (points.length >= 3) makeDrawing("polygon", { kind: "polygon", points, zoneDesign: "solid", stripeColor: "#ffffff", stripeSpacing: .014, stripeAngle: 58 });
   }, [draft, makeDrawing]);
 
   useEffect(() => {
@@ -574,22 +585,26 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       void placeSpotlightOnPlayer(point);
       return;
     }
+    if (tool === "zoom") {
+      makeDrawing("zoom", { kind: "zoom", center: point, radius: .14, zoom: 2 });
+      return;
+    }
     if (tool === "text") {
-      makeDrawing("text", { kind: "text", origin: point, text: "TEXTO", fontSize: 0.055 });
+      makeDrawing("text", { kind: "text", origin: point, text: "TEXTO", fontSize: 0.055, textDesign: "flat", groundTilt: -12, groundDepth: 7 });
       return;
     }
     if (tool === "triangle" || tool === "polygon") {
       const existingPoints = draft?.tool === tool ? draft.points : [];
       const points = [...existingPoints, point];
       if (tool === "triangle" && points.length === 3) {
-        makeDrawing("triangle", { kind: "triangle", points });
+        makeDrawing("triangle", { kind: "triangle", points, fillDesign: "solid", stripeColor: "#ffffff", stripeSpacing: .014, stripeAngle: 58 });
       } else {
         setDraft({ tool, start: points[0], points, current: point });
       }
       return;
     }
 
-    if (["ellipse", "rectangle", "arrow", "longBallArrow", "line"].includes(tool) && draft?.tool === tool) {
+    if (["ellipse", "rectangle", "arrow", "longBallArrow", "line", "glimpse"].includes(tool) && draft?.tool === tool) {
       const dx = point.x - draft.start.x;
       const dy = point.y - draft.start.y;
       if (tool === "ellipse") makeDrawing("ellipse", {
@@ -603,9 +618,15 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         origin: { x: Math.min(draft.start.x, point.x), y: Math.min(draft.start.y, point.y) },
         width: Math.max(0.01, Math.abs(dx)),
         height: Math.max(0.01, Math.abs(dy)),
+        fillDesign: "solid",
+        stripeColor: "#ffffff",
+        stripeSpacing: .014,
+        stripeAngle: 58,
       });
-      if (tool === "arrow" || tool === "line") makeDrawing(tool, { kind: tool, points: [draft.start, point] });
+      if (tool === "arrow") makeDrawing("arrow", { kind: "arrow", points: [draft.start, point] });
+      if (tool === "line") makeDrawing("line", { kind: "line", points: [draft.start, point], lineDesign: "single", secondaryColor: "#ffffff" });
       if (tool === "longBallArrow") makeDrawing("longBallArrow", { kind: "longBallArrow", start: draft.start, end: point, curveHeight: .13 });
+      if (tool === "glimpse") makeDrawing("glimpse", { kind: "glimpse", origin: draft.start, target: point, spread: 38 });
       return;
     }
     setDraft({ tool, start: point, points: [point], current: point });
@@ -643,6 +664,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       return <Arrow listening={false} {...style} fill={DEFAULT_STYLE.stroke} points={points} pointerLength={12} pointerWidth={12} />;
     }
     if (tool === "line") return <Line listening={false} {...style} points={flattenPoints([draft.start, draft.current], width, height)} />;
+    if (tool === "glimpse") return <Line listening={false} {...style} stroke="#ffffff" strokeWidth={18} opacity={.28} points={flattenPoints([draft.start, draft.current], width, height)} />;
     if (tool === "freeDraw") return <Line listening={false} {...style} points={flattenPoints(draft.points, width, height)} tension={0.35} />;
     if (tool === "triangle" || tool === "polygon") return <Line listening={false} {...style} points={flattenPoints([...draft.points, draft.current], width, height)} closed={tool === "triangle" && draft.points.length === 2} />;
     return null;
@@ -708,6 +730,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       height={height}
       getVideoElement={getVideoElement}
     />
+    <ZoomLensCanvas ref={zoomCanvasRef} drawings={drawings} currentTime={currentTime} width={width} height={height} getVideoElement={getVideoElement} />
     <PlayerLabelOverlay drawings={drawings} currentTime={currentTime} width={width} height={height} />
     {detectionEffect && (
       <div className={`player-identification-effect phase-${detectionEffect.phase}`} aria-hidden="true">

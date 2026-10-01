@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, Cloud, Eye, FolderOpen, LogOut, Plus, Redo2, RotateCcw, Save, Undo2 } from "lucide-react";
+import { Camera, Cloud, Download, Eye, FolderOpen, LogOut, Plus, Redo2, RotateCcw, Save, Undo2 } from "lucide-react";
 import { useEditorStore } from "@/store/useEditorStore";
 import { InstallAppButton } from "@/components/pwa/InstallAppButton";
 
@@ -14,13 +14,14 @@ interface Props {
   onCloud: () => void;
   onProjects: () => void;
   onSave: () => void;
+  onExport: () => void;
   onLogout: () => void;
   projectName: string;
   saveState: "idle" | "saving" | "saved" | "error";
   account?: { user: { name: string; username: string }; workspace: { name: string } } | null;
 }
 
-export function TopBar({ filename, isVideoSlide, onOpen, onAddSlide, onPreview, onCapture, onCloud, onProjects, onSave, onLogout, projectName, saveState, account }: Props) {
+export function TopBar({ filename, isVideoSlide, onOpen, onAddSlide, onPreview, onCapture, onCloud, onProjects, onSave, onExport, onLogout, projectName, saveState, account }: Props) {
   const { undo, redo, reset, history, future, slides } = useEditorStore();
   return (
     <header className="topbar">
@@ -30,6 +31,7 @@ export function TopBar({ filename, isVideoSlide, onOpen, onAddSlide, onPreview, 
       <div className="topbar-spacer" />
       <button className="topbar-text-action" onClick={onProjects}><FolderOpen size={15} /> Projetos</button>
       <button className="topbar-text-action" onClick={onSave}><Save size={15} /> {saveState === "saving" ? "A guardar…" : saveState === "saved" ? "Guardado" : saveState === "error" ? "Erro" : "Guardar"}</button>
+      <button className="topbar-text-action" onClick={onExport} disabled={!slides.length} title="Exportar apresentação para PowerPoint"><Download size={15} /> PowerPoint</button>
       <button className="topbar-action" onClick={undo} disabled={!history.length} title="Anular (Ctrl+Z)"><Undo2 size={17} /></button>
       <button className="topbar-action" onClick={redo} disabled={!future.length} title="Refazer (Ctrl+Y)"><Redo2 size={17} /></button>
       {isVideoSlide && <button className="topbar-action" onClick={reset} title="Limpar desenhos"><RotateCcw size={16} /></button>}

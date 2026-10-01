@@ -21,6 +21,10 @@ export function ToolRail() {
                 ? "Clique no jogador · ajuste automático"
                 : tool === "longBallArrow"
                   ? "Clique na origem · clique no destino"
+                  : tool === "zoom"
+                    ? "Clique na zona a ampliar"
+                    : tool === "glimpse"
+                      ? "Clique nos olhos · indique a direção"
             : "Clique · mova · clique";
   return (
     <aside className="tool-rail" aria-label="Ferramentas de desenho">

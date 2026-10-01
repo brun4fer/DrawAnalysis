@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { TopBar } from "./TopBar";
 import { ToolRail } from "./ToolRail";
@@ -23,6 +24,8 @@ import type { SlideType } from "@/types/slide";
 
 type Account = { user: { name: string; username: string }; workspace: { name: string } };
 
+const PowerPointExport = dynamic(() => import("@/components/export/PowerPointExport").then((module) => module.PowerPointExport), { ssr: false });
+
 export function Editor() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -33,6 +36,7 @@ export function Editor() {
   const [presenting, setPresenting] = useState(false);
   const [cloudOpen, setCloudOpen] = useState(false);
   const [projectsOpen, setProjectsOpen] = useState(false);
+  const [powerPointExportOpen, setPowerPointExportOpen] = useState(false);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState("Apresentação sem título");
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -40,7 +44,7 @@ export function Editor() {
   const [notice, setNotice] = useState("");
   const {
     selectedId, removeDrawing, undo, redo, setTool,
-    slides, selectedSlideId, addSlide, updateSlide, replacePresentation, setVideoSource,
+    slides, selectedSlideId, addSlide, updateSlide, replacePresentation, setVideoSource, setIsPlaying,
   } = useEditorStore();
   const selectedSlide = slides.find((slide) => slide.id === selectedSlideId) ?? null;
   const isVideoSlide = selectedSlide?.content.kind === "video";
@@ -148,10 +152,16 @@ export function Editor() {
     router.refresh();
   }
 
+  const openPowerPointExport = useCallback(() => {
+    setIsPlaying(false);
+    setPowerPointExportOpen(true);
+  }, [setIsPlaying]);
+  const closePowerPointExport = useCallback(() => setPowerPointExportOpen(false), []);
+
   return (
     <main className="app-shell presentation-builder">
       <input ref={inputRef} className="sr-only" type="file" accept="video/*" onChange={(event) => { openFile(event.target.files?.[0]); event.target.value = ""; }} />
-      <TopBar filename={filename} isVideoSlide={isVideoSlide} onOpen={() => inputRef.current?.click()} onAddSlide={() => setPickerOpen(true)} onPreview={() => setPresenting(true)} onCapture={captureAsImageSlide} onCloud={() => setCloudOpen(true)} onProjects={() => setProjectsOpen(true)} onSave={() => void saveProject()} onLogout={() => void logout()} projectName={projectName} saveState={saveState} account={account} />
+      <TopBar filename={filename} isVideoSlide={isVideoSlide} onOpen={() => inputRef.current?.click()} onAddSlide={() => setPickerOpen(true)} onPreview={() => setPresenting(true)} onCapture={captureAsImageSlide} onCloud={() => setCloudOpen(true)} onProjects={() => setProjectsOpen(true)} onSave={() => void saveProject()} onExport={openPowerPointExport} onLogout={() => void logout()} projectName={projectName} saveState={saveState} account={account} />
       {notice && <button className="editor-notice" onClick={() => setNotice("")}>{notice}<span>×</span></button>}
       <div className="presentation-workspace">
         <SlideList onAdd={() => setPickerOpen(true)} />
@@ -185,6 +195,7 @@ export function Editor() {
       {cloudOpen && <CloudLibraryModal onSelect={selectCloudAsset} onClose={() => setCloudOpen(false)} />}
       {projectsOpen && <ProjectLibraryModal slides={slides} onClose={() => setProjectsOpen(false)} onOpen={(project) => { setProjectId(project.id); setProjectName(project.name); replacePresentation(project.slides); setSaveState("idle"); }} />}
       {presenting && <PresentationMode onClose={() => setPresenting(false)} />}
+      {powerPointExportOpen && <PowerPointExport slides={slides} projectName={projectName} onClose={closePowerPointExport} />}
     </main>
   );
 }
