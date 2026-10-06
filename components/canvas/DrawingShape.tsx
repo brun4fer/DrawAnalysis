@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import Konva from "konva";
 import { Arc, Arrow, Ellipse, Group, Line, Rect, Text, Transformer } from "react-konva";
-import type { DrawingObject } from "@/types/drawing";
+import type { DrawingObject, Point } from "@/types/drawing";
 import { flattenPoints } from "@/utils/coordinates";
 import { getObjectStateAtTime } from "@/utils/temporalRenderer";
 
@@ -17,6 +17,7 @@ interface Props {
   onSelect: () => void;
   onChange: (patch: Partial<DrawingObject>) => void;
   renderMode?: "all" | "base" | "playerLabel";
+  targetOffset?: Point;
 }
 
 function withAlpha(color: string, alpha: number) {
@@ -56,7 +57,7 @@ function quadraticCurvePoints(start: { x: number; y: number }, end: { x: number;
   }).flatMap(({ x, y }) => [x, y]);
 }
 
-export function DrawingShape({ object, width, height, currentTime, selected, canEdit, onSelect, onChange, renderMode = "all" }: Props) {
+export function DrawingShape({ object, width, height, currentTime, selected, canEdit, onSelect, onChange, renderMode = "all", targetOffset = { x: 0, y: 0 } }: Props) {
   const nodeRef = useRef<Konva.Group>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
   const temporalState = getObjectStateAtTime(object, currentTime);
@@ -143,6 +144,28 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
     const data = object.data;
     if (renderMode === "playerLabel" && data.kind !== "playerRing") return null;
     switch (data.kind) {
+      case "identifyPlayer": {
+        if (!canEdit || !selected) return null;
+        return (
+          <Group opacity={selected ? .95 : .55} listening>
+            <Ellipse
+              x={data.center.x * width}
+              y={data.center.y * height}
+              radiusX={data.radiusX * width}
+              radiusY={data.radiusY * height}
+              stroke="#a3ff12"
+              strokeWidth={1.5}
+              dash={[5, 5]}
+              fill="#a3ff1208"
+            />
+            <Line
+              points={[data.center.x * width - 7, data.center.y * height, data.center.x * width + 7, data.center.y * height]}
+              stroke="#a3ff12"
+              strokeWidth={1}
+            />
+          </Group>
+        );
+      }
       case "playerRing": {
         const x = data.center.x * width;
         const y = data.center.y * height;
@@ -218,8 +241,30 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
             </Group>
           ) : null;
           if (renderMode === "playerLabel") return labelNode;
+          const splashNodes = data.splashEnabled ? Array.from({ length: 3 }, (_, index) => {
+            const phase = ((elapsed * (data.splashSpeed ?? 1) + index / 3) % 1 + 1) % 1;
+            const scale = .22 + phase * 1.18;
+            return (
+              <Ellipse
+                key={`splash-${index}`}
+                x={x}
+                y={y}
+                radiusX={radiusX * scale}
+                radiusY={radiusY * scale}
+                stroke={primaryColor}
+                strokeWidth={Math.max(1.2, object.style.strokeWidth * (1 - phase * .55))}
+                opacity={Math.pow(1 - phase, 1.6) * .9}
+                shadowColor={primaryColor}
+                shadowBlur={Math.max(5, object.style.shadowBlur * .5)}
+                shadowOpacity={.65}
+                listening={false}
+              />
+            );
+          }) : null;
           return (
             <Group opacity={temporalState.opacity}>
+            {splashNodes}
+            <Group visible={data.showRing !== false}>
             <Ellipse
               x={x - radiusX * .34 + object.style.shadowOffsetX}
               y={y + radiusY * .2 + object.style.shadowOffsetY}
@@ -474,7 +519,61 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
               {renderMode !== "base" && labelNode}
               <Ellipse x={x} y={y} radiusX={radiusX} radiusY={radiusY} fill="#00000001" />
             </Group>
+            </Group>
           );
+      }
+      case "ghost": {
+        const origin = {
+          x: (data.origin.x + targetOffset.x) * width,
+          y: (data.origin.y + targetOffset.y) * height,
+        };
+        const destination = { x: data.destination.x * width, y: data.destination.y * height };
+        const radiusX = data.radiusX * width;
+        const radiusY = data.radiusY * height;
+        const color = solidColor(object.style.stroke, "#ffffff");
+        return (
+          <Group opacity={temporalState.opacity}>
+            <Ellipse
+              x={destination.x}
+              y={destination.y}
+              radiusX={radiusX * 1.32}
+              radiusY={radiusY * 1.5}
+              fillRadialGradientStartPoint={{ x: 0, y: 0 }}
+              fillRadialGradientEndPoint={{ x: 0, y: 0 }}
+              fillRadialGradientStartRadius={0}
+              fillRadialGradientEndRadius={radiusX * 1.32}
+              fillRadialGradientColorStops={[0, withAlpha(color, .2), .55, withAlpha(color, .08), 1, withAlpha(color, 0)]}
+              shadowColor={color}
+              shadowBlur={Math.max(12, object.style.shadowBlur)}
+              shadowOpacity={.55}
+              listening={false}
+            />
+            <Ellipse
+              x={destination.x}
+              y={destination.y}
+              radiusX={radiusX}
+              radiusY={radiusY}
+              stroke={color}
+              strokeWidth={Math.max(2, object.style.strokeWidth)}
+              dash={object.style.dash.length ? object.style.dash : [10, 7]}
+              fill={withAlpha(color, .05)}
+            />
+            {data.showArrow !== false && (
+              <Arrow
+                points={[destination.x, destination.y + radiusY * .35, origin.x, origin.y - 2]}
+                stroke={color}
+                fill={color}
+                strokeWidth={Math.max(2, object.style.strokeWidth * .72)}
+                pointerLength={Math.max(9, object.style.strokeWidth * 2.2)}
+                pointerWidth={Math.max(9, object.style.strokeWidth * 2.2)}
+                shadowColor="#000000"
+                shadowBlur={6}
+                shadowOffsetY={3}
+                shadowOpacity={.72}
+              />
+            )}
+          </Group>
+        );
       }
       case "spotlight": {
         const x = data.target.x * width;
@@ -483,6 +582,43 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         const radiusY = data.radiusY * height;
         const top = y - data.beamHeight * height;
         const lightColor = solidColor(object.style.stroke, "#fff8c7");
+        if ((data.design ?? "beam") === "isolation") {
+          const darkness = data.darkness ?? .68;
+          const feather = data.feather ?? .48;
+          return (
+            <Group opacity={temporalState.opacity}>
+              <Rect x={-width * 2} y={-height * 2} width={width * 5} height={height * 5} fill="#000000" opacity={darkness} listening={false} />
+              <Ellipse
+                x={x}
+                y={y - radiusY * 1.65}
+                radiusX={radiusX * 1.3}
+                radiusY={Math.max(radiusY * 4.2, data.beamHeight * height * .52)}
+                fillRadialGradientStartPoint={{ x: 0, y: 0 }}
+                fillRadialGradientEndPoint={{ x: 0, y: 0 }}
+                fillRadialGradientStartRadius={0}
+                fillRadialGradientEndRadius={radiusX * 1.3}
+                fillRadialGradientColorStops={[0, `rgba(255,255,255,${1 - feather * .25})`, .58, `rgba(255,255,255,${.9 - feather * .35})`, 1, "rgba(255,255,255,0)"]}
+                globalCompositeOperation="destination-out"
+                listening={false}
+              />
+              <Ellipse
+                x={x}
+                y={y}
+                radiusX={radiusX * 1.12}
+                radiusY={radiusY * 1.25}
+                fillRadialGradientStartPoint={{ x: 0, y: 0 }}
+                fillRadialGradientEndPoint={{ x: 0, y: 0 }}
+                fillRadialGradientStartRadius={0}
+                fillRadialGradientEndRadius={radiusX * 1.12}
+                fillRadialGradientColorStops={[0, withAlpha(lightColor, .42), .55, withAlpha(lightColor, .16), 1, withAlpha(lightColor, 0)]}
+                shadowColor={lightColor}
+                shadowBlur={Math.max(18, object.style.shadowBlur)}
+                shadowOpacity={.65}
+                listening={false}
+              />
+            </Group>
+          );
+        }
         return (
           <Group opacity={temporalState.opacity}>
             <Line
@@ -960,6 +1096,10 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
     }
   })();
 
+  const followsTargetAsGroup = object.data.kind !== "ghost";
+  const targetX = followsTargetAsGroup ? targetOffset.x : 0;
+  const targetY = followsTargetAsGroup ? targetOffset.y : 0;
+
   const actionLabelNode = (() => {
     const label = object.actionLabel;
     if (renderMode === "playerLabel" || !label?.visible) return null;
@@ -1018,8 +1158,8 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         ref={nodeRef}
         id={object.id}
         listening={canEdit}
-        x={transform.x * width}
-        y={transform.y * height}
+        x={(transform.x + targetX) * width}
+        y={(transform.y + targetY) * height}
         rotation={transform.rotation}
         scaleX={transform.scaleX}
         scaleY={transform.scaleY}
@@ -1028,15 +1168,15 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         onClick={(event) => { event.cancelBubble = true; onSelect(); }}
         onTap={(event) => { event.cancelBubble = true; onSelect(); }}
         onDragEnd={(event) => onChange({
-          transform: { ...object.transform, x: event.target.x() / width, y: event.target.y() / height },
+          transform: { ...object.transform, x: event.target.x() / width - targetX, y: event.target.y() / height - targetY },
         })}
         onTransformEnd={() => {
           const node = nodeRef.current;
           if (!node) return;
           onChange({
             transform: {
-              x: node.x() / width,
-              y: node.y() / height,
+              x: node.x() / width - targetX,
+              y: node.y() / height - targetY,
               rotation: node.rotation(),
               scaleX: node.scaleX(),
               scaleY: node.scaleY(),

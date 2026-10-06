@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   MousePointer2, CircleDot, Flashlight, Search, CircleEllipsis, MoveUpRight, Spline, Minus, Eye, Triangle, Pentagon,
-  Square, Type, Pencil,
+  Square, Type, Pencil, UserRoundSearch, Ghost,
 } from "lucide-react";
 import type { Tool } from "@/types/drawing";
 
@@ -14,7 +14,9 @@ export interface ToolDefinition {
 
 export const TOOLS: ToolDefinition[] = [
   { id: "select", label: "Selecionar", shortcut: "V", icon: MousePointer2 },
+  { id: "identifyPlayer", label: "Identificar jogador", shortcut: "I", icon: UserRoundSearch },
   { id: "playerRing", label: "Ring de jogador", shortcut: "Q", icon: CircleDot },
+  { id: "ghost", label: "Ghost de posição", shortcut: "H", icon: Ghost },
   { id: "spotlight", label: "Spotlight", shortcut: "S", icon: Flashlight },
   { id: "zoom", label: "Lupa / Zoom", shortcut: "Z", icon: Search },
   { id: "ellipse", label: "Marcador", shortcut: "E", icon: CircleEllipsis },

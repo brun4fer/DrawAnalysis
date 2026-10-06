@@ -6,6 +6,7 @@ import type { AnalysisSlide, FreezeFrame } from "@/types/slide";
 import { createId } from "@/utils/id";
 import { createSlide } from "@/utils/slideFactory";
 import { sourceTimeToTimeline } from "@/utils/videoTimeline";
+import { normalizePresentationSlides } from "@/utils/presentationData";
 
 interface Snapshot { drawings: DrawingObject[]; slides: AnalysisSlide[] }
 
@@ -90,6 +91,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   appendPlayerTrackingSample: (drawingId, trackId, sample, keyframe) => set((state) => {
     const drawings = state.drawings.map((drawing) => {
       if (drawing.id !== drawingId) return drawing;
+      if (drawing.target?.referenceFoot) return drawing;
       const frames = drawing.keyframes.length
         ? drawing.keyframes
         : [{ time: drawing.startTime, x: 0, y: 0, scaleX: 1, scaleY: 1 }];
@@ -265,7 +267,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     };
   }),
   replacePresentation: (slides) => set(() => {
-    const safeSlides = copySlides(slides);
+    const safeSlides = copySlides(normalizePresentationSlides(slides));
     const selectedSlideId = safeSlides[0]?.id ?? null;
     const first = safeSlides[0];
     return {

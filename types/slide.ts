@@ -86,7 +86,9 @@ export interface AnalysisSlide {
   name: string;
   title?: string;
   subtitle?: string;
-  question: string;
+  caption: string;
+  /** Kept only while old saved projects are migrated on load. */
+  question?: string;
   duration: number;
   content: SlideContent;
 }

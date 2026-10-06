@@ -1,11 +1,24 @@
+import type { DrawingObject } from "@/types/drawing";
 import type { AnalysisSlide } from "@/types/slide";
 
 const withoutEmbeddedData = (value?: string) => value?.startsWith("data:") ? undefined : value;
 
-export function prepareSlidesForStorage(slides: AnalysisSlide[]) {
-  return slides.map((slide) => {
+export function normalizePresentationSlides(slides: AnalysisSlide[]) {
+  return slides.map((slide) => ({
+    ...slide,
+    caption: slide.caption ?? slide.question ?? "",
+    question: undefined,
+  }));
+}
+
+export function prepareSlidesForStorage(
+  slides: AnalysisSlide[],
+  active?: { selectedSlideId: string | null; drawings: DrawingObject[] },
+) {
+  return normalizePresentationSlides(slides).map((slide) => {
     const copy = structuredClone(slide);
     if (copy.content.kind === "video") {
+      if (slide.id === active?.selectedSlideId) copy.content.drawings = structuredClone(active.drawings);
       copy.content.sourceUrl = undefined;
       copy.content.thumbnail = withoutEmbeddedData(copy.content.thumbnail);
     } else if (copy.content.kind === "image") {

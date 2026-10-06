@@ -291,35 +291,22 @@ export function PowerPointExport({ slides, projectName, onClose }: Props) {
             pptSlide.addImage({ data: image, x: 0, y: 0, w: SLIDE_WIDTH, h: SLIDE_HEIGHT });
           }
 
-          if (analysisSlide.question.trim()) {
-            pptSlide.addText("PERGUNTA", {
-              x: .35,
-              y: 6.63,
-              w: 1.15,
-              h: .48,
-              margin: 0,
+          if (analysisSlide.caption.trim()) {
+            pptSlide.addText(analysisSlide.caption, {
+              x: 0,
+              y: 6.78,
+              w: SLIDE_WIDTH,
+              h: .72,
+              margin: .12,
               fontFace: "Aptos",
-              fontSize: 8,
+              fontSize: 18,
               bold: true,
-              color: "A3FF12",
-              valign: "middle",
-              fill: { color: "0A0E10", transparency: 8 },
-              line: { color: "A3FF12", width: 1.2, beginArrowType: "none", endArrowType: "none" },
-            });
-            pptSlide.addText(analysisSlide.question, {
-              x: 1.5,
-              y: 6.63,
-              w: 11.48,
-              h: .48,
-              margin: .08,
-              fontFace: "Aptos",
-              fontSize: 14,
-              bold: true,
-              color: "F4F7F6",
+              color: "111111",
+              align: "center",
               valign: "middle",
               breakLine: false,
-              fill: { color: "0A0E10", transparency: 8 },
-              line: { color: "273034", transparency: 100 },
+              fill: { color: "FFFFFF", transparency: 0 },
+              line: { color: "FFFFFF", transparency: 100 },
             });
           }
           pptSlide.addNotes(`Slide TactiDraw · duração configurada: ${analysisSlide.duration}s`);

@@ -9,6 +9,7 @@ import { DrawingShape } from "./DrawingShape";
 import { PlayerOcclusionCanvas } from "./PlayerOcclusionCanvas";
 import { PlayerLabelOverlay } from "./PlayerLabelOverlay";
 import { ZoomLensCanvas } from "./ZoomLensCanvas";
+import { targetOffsetAtTime } from "@/utils/playerTracking";
 
 interface Props {
   drawings: DrawingObject[];
@@ -25,7 +26,9 @@ export function DrawingPreviewCanvas({ drawings, playerTracks, currentTime, widt
   const labelStageRef = useRef<Konva.Stage>(null);
   const occlusionCanvasRef = useRef<HTMLCanvasElement>(null);
   const zoomCanvasRef = useRef<HTMLCanvasElement>(null);
-  const visible = drawings.filter((drawing) => getObjectStateAtTime(drawing, currentTime).visible);
+  const visible = drawings
+    .filter((drawing) => getObjectStateAtTime(drawing, currentTime).visible)
+    .sort((left, right) => Number(right.data.kind === "spotlight") - Number(left.data.kind === "spotlight"));
 
   useEffect(() => {
     if (!registerCapture) return;
@@ -60,13 +63,14 @@ export function DrawingPreviewCanvas({ drawings, playerTracks, currentTime, widt
             onSelect={() => undefined}
             onChange={() => undefined}
             renderMode="base"
+            targetOffset={targetOffsetAtTime(object, playerTracks, currentTime)}
           />
         ))}
       </Layer>
     </Stage>
     <PlayerOcclusionCanvas ref={occlusionCanvasRef} drawings={drawings} playerTracks={playerTracks} currentTime={currentTime} width={width} height={height} getVideoElement={getVideoElement} />
     <ZoomLensCanvas ref={zoomCanvasRef} drawings={drawings} currentTime={currentTime} width={width} height={height} getVideoElement={getVideoElement} />
-    <PlayerLabelOverlay ref={labelStageRef} drawings={drawings} currentTime={currentTime} width={width} height={height} />
+    <PlayerLabelOverlay ref={labelStageRef} drawings={drawings} playerTracks={playerTracks} currentTime={currentTime} width={width} height={height} />
     </>
   );
 }

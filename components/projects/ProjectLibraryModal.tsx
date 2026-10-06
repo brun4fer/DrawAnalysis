@@ -3,17 +3,20 @@
 import { useCallback, useEffect, useState } from "react";
 import { FolderOpen, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import type { AnalysisSlide } from "@/types/slide";
+import type { DrawingObject } from "@/types/drawing";
 import { isPresentationData, prepareSlidesForStorage } from "@/utils/presentationData";
 
 interface ProjectSummary { id: string; name: string; version: number; updatedAt: string }
 interface ProjectRecord extends ProjectSummary { data: unknown }
 interface Props {
   slides: AnalysisSlide[];
+  selectedSlideId: string | null;
+  activeDrawings: DrawingObject[];
   onClose: () => void;
   onOpen: (project: { id: string; name: string; slides: AnalysisSlide[] }) => void;
 }
 
-export function ProjectLibraryModal({ slides, onClose, onOpen }: Props) {
+export function ProjectLibraryModal({ slides, selectedSlideId, activeDrawings, onClose, onOpen }: Props) {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(true);
@@ -42,10 +45,14 @@ export function ProjectLibraryModal({ slides, onClose, onOpen }: Props) {
     setBusy(true);
     setError("");
     try {
-      const response = await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim(), data: { slides: prepareSlidesForStorage(slides) } }) });
+      const liveSlides = slides.map((slide) => slide.id === selectedSlideId && slide.content.kind === "video"
+        ? { ...slide, content: { ...slide.content, drawings: structuredClone(activeDrawings) } }
+        : slide);
+      const storedSlides = prepareSlidesForStorage(liveSlides, { selectedSlideId, drawings: activeDrawings });
+      const response = await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim(), data: { slides: storedSlides } }) });
       const result = await response.json() as { project?: ProjectRecord; error?: string };
       if (!response.ok || !result.project) throw new Error(result.error || "Não foi possível criar o projeto.");
-      onOpen({ id: result.project.id, name: result.project.name, slides });
+      onOpen({ id: result.project.id, name: result.project.name, slides: liveSlides });
       onClose();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Não foi possível criar o projeto.");

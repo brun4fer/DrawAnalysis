@@ -42,7 +42,7 @@ export function PropertiesPanel() {
           <div><kbd>, .</kbd><em>Frame a frame</em></div>
           <div><kbd>Del</kbd><em>Eliminar objeto</em></div>
         </div>
-        {activeSlide?.content.kind === "video" && <VideoSlidePresentationSettings slideId={activeSlide.id} content={activeSlide.content} slideDuration={activeSlide.duration} question={activeSlide.question} currentTime={currentTime} videoDuration={videoDuration} onUpdate={(patch) => updateSlide(activeSlide.id, patch)} />}
+        {activeSlide?.content.kind === "video" && <VideoSlidePresentationSettings slideId={activeSlide.id} content={activeSlide.content} slideDuration={activeSlide.duration} caption={activeSlide.caption} currentTime={currentTime} videoDuration={videoDuration} onUpdate={(patch) => updateSlide(activeSlide.id, patch)} />}
       </aside>
     );
   }
@@ -67,7 +67,7 @@ export function PropertiesPanel() {
     if (object.data.kind !== "playerRing") return;
     updateDrawing(object.id, { data: { ...object.data, labelOffsetY: Math.max(.03, Math.min(.55, labelOffsetY)) } });
   };
-  const updatePlayerRingAppearance = (patch: { ringDesign?: PlayerRingDesign; spinEnabled?: boolean; spinSpeed?: number }) => {
+  const updatePlayerRingAppearance = (patch: { ringDesign?: PlayerRingDesign; spinEnabled?: boolean; spinSpeed?: number; showRing?: boolean; splashEnabled?: boolean; splashSpeed?: number }) => {
     if (object.data.kind !== "playerRing") return;
     updateDrawing(object.id, { data: { ...object.data, ...patch } });
   };
@@ -121,7 +121,7 @@ export function PropertiesPanel() {
   const fillOpacity = fillOpacityOf(object.style.fill);
   const isPlayerRing = object.type === "playerRing";
   const hasFixedBlackShadow = object.type === "arrow" || object.type === "longBallArrow";
-  const supportsFill = !["arrow", "longBallArrow", "line", "freeDraw", "text", "playerRing", "zoom", "glimpse"].includes(object.type);
+  const supportsFill = !["arrow", "longBallArrow", "line", "freeDraw", "text", "playerRing", "ghost", "identifyPlayer", "zoom", "glimpse", "spotlight"].includes(object.type);
   const supportsActionLabel = ["line", "arrow", "longBallArrow"].includes(object.type);
   const glimpseLength = object.data.kind === "glimpse" ? Math.hypot(object.data.target.x - object.data.origin.x, object.data.target.y - object.data.origin.y) : .2;
   const playerLabelOffset = object.data.kind === "playerRing" ? object.data.labelOffsetY ?? .12 : .12;
@@ -151,6 +151,11 @@ export function PropertiesPanel() {
         <h3>APARÊNCIA</h3>
         {object.data.kind === "playerRing" && (
           <>
+            <label className="toggle-row">
+              <span><FieldLabel>Mostrar anel</FieldLabel><small>O tracking continua mesmo sem o anel</small></span>
+              <input type="checkbox" checked={object.data.showRing !== false} onChange={(event) => updatePlayerRingAppearance({ showRing: event.target.checked })} />
+              <span />
+            </label>
             <label className="field-row">
               <FieldLabel>Modelo</FieldLabel>
               <select value={object.data.ringDesign ?? "segmented"} onChange={(event) => updatePlayerRingAppearance({ ringDesign: event.target.value as PlayerRingDesign })}>
@@ -169,6 +174,17 @@ export function PropertiesPanel() {
               <label className="stacked-field">
                 <span><FieldLabel>Velocidade de rotação</FieldLabel><b>{(object.data.spinSpeed ?? 1).toFixed(1)}x</b></span>
                 <input type="range" min={.2} max={2.5} step={.1} value={object.data.spinSpeed ?? 1} onChange={(event) => updatePlayerRingAppearance({ spinSpeed: Number(event.target.value) })} />
+              </label>
+            )}
+            <label className="toggle-row">
+              <span><FieldLabel>Efeito Splash</FieldLabel><small>Ondas pequenas que crescem e desaparecem</small></span>
+              <input type="checkbox" checked={object.data.splashEnabled ?? false} onChange={(event) => updatePlayerRingAppearance({ splashEnabled: event.target.checked })} />
+              <span />
+            </label>
+            {object.data.splashEnabled && (
+              <label className="stacked-field">
+                <span><FieldLabel>Velocidade do Splash</FieldLabel><b>{(object.data.splashSpeed ?? 1).toFixed(1)}x</b></span>
+                <input type="range" min={.35} max={2.5} step={.05} value={object.data.splashSpeed ?? 1} onChange={(event) => updatePlayerRingAppearance({ splashSpeed: Number(event.target.value) })} />
               </label>
             )}
           </>
@@ -223,7 +239,7 @@ export function PropertiesPanel() {
         {object.data.kind === "line" && object.data.lineDesign === "dual" && (
           <label className="field-row"><FieldLabel>Cor da linha fina</FieldLabel><input type="color" value={(object.data.secondaryColor ?? "#ffffff").slice(0, 7)} onChange={(event) => updateLineAppearance({ secondaryColor: event.target.value })} /><code>{(object.data.secondaryColor ?? "#ffffff").slice(0, 7)}</code></label>
         )}
-        {!["arrow", "longBallArrow", "line", "freeDraw", "text", "zoom", "glimpse"].includes(object.type) && (
+        {!["arrow", "longBallArrow", "line", "freeDraw", "text", "zoom", "glimpse", "ghost", "identifyPlayer", "spotlight"].includes(object.type) && (
           <label className="field-row"><FieldLabel>{isPlayerRing ? "Círculo interior" : "Preench."}</FieldLabel><input type="color" value={fillColor} onChange={(e) => updateStyle({ fill: isPlayerRing ? e.target.value : withFillOpacity(e.target.value, fillOpacity) })} /><code>{fillColor}</code></label>
         )}
         {supportsFill && <label className="stacked-field"><span><FieldLabel>Opacidade do preenchimento</FieldLabel><b>{Math.round(fillOpacity * 100)}%</b></span><input type="range" min={0} max={1} step={.05} value={fillOpacity} onChange={(event) => updateStyle({ fill: withFillOpacity(object.style.fill, Number(event.target.value)) })} /></label>}
@@ -238,9 +254,18 @@ export function PropertiesPanel() {
         {!isPlayerRing && !["text", "zoom", "glimpse", "spotlight"].includes(object.type) && <label className="field-row"><FieldLabel>Estilo linha</FieldLabel><select value={object.style.dash.length ? "dashed" : "solid"} onChange={(event) => updateStyle({ dash: event.target.value === "dashed" ? [10, 7] : [] })}><option value="solid">Linha contínua</option><option value="dashed">Tracejado</option></select></label>}
         {object.data.kind === "spotlight" && (
           <>
+            <label className="field-row"><FieldLabel>Modelo</FieldLabel><select value={object.data.design ?? "beam"} onChange={(event) => object.data.kind === "spotlight" && updateDrawing(object.id, { data: { ...object.data, design: event.target.value as "beam" | "isolation" } })}><option value="isolation">Isolar jogador</option><option value="beam">Feixe de luz</option></select></label>
             <label className="stacked-field"><span><FieldLabel>Largura no jogador</FieldLabel><b>{Math.round(object.data.radiusX * 200)}%</b></span><input type="range" min={.02} max={.14} step={.002} value={object.data.radiusX} onChange={(event) => object.data.kind === "spotlight" && updateDrawing(object.id, { data: { ...object.data, radiusX: Number(event.target.value) } })} /></label>
-            <label className="stacked-field"><span><FieldLabel>Altura da luz</FieldLabel><b>{Math.round(object.data.beamHeight * 100)}%</b></span><input type="range" min={.08} max={.55} step={.01} value={object.data.beamHeight} onChange={(event) => object.data.kind === "spotlight" && updateDrawing(object.id, { data: { ...object.data, beamHeight: Number(event.target.value) } })} /></label>
+            <label className="stacked-field"><span><FieldLabel>{object.data.design === "isolation" ? "Área iluminada" : "Altura da luz"}</FieldLabel><b>{Math.round(object.data.beamHeight * 100)}%</b></span><input type="range" min={.08} max={.55} step={.01} value={object.data.beamHeight} onChange={(event) => object.data.kind === "spotlight" && updateDrawing(object.id, { data: { ...object.data, beamHeight: Number(event.target.value) } })} /></label>
             <label className="stacked-field"><span><FieldLabel>Base no relvado</FieldLabel><b>{Math.round(object.data.radiusY * 1000)}</b></span><input type="range" min={.006} max={.05} step={.001} value={object.data.radiusY} onChange={(event) => object.data.kind === "spotlight" && updateDrawing(object.id, { data: { ...object.data, radiusY: Number(event.target.value) } })} /></label>
+            {(object.data.design ?? "beam") === "isolation" && <><label className="stacked-field"><span><FieldLabel>Escurecimento</FieldLabel><b>{Math.round((object.data.darkness ?? .68) * 100)}%</b></span><input type="range" min={.2} max={.9} step={.02} value={object.data.darkness ?? .68} onChange={(event) => object.data.kind === "spotlight" && updateDrawing(object.id, { data: { ...object.data, darkness: Number(event.target.value) } })} /></label><label className="stacked-field"><span><FieldLabel>Suavidade do recorte</FieldLabel><b>{Math.round((object.data.feather ?? .48) * 100)}%</b></span><input type="range" min={.05} max={.9} step={.02} value={object.data.feather ?? .48} onChange={(event) => object.data.kind === "spotlight" && updateDrawing(object.id, { data: { ...object.data, feather: Number(event.target.value) } })} /></label></>}
+          </>
+        )}
+        {object.data.kind === "ghost" && (
+          <>
+            <label className="toggle-row"><span><FieldLabel>Mostrar seta</FieldLabel><small>Liga a posição Ghost ao jogador</small></span><input type="checkbox" checked={object.data.showArrow !== false} onChange={(event) => object.data.kind === "ghost" && updateDrawing(object.id, { data: { ...object.data, showArrow: event.target.checked } })} /><span /></label>
+            <label className="stacked-field"><span><FieldLabel>Largura da posição</FieldLabel><b>{Math.round(object.data.radiusX * 200)}%</b></span><input type="range" min={.018} max={.12} step={.002} value={object.data.radiusX} onChange={(event) => object.data.kind === "ghost" && updateDrawing(object.id, { data: { ...object.data, radiusX: Number(event.target.value) } })} /></label>
+            <label className="stacked-field"><span><FieldLabel>Perspetiva no relvado</FieldLabel><b>{Math.round(object.data.radiusY * 1000)}</b></span><input type="range" min={.006} max={.05} step={.001} value={object.data.radiusY} onChange={(event) => object.data.kind === "ghost" && updateDrawing(object.id, { data: { ...object.data, radiusY: Number(event.target.value) } })} /></label>
           </>
         )}
         {object.data.kind === "longBallArrow" && (
@@ -389,12 +414,23 @@ export function PropertiesPanel() {
       </section>
 
       <section className="property-section tracking-section">
-        <label className="toggle-row"><span><FieldLabel>Tracking</FieldLabel><small>{playerTrack ? `${playerTrack.name} · ${object.trackingEnabled ? "a seguir até parar" : playerTrack.status === "seeded" ? "opcional, atualmente desligado" : "tracking terminado"}` : "Sem jogador associado"}</small></span><input type="checkbox" checked={object.trackingEnabled} onChange={(e) => {
+        <label className="toggle-row"><span><FieldLabel>Tracking</FieldLabel><small>{playerTrack ? `${playerTrack.name} · ${playerTrack.status === "processing" ? "a seguir até parar" : playerTrack.status === "seeded" ? "pronto para iniciar" : "tracking terminado"}` : "Sem jogador associado"}</small></span><input type="checkbox" checked={playerTrack ? playerTrack.status === "processing" : object.trackingEnabled} onChange={(e) => {
           const enabled = e.target.checked;
-          updateDrawing(object.id, enabled
-            ? { trackingEnabled: true, endTime: Math.max(object.endTime, videoDuration || currentTime + 3) }
-            : { trackingEnabled: false, endTime: Math.max(object.startTime + .04, currentTime) });
-          if (playerTrack) setPlayerTrackStatus(playerTrack.id, enabled ? "processing" : "ready");
+          if (playerTrack) {
+            const driver = drawings.find((drawing) => drawing.data.kind === "identifyPlayer" && drawing.target?.trackId === playerTrack.id) ?? object;
+            drawings.filter((drawing) => drawing.target?.trackId === playerTrack.id).forEach((drawing) => {
+              updateDrawing(drawing.id, drawing.id === driver.id
+                ? enabled
+                  ? { trackingEnabled: true, endTime: Math.max(drawing.endTime, videoDuration || currentTime + 3) }
+                  : { trackingEnabled: false, endTime: Math.max(drawing.startTime + .04, currentTime) }
+                : { trackingEnabled: false });
+            });
+            setPlayerTrackStatus(playerTrack.id, enabled ? "processing" : "ready");
+          } else {
+            updateDrawing(object.id, enabled
+              ? { trackingEnabled: true, endTime: Math.max(object.endTime, videoDuration || currentTime + 3) }
+              : { trackingEnabled: false, endTime: Math.max(object.startTime + .04, currentTime) });
+          }
         }} /><span /></label>
         <div className="keyframe-count">{playerTrack ? `${playerTrack.samples.length} deteção · confiança ${Math.round((playerTrack.samples[0]?.confidence ?? 0) * 100)}%` : `${object.keyframes.length} keyframes`}</div>
       </section>
@@ -411,14 +447,14 @@ function TextContentField({ value, onChange }: { value: string; onChange: (value
   return <label className="text-field"><FieldLabel>Conteúdo</FieldLabel><textarea rows={2} value={value} onChange={(event) => onChange(event.target.value)} /></label>;
 }
 
-function VideoSlidePresentationSettings({ content, slideDuration, question, currentTime, videoDuration, onUpdate }: {
+function VideoSlidePresentationSettings({ content, slideDuration, caption, currentTime, videoDuration, onUpdate }: {
   slideId: string;
   content: VideoSlideContent;
   slideDuration: number;
-  question: string;
+  caption: string;
   currentTime: number;
   videoDuration: number;
-  onUpdate: (patch: { content?: VideoSlideContent; duration?: number; question?: string }) => void;
+  onUpdate: (patch: { content?: VideoSlideContent; duration?: number; caption?: string }) => void;
 }) {
   const freezeFrames = content.freezeFrames ?? [];
   const sourceDuration = getSourceDuration(videoDuration, freezeFrames);
@@ -435,7 +471,7 @@ function VideoSlidePresentationSettings({ content, slideDuration, question, curr
       <div className="mark-controls"><button disabled={!videoDuration || currentSourceTime >= endTime - .08} onClick={() => onUpdate({ content: { ...content, startTime: currentSourceTime } })}>Marcar IN</button><button disabled={!videoDuration || currentSourceTime <= content.startTime + .08} onClick={() => onUpdate({ content: { ...content, endTime: currentSourceTime } })}>Marcar OUT</button></div>
       <div className="duration-readout"><span>Duração com pausas</span><strong>{Math.max(0, presentationDuration).toFixed(2)} s</strong></div>
       <label className="slide-prop-field"><span>Duração do slide</span><div><input type="number" min={1} max={60} step={.5} value={slideDuration} onChange={(event) => onUpdate({ duration: Math.max(1, Number(event.target.value)) })} /><i>s</i></div></label>
-      <label className="slide-prop-field vertical"><span>Pergunta deste slide</span><textarea rows={3} placeholder="O que quer perguntar à equipa?" value={question} onChange={(event) => onUpdate({ question: event.target.value })} /></label>
+      <label className="slide-prop-field vertical"><span>Legenda no fundo da imagem</span><textarea rows={3} placeholder="Escreva a mensagem a apresentar..." value={caption} onChange={(event) => onUpdate({ caption: event.target.value })} /></label>
     </section>
   );
 }

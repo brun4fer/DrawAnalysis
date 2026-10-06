@@ -11,6 +11,7 @@ import { flattenPoints, toNormalized } from "@/utils/coordinates";
 import { createId } from "@/utils/id";
 import { getObjectStateAtTime } from "@/utils/temporalRenderer";
 import { timelineTimeToSource } from "@/utils/videoTimeline";
+import { samplePlayerTrackAtTime, targetOffsetAtTime } from "@/utils/playerTracking";
 import { DrawingShape } from "./DrawingShape";
 import { PlayerOcclusionCanvas } from "./PlayerOcclusionCanvas";
 import { PlayerLabelOverlay } from "./PlayerLabelOverlay";
@@ -25,9 +26,10 @@ interface Props {
 
 interface Draft { tool: Tool; start: Point; points: Point[]; current: Point }
 interface DetectionEffect { phase: "scanning" | "locked" | "failed"; click: Point; box?: NormalizedBox; score?: number }
+interface IdentifiedPlayer { track: PlayerTrack; sample: PlayerTrack["samples"][number] }
 
 const labelFor = (kind: DrawingObject["type"]) => ({
-  playerRing: "Ring", spotlight: "Spotlight", zoom: "Zoom", ellipse: "Marcador", arrow: "Seta", longBallArrow: "Bola longa", line: "Linha", glimpse: "Visão", triangle: "Triângulo",
+  identifyPlayer: "Jogador", playerRing: "Ring", ghost: "Ghost", spotlight: "Spotlight", zoom: "Zoom", ellipse: "Marcador", arrow: "Seta", longBallArrow: "Bola longa", line: "Linha", glimpse: "Visão", triangle: "Triângulo",
   polygon: "Zona", rectangle: "Retângulo", text: "Texto", freeDraw: "Traço",
 })[kind];
 
@@ -173,6 +175,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
   const [detectionBoxes, setDetectionBoxes] = useState<NormalizedBox[]>([]);
   const [detectionEffect, setDetectionEffect] = useState<DetectionEffect | null>(null);
   const [detectingPlayer, setDetectingPlayer] = useState(false);
+  const [pendingGhost, setPendingGhost] = useState<IdentifiedPlayer | null>(null);
   const [trackingQuality, setTrackingQuality] = useState<"tracking" | "reacquiring" | null>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const occlusionCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -214,12 +217,16 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
   const makeDrawing = useCallback((
     type: DrawingObject["type"],
     data: DrawingData,
-    options?: { target?: DrawingObject["target"]; trackingEnabled?: boolean },
+    options?: { target?: DrawingObject["target"]; trackingEnabled?: boolean; keepTool?: boolean },
   ) => {
     const count = drawings.filter((item) => item.type === type).length + 1;
     const actionCount = drawings.filter((item) => ["line", "arrow", "longBallArrow"].includes(item.type)).length + 1;
-    const effectStyle = type === "playerRing"
+    const effectStyle = type === "identifyPlayer"
+      ? { stroke: "#a3ff12", fill: "#a3ff1210", strokeWidth: 2, shadowColor: "#a3ff12", shadowBlur: 9, shadowOpacity: .5 }
+      : type === "playerRing"
       ? { stroke: "#f7f8f2", fill: "#1454c4", strokeWidth: 3, shadowColor: "#f1e72b", shadowBlur: 22, shadowOpacity: .82 }
+      : type === "ghost"
+        ? { stroke: "#ffffff", fill: "#ffffff14", strokeWidth: 3, shadowColor: "#ffffff", shadowBlur: 14, shadowOpacity: .7 }
       : type === "spotlight"
         ? { stroke: "#fff8c7", fill: "#fff8c733", strokeWidth: 2, shadowColor: "#fff2a8", shadowBlur: 22, shadowOpacity: .6 }
         : type === "zoom"
@@ -257,15 +264,45 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     };
     addDrawing(object);
     setDraft(null);
-    setTool("select");
+    if (!options?.keepTool) setTool("select");
+    return object;
   }, [addDrawing, currentTime, drawings, duration, setTool]);
 
-  const placeRingOnPlayer = useCallback(async (click: Point) => {
-    if (detectingPlayer) return;
-    if (drawings.some((drawing) => drawing.type === "playerRing" && drawing.trackingEnabled)) {
-      setDetectionMessage("Já existe um tracking ativo. Termine-o antes de selecionar outro jogador.");
-      window.setTimeout(() => setDetectionMessage(null), 3200);
-      return;
+  const createRingForPlayer = ({ track, sample }: IdentifiedPlayer) => {
+    const radiusX = clamp(sample.bbox.width * 2.2, 0.04, 0.09);
+    const radiusY = clamp(radiusX * .48, .012, .038);
+    makeDrawing(
+      "playerRing",
+      {
+        kind: "playerRing",
+        center: sample.foot,
+        radiusX,
+        radiusY,
+        occlusionWidth: sample.bbox.width * 1.05,
+        labelOffsetY: sample.bbox.height + .055,
+        label: { visible: true, number: "", position: "", name: track.name.toUpperCase(), color: "#ffffff", fontSize: .032 },
+        ringDesign: "broadcast",
+        spinEnabled: true,
+        spinSpeed: 1,
+        showRing: true,
+        splashEnabled: false,
+        splashSpeed: 1,
+      },
+      { target: { kind: "player", trackId: track.id, anchor: "feet", referenceFoot: sample.foot }, trackingEnabled: false },
+    );
+  };
+
+  const placeRingOnPlayer = async (click: Point, mode: "ring" | "identify" | "identifyKeepTool" = "ring"): Promise<IdentifiedPlayer | null> => {
+    if (detectingPlayer) return null;
+    const existingTrack = [...(activeVideoContent?.playerTracks ?? [])].reverse().find((track) => track.samples.length && containsPoint(samplePlayerTrackAtTime(track, currentTime).bbox, click));
+    if (existingTrack) {
+      const identified = { track: existingTrack, sample: samplePlayerTrackAtTime(existingTrack, currentTime) };
+      setDetectionEffect({ phase: "locked", click, box: identified.sample.bbox, score: identified.sample.confidence });
+      setDetectionMessage(`${existingTrack.name} reconhecido`);
+      if (mode === "ring") createRingForPlayer(identified);
+      else if (mode === "identify") setTool("select");
+      window.setTimeout(() => { setDetectionMessage(null); setDetectionEffect(null); }, 1200);
+      return identified;
     }
     setDetectionEffect({ phase: "scanning", click });
     const video = getVideoElement?.();
@@ -273,7 +310,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       setDetectionMessage("O fotograma do vídeo ainda não está pronto.");
       setDetectionEffect({ phase: "failed", click });
       window.setTimeout(() => { setDetectionMessage(null); setDetectionEffect(null); }, 2600);
-      return;
+      return null;
     }
 
     video.pause();
@@ -293,7 +330,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
           ? "Esse jogador não foi reconhecido. As caixas mostram os jogadores detetados; tente outro ponto do corpo."
           : "Não encontrei jogadores neste fotograma. Tente avançar alguns frames ou usar uma imagem mais próxima.");
         window.setTimeout(() => { setDetectionMessage(null); setDetectionBoxes([]); setDetectionEffect(null); }, 4200);
-        return;
+        return null;
       }
 
       setDetectionEffect({ phase: "locked", click, box: match.box, score: match.detection.score });
@@ -322,84 +359,70 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       };
       addPlayerTrack(track);
       makeDrawing(
-        "playerRing",
-        {
-          kind: "playerRing",
-          center: foot,
-          radiusX,
-          radiusY,
-          occlusionWidth: match.box.width * 1.05,
-          labelOffsetY: match.box.height + .055,
-          label: { visible: true, number: "", position: "", name: track.name.toUpperCase(), color: "#ffffff", fontSize: .032 },
-          ringDesign: "broadcast",
-          spinEnabled: true,
-          spinSpeed: 1,
-        },
-        { target: { kind: "player", trackId, anchor: "feet" }, trackingEnabled: false },
+        "identifyPlayer",
+        { kind: "identifyPlayer", center: foot, radiusX: Math.max(radiusX * .72, .025), radiusY: Math.max(radiusY * .72, .01) },
+        { target: { kind: "player", trackId, anchor: "feet", referenceFoot: foot }, trackingEnabled: true, keepTool: true },
       );
+      setPlayerTrackStatus(trackId, "processing");
+      if (mode === "ring") createRingForPlayer({ track, sample: track.samples[0] });
+      else if (mode === "identify") setTool("select");
       setDetectionBoxes([]);
       window.setTimeout(() => { setDetectionMessage(null); setDetectionEffect(null); }, 1500);
+      return { track, sample: track.samples[0] };
     } catch {
       setDetectionBoxes([]);
       setDetectionEffect({ phase: "failed", click });
       setDetectionMessage("Não foi possível analisar este fotograma. Confirme o acesso ao vídeo e tente novamente.");
       window.setTimeout(() => { setDetectionMessage(null); setDetectionEffect(null); }, 4200);
+      return null;
     } finally {
       setDetectingPlayer(false);
     }
-  }, [addPlayerTrack, currentTime, detectingPlayer, drawings, getVideoElement, makeDrawing]);
+  };
 
-  const placeSpotlightOnPlayer = useCallback(async (click: Point) => {
-    if (detectingPlayer) return;
-    const video = getVideoElement?.();
-    setDetectionEffect({ phase: "scanning", click });
-    if (!video || !video.videoWidth || !video.videoHeight || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
-      setDetectionMessage("O fotograma do vídeo ainda não está pronto.");
-      setDetectionEffect({ phase: "failed", click });
-      window.setTimeout(() => { setDetectionMessage(null); setDetectionEffect(null); }, 2600);
+  const placeSpotlightOnPlayer = async (click: Point) => {
+    const identified = await placeRingOnPlayer(click, "identify");
+    if (!identified) return;
+    const { track, sample } = identified;
+    makeDrawing("spotlight", {
+      kind: "spotlight",
+      target: sample.foot,
+      radiusX: clamp(sample.bbox.width * 1.65, .035, .11),
+      radiusY: clamp(sample.bbox.width * .42, .012, .035),
+      beamHeight: clamp(sample.bbox.height * 1.18, .12, .42),
+      design: "isolation",
+      darkness: .68,
+      feather: .48,
+    }, { target: { kind: "player", trackId: track.id, anchor: "feet", referenceFoot: sample.foot } });
+  };
+
+  const placeGhost = async (point: Point) => {
+    if (pendingGhost) {
+      const { track, sample } = pendingGhost;
+      makeDrawing("ghost", {
+        kind: "ghost",
+        origin: sample.foot,
+        destination: point,
+        radiusX: clamp(sample.bbox.width * 1.15, .025, .075),
+        radiusY: clamp(sample.bbox.width * .34, .009, .026),
+        showArrow: true,
+      }, { target: { kind: "player", trackId: track.id, anchor: "feet", referenceFoot: sample.foot } });
+      setPendingGhost(null);
       return;
     }
+    const identified = await placeRingOnPlayer(point, "identifyKeepTool");
+    if (!identified) return;
+    setPendingGhost(identified);
+    setDetectionMessage("Jogador identificado · clique na posição Ghost");
+  };
 
-    video.pause();
-    setDetectingPlayer(true);
-    setDetectionMessage("A ajustar o spotlight ao jogador…");
-    try {
-      const { match, boxes } = await detectPlayerAtPoint(video, click);
-      if (!match) {
-        setDetectionBoxes(boxes.map(({ box }) => box));
-        setDetectionEffect({ phase: "failed", click });
-        setDetectionMessage("Não consegui ajustar o spotlight a esse jogador. Tente clicar no centro do corpo.");
-        window.setTimeout(() => { setDetectionMessage(null); setDetectionBoxes([]); setDetectionEffect(null); }, 4200);
-        return;
-      }
+  useEffect(() => {
+    if (tool === "ghost") return;
+    const timer = window.setTimeout(() => setPendingGhost(null), 0);
+    return () => window.clearTimeout(timer);
+  }, [tool]);
 
-      const target = {
-        x: clamp(match.box.x + match.box.width / 2, 0, 1),
-        y: clamp(match.box.y + match.box.height, 0, 1),
-      };
-      setDetectionEffect({ phase: "locked", click, box: match.box, score: match.detection.score });
-      setDetectionMessage(`Spotlight ajustado · ${Math.round(match.detection.score * 100)}%`);
-      await wait(420);
-      makeDrawing("spotlight", {
-        kind: "spotlight",
-        target,
-        radiusX: clamp(match.box.width * 1.35, .028, .085),
-        radiusY: clamp(match.box.width * .34, .009, .026),
-        beamHeight: clamp(match.box.height * 1.18, .12, .42),
-      });
-      setDetectionBoxes([]);
-      window.setTimeout(() => { setDetectionMessage(null); setDetectionEffect(null); }, 1500);
-    } catch {
-      setDetectionBoxes([]);
-      setDetectionEffect({ phase: "failed", click });
-      setDetectionMessage("Não foi possível analisar este fotograma para o spotlight.");
-      window.setTimeout(() => { setDetectionMessage(null); setDetectionEffect(null); }, 3600);
-    } finally {
-      setDetectingPlayer(false);
-    }
-  }, [detectingPlayer, getVideoElement, makeDrawing]);
-
-  const activeTrackingDrawing = [...drawings].reverse().find((drawing) => drawing.type === "playerRing" && drawing.trackingEnabled && drawing.target?.kind === "player");
+  const activeTrackingDrawing = [...drawings].reverse().find((drawing) => drawing.trackingEnabled && drawing.target?.kind === "player");
   const activePlayerTrack = activeTrackingDrawing?.target?.kind === "player" && activeSlide?.content.kind === "video"
     ? activeSlide.content.playerTracks?.find((track) => track.id === activeTrackingDrawing.target?.trackId)
     : undefined;
@@ -544,7 +567,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     })();
   }, [activePlayerTrack, activeTrackingDrawing, appendPlayerTrackingSample, currentTime, detectingPlayer, getVideoElement, isPlaying, setPlayerTrackStatus, updateDrawing]);
 
-  const stopActiveTracking = useCallback(() => {
+  const stopActiveTracking = () => {
     if (!activeTrackingDrawing || activeTrackingDrawing.target?.kind !== "player") return;
     updateDrawing(activeTrackingDrawing.id, {
       trackingEnabled: false,
@@ -552,7 +575,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     });
     setPlayerTrackStatus(activeTrackingDrawing.target.trackId, "ready");
     setTrackingQuality(null);
-  }, [activeTrackingDrawing, currentTime, setPlayerTrackStatus, updateDrawing]);
+  };
 
   const finishPolygon = useCallback(() => {
     if (draft?.tool !== "polygon") return;
@@ -577,8 +600,16 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     const point = pointFromStage(event.target.getStage()!);
     if (!point) return;
     if (tool === "select") { setSelectedId(null); return; }
+    if (tool === "identifyPlayer") {
+      void placeRingOnPlayer(point, "identify");
+      return;
+    }
     if (tool === "playerRing") {
       void placeRingOnPlayer(point);
+      return;
+    }
+    if (tool === "ghost") {
+      void placeGhost(point);
       return;
     }
     if (tool === "spotlight") {
@@ -670,7 +701,9 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     return null;
   })();
 
-  const visible = drawings.filter((drawing) => getObjectStateAtTime(drawing, currentTime).visible);
+  const visible = drawings
+    .filter((drawing) => getObjectStateAtTime(drawing, currentTime).visible)
+    .sort((left, right) => Number(right.data.kind === "spotlight") - Number(left.data.kind === "spotlight"));
 
   return (
     <>
@@ -712,6 +745,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
             onSelect={() => { setSelectedId(object.id); setTool("select"); }}
             onChange={(patch) => updateDrawing(object.id, patch)}
             renderMode="base"
+            targetOffset={targetOffsetAtTime(object, activeVideoContent?.playerTracks, currentTime)}
           />
         ))}
         {preview}
@@ -731,7 +765,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       getVideoElement={getVideoElement}
     />
     <ZoomLensCanvas ref={zoomCanvasRef} drawings={drawings} currentTime={currentTime} width={width} height={height} getVideoElement={getVideoElement} />
-    <PlayerLabelOverlay drawings={drawings} currentTime={currentTime} width={width} height={height} />
+    <PlayerLabelOverlay drawings={drawings} playerTracks={activeVideoContent?.playerTracks} currentTime={currentTime} width={width} height={height} />
     {detectionEffect && (
       <div className={`player-identification-effect phase-${detectionEffect.phase}`} aria-hidden="true">
         {detectionEffect.phase !== "locked" && (

@@ -44,7 +44,7 @@ export function Editor() {
   const [notice, setNotice] = useState("");
   const {
     selectedId, removeDrawing, undo, redo, setTool,
-    slides, selectedSlideId, addSlide, updateSlide, replacePresentation, setVideoSource, setIsPlaying,
+    drawings, slides, selectedSlideId, addSlide, updateSlide, replacePresentation, setVideoSource, setIsPlaying,
   } = useEditorStore();
   const selectedSlide = slides.find((slide) => slide.id === selectedSlideId) ?? null;
   const isVideoSlide = selectedSlide?.content.kind === "video";
@@ -125,7 +125,7 @@ export function Editor() {
     updateSlide(selectedSlide.id, { content: { ...selectedSlide.content, thumbnail: imageDataUrl } });
     const imageSlide = createSlide("image", slides.length);
     imageSlide.name = `Frame · ${selectedSlide.name}`;
-    imageSlide.question = selectedSlide.question;
+    imageSlide.caption = selectedSlide.caption;
     if (imageSlide.content.kind === "image") imageSlide.content.imageDataUrl = imageDataUrl;
     addSlide(imageSlide);
   };
@@ -135,7 +135,7 @@ export function Editor() {
     setSaveState("saving");
     setNotice("");
     try {
-      const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: projectName, data: { slides: prepareSlidesForStorage(slides) } }) });
+      const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: projectName, data: { slides: prepareSlidesForStorage(slides, { selectedSlideId, drawings }) } }) });
       const result = await response.json() as { error?: string };
       if (!response.ok) throw new Error(result.error || "Não foi possível guardar a apresentação.");
       setSaveState("saved");
@@ -175,6 +175,7 @@ export function Editor() {
                 clipStart={selectedSlide.content.startTime}
                 clipEnd={selectedSlide.content.endTime}
                 freezeFrames={selectedSlide.content.freezeFrames}
+                caption={selectedSlide.caption}
                 onChooseVideo={() => inputRef.current?.click()}
                 onDurationReady={(videoDuration) => {
                   if (selectedSlide.content.kind === "video" && selectedSlide.content.endTime === undefined) updateSlide(selectedSlide.id, { content: { ...selectedSlide.content, endTime: videoDuration } });
@@ -193,7 +194,7 @@ export function Editor() {
       {isVideoSlide ? <Timeline /> : <StaticSlideFooter />}
       {pickerOpen && <SlideTypePicker onSelect={addNewSlide} onClose={() => setPickerOpen(false)} />}
       {cloudOpen && <CloudLibraryModal onSelect={selectCloudAsset} onClose={() => setCloudOpen(false)} />}
-      {projectsOpen && <ProjectLibraryModal slides={slides} onClose={() => setProjectsOpen(false)} onOpen={(project) => { setProjectId(project.id); setProjectName(project.name); replacePresentation(project.slides); setSaveState("idle"); }} />}
+      {projectsOpen && <ProjectLibraryModal slides={slides} selectedSlideId={selectedSlideId} activeDrawings={drawings} onClose={() => setProjectsOpen(false)} onOpen={(project) => { setProjectId(project.id); setProjectName(project.name); replacePresentation(project.slides); setSaveState("idle"); }} />}
       {presenting && <PresentationMode onClose={() => setPresenting(false)} />}
       {powerPointExportOpen && <PowerPointExport slides={slides} projectName={projectName} onClose={closePowerPointExport} />}
     </main>

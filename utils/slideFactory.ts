@@ -33,7 +33,7 @@ function kickoffPlayers(): SlidePlayer[] {
 
 export function createSlide(type: SlideType, index: number): AnalysisSlide {
   const id = createId();
-  const base = { id, type, name: `Slide ${index + 1}`, question: "", duration: 4 };
+  const base = { id, type, name: `Slide ${index + 1}`, caption: "", duration: 4 };
   switch (type) {
     case "title": return { ...base, name: "Novo capítulo", content: { kind: "title", text: "ORGANIZAÇÃO OFENSIVA", subtitle: "Análise do jogo", body: "", background: "#101914", alignment: "left", fontSize: 64 } };
     case "text": return { ...base, name: "Conclusão", content: { kind: "text", title: "PRINCÍPIO", text: "Forçar o adversário a jogar por fora.", background: "#111518", alignment: "center", fontSize: 44, position: { x: .5, y: .5 } } };

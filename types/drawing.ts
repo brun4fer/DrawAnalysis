@@ -1,6 +1,8 @@
 export type Tool =
   | "select"
+  | "identifyPlayer"
   | "playerRing"
+  | "ghost"
   | "spotlight"
   | "zoom"
   | "ellipse"
@@ -45,6 +47,7 @@ export interface DrawingTarget {
   kind: "player";
   trackId: string;
   anchor: "feet";
+  referenceFoot?: Point;
 }
 
 export interface PlayerLabel {
@@ -102,8 +105,10 @@ export interface DrawingKeyframe {
 }
 
 export type DrawingData =
-  | { kind: "playerRing"; center: Point; radiusX: number; radiusY: number; occlusionWidth?: number; labelOffsetY?: number; label?: PlayerLabel; ringDesign?: PlayerRingDesign; spinEnabled?: boolean; spinSpeed?: number }
-  | { kind: "spotlight"; target: Point; radiusX: number; radiusY: number; beamHeight: number }
+  | { kind: "identifyPlayer"; center: Point; radiusX: number; radiusY: number }
+  | { kind: "playerRing"; center: Point; radiusX: number; radiusY: number; occlusionWidth?: number; labelOffsetY?: number; label?: PlayerLabel; ringDesign?: PlayerRingDesign; spinEnabled?: boolean; spinSpeed?: number; showRing?: boolean; splashEnabled?: boolean; splashSpeed?: number }
+  | { kind: "ghost"; origin: Point; destination: Point; radiusX: number; radiusY: number; showArrow?: boolean }
+  | { kind: "spotlight"; target: Point; radiusX: number; radiusY: number; beamHeight: number; design?: "beam" | "isolation"; darkness?: number; feather?: number }
   | { kind: "zoom"; center: Point; radius: number; zoom: number }
   | { kind: "ellipse"; center: Point; radiusX: number; radiusY: number }
   | { kind: "rectangle"; origin: Point; width: number; height: number; fillDesign?: ZoneDesign; stripeColor?: string; stripeSpacing?: number; stripeAngle?: number }
