@@ -5,7 +5,7 @@ import Konva from "konva";
 import { Arrow, Ellipse, Layer, Line, Rect, Stage, Text } from "react-konva";
 import { detectPlayers } from "@/lib/playerDetector";
 import { useEditorStore } from "@/store/useEditorStore";
-import type { DrawingData, DrawingObject, NormalizedBox, PlayerTrack, Point, Tool } from "@/types/drawing";
+import type { DrawingData, DrawingObject, NormalizedBox, ObjectTransform, PlayerTrack, Point, Tool } from "@/types/drawing";
 import { DEFAULT_STYLE, DEFAULT_TRANSFORM } from "@/types/drawing";
 import { flattenPoints, toNormalized } from "@/utils/coordinates";
 import { createId } from "@/utils/id";
@@ -176,6 +176,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
   const [detectionEffect, setDetectionEffect] = useState<DetectionEffect | null>(null);
   const [detectingPlayer, setDetectingPlayer] = useState(false);
   const [pendingGhost, setPendingGhost] = useState<IdentifiedPlayer | null>(null);
+  const [ghostTransformPreview, setGhostTransformPreview] = useState<Record<string, ObjectTransform>>({});
   const [trackingQuality, setTrackingQuality] = useState<"tracking" | "reacquiring" | null>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const occlusionCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -403,9 +404,10 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         kind: "ghost",
         origin: sample.foot,
         destination: point,
-        radiusX: clamp(sample.bbox.width * 1.15, .025, .075),
-        radiusY: clamp(sample.bbox.width * .34, .009, .026),
-        showArrow: true,
+        radiusX: Math.max(.008, sample.bbox.width / 2),
+        radiusY: Math.max(.02, sample.bbox.height / 2),
+        hideOriginal: true,
+        playerOpacity: .96,
       }, { target: { kind: "player", trackId: track.id, anchor: "feet", referenceFoot: sample.foot } });
       setPendingGhost(null);
       return;
@@ -413,7 +415,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     const identified = await placeRingOnPlayer(point, "identifyKeepTool");
     if (!identified) return;
     setPendingGhost(identified);
-    setDetectionMessage("Jogador identificado · clique na posição Ghost");
+    setDetectionMessage("Jogador recortado · clique na nova posição");
   };
 
   useEffect(() => {
@@ -746,6 +748,12 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
             onChange={(patch) => updateDrawing(object.id, patch)}
             renderMode="base"
             targetOffset={targetOffsetAtTime(object, activeVideoContent?.playerTracks, currentTime)}
+            onTransformPreview={object.data.kind === "ghost" ? (transform) => setGhostTransformPreview((current) => {
+              if (transform) return { ...current, [object.id]: transform };
+              const next = { ...current };
+              delete next[object.id];
+              return next;
+            }) : undefined}
           />
         ))}
         {preview}
@@ -763,6 +771,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       width={width}
       height={height}
       getVideoElement={getVideoElement}
+      transformOverrides={ghostTransformPreview}
     />
     <ZoomLensCanvas ref={zoomCanvasRef} drawings={drawings} currentTime={currentTime} width={width} height={height} getVideoElement={getVideoElement} />
     <PlayerLabelOverlay drawings={drawings} playerTracks={activeVideoContent?.playerTracks} currentTime={currentTime} width={width} height={height} />

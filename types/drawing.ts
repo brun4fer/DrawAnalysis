@@ -107,7 +107,7 @@ export interface DrawingKeyframe {
 export type DrawingData =
   | { kind: "identifyPlayer"; center: Point; radiusX: number; radiusY: number }
   | { kind: "playerRing"; center: Point; radiusX: number; radiusY: number; occlusionWidth?: number; labelOffsetY?: number; label?: PlayerLabel; ringDesign?: PlayerRingDesign; spinEnabled?: boolean; spinSpeed?: number; showRing?: boolean; splashEnabled?: boolean; splashSpeed?: number }
-  | { kind: "ghost"; origin: Point; destination: Point; radiusX: number; radiusY: number; showArrow?: boolean }
+  | { kind: "ghost"; origin: Point; destination: Point; radiusX: number; radiusY: number; hideOriginal?: boolean; playerOpacity?: number }
   | { kind: "spotlight"; target: Point; radiusX: number; radiusY: number; beamHeight: number; design?: "beam" | "isolation"; darkness?: number; feather?: number }
   | { kind: "zoom"; center: Point; radius: number; zoom: number }
   | { kind: "ellipse"; center: Point; radiusX: number; radiusY: number }

@@ -20,7 +20,7 @@ export function ToolRail() {
               : tool === "playerRing"
                 ? "Clique no jogador · deteção automática"
                 : tool === "ghost"
-                  ? "Clique no jogador · indique a posição ghost"
+                  ? "Clique no jogador · indique a nova posição"
                   : tool === "spotlight"
                 ? "Clique no jogador · ajuste automático"
                 : tool === "longBallArrow"

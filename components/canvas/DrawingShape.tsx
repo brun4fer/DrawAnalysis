@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import Konva from "konva";
 import { Arc, Arrow, Ellipse, Group, Line, Rect, Text, Transformer } from "react-konva";
-import type { DrawingObject, Point } from "@/types/drawing";
+import type { DrawingObject, ObjectTransform, Point } from "@/types/drawing";
 import { flattenPoints } from "@/utils/coordinates";
 import { getObjectStateAtTime } from "@/utils/temporalRenderer";
 
@@ -18,6 +18,7 @@ interface Props {
   onChange: (patch: Partial<DrawingObject>) => void;
   renderMode?: "all" | "base" | "playerLabel";
   targetOffset?: Point;
+  onTransformPreview?: (transform?: ObjectTransform) => void;
 }
 
 function withAlpha(color: string, alpha: number) {
@@ -57,7 +58,7 @@ function quadraticCurvePoints(start: { x: number; y: number }, end: { x: number;
   }).flatMap(({ x, y }) => [x, y]);
 }
 
-export function DrawingShape({ object, width, height, currentTime, selected, canEdit, onSelect, onChange, renderMode = "all", targetOffset = { x: 0, y: 0 } }: Props) {
+export function DrawingShape({ object, width, height, currentTime, selected, canEdit, onSelect, onChange, renderMode = "all", targetOffset = { x: 0, y: 0 }, onTransformPreview }: Props) {
   const nodeRef = useRef<Konva.Group>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
   const temporalState = getObjectStateAtTime(object, currentTime);
@@ -523,56 +524,21 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
           );
       }
       case "ghost": {
-        const origin = {
-          x: (data.origin.x + targetOffset.x) * width,
-          y: (data.origin.y + targetOffset.y) * height,
-        };
+        if (!canEdit) return null;
         const destination = { x: data.destination.x * width, y: data.destination.y * height };
-        const radiusX = data.radiusX * width;
-        const radiusY = data.radiusY * height;
-        const color = solidColor(object.style.stroke, "#ffffff");
+        const selectionWidth = Math.max(18, data.radiusX * width * 2 * Math.abs(transform.scaleX));
+        const selectionHeight = Math.max(34, data.radiusY * height * 2 * Math.abs(transform.scaleY));
         return (
-          <Group opacity={temporalState.opacity}>
-            <Ellipse
-              x={destination.x}
-              y={destination.y}
-              radiusX={radiusX * 1.32}
-              radiusY={radiusY * 1.5}
-              fillRadialGradientStartPoint={{ x: 0, y: 0 }}
-              fillRadialGradientEndPoint={{ x: 0, y: 0 }}
-              fillRadialGradientStartRadius={0}
-              fillRadialGradientEndRadius={radiusX * 1.32}
-              fillRadialGradientColorStops={[0, withAlpha(color, .2), .55, withAlpha(color, .08), 1, withAlpha(color, 0)]}
-              shadowColor={color}
-              shadowBlur={Math.max(12, object.style.shadowBlur)}
-              shadowOpacity={.55}
-              listening={false}
-            />
-            <Ellipse
-              x={destination.x}
-              y={destination.y}
-              radiusX={radiusX}
-              radiusY={radiusY}
-              stroke={color}
-              strokeWidth={Math.max(2, object.style.strokeWidth)}
-              dash={object.style.dash.length ? object.style.dash : [10, 7]}
-              fill={withAlpha(color, .05)}
-            />
-            {data.showArrow !== false && (
-              <Arrow
-                points={[destination.x, destination.y + radiusY * .35, origin.x, origin.y - 2]}
-                stroke={color}
-                fill={color}
-                strokeWidth={Math.max(2, object.style.strokeWidth * .72)}
-                pointerLength={Math.max(9, object.style.strokeWidth * 2.2)}
-                pointerWidth={Math.max(9, object.style.strokeWidth * 2.2)}
-                shadowColor="#000000"
-                shadowBlur={6}
-                shadowOffsetY={3}
-                shadowOpacity={.72}
-              />
-            )}
-          </Group>
+          <Rect
+            x={destination.x - selectionWidth / 2}
+            y={destination.y - selectionHeight}
+            width={selectionWidth}
+            height={selectionHeight}
+            fill="#ffffff01"
+            stroke={selected ? "#a3ff12" : "#ffffff01"}
+            strokeWidth={selected ? 1.5 : 1}
+            dash={selected ? [5, 4] : []}
+          />
         );
       }
       case "spotlight": {
@@ -1160,16 +1126,36 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         listening={canEdit}
         x={(transform.x + targetX) * width}
         y={(transform.y + targetY) * height}
-        rotation={transform.rotation}
-        scaleX={transform.scaleX}
-        scaleY={transform.scaleY}
+        rotation={object.data.kind === "ghost" ? 0 : transform.rotation}
+        scaleX={object.data.kind === "ghost" ? 1 : transform.scaleX}
+        scaleY={object.data.kind === "ghost" ? 1 : transform.scaleY}
         draggable={canEdit}
         onPointerDown={(event) => { event.cancelBubble = true; onSelect(); }}
         onClick={(event) => { event.cancelBubble = true; onSelect(); }}
         onTap={(event) => { event.cancelBubble = true; onSelect(); }}
-        onDragEnd={(event) => onChange({
-          transform: { ...object.transform, x: event.target.x() / width - targetX, y: event.target.y() / height - targetY },
-        })}
+        onDragMove={(event) => {
+          if (object.data.kind !== "ghost") return;
+          onTransformPreview?.({
+            ...object.transform,
+            x: event.target.x() / width - targetX,
+            y: event.target.y() / height - targetY,
+          });
+        }}
+        onDragEnd={(event) => {
+          onChange({ transform: { ...object.transform, x: event.target.x() / width - targetX, y: event.target.y() / height - targetY } });
+          onTransformPreview?.(undefined);
+        }}
+        onTransform={() => {
+          const node = nodeRef.current;
+          if (!node || object.data.kind !== "ghost") return;
+          onTransformPreview?.({
+            x: node.x() / width - targetX,
+            y: node.y() / height - targetY,
+            rotation: node.rotation(),
+            scaleX: node.scaleX(),
+            scaleY: node.scaleY(),
+          });
+        }}
         onTransformEnd={() => {
           const node = nodeRef.current;
           if (!node) return;
@@ -1182,6 +1168,7 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
               scaleY: node.scaleY(),
             },
           });
+          onTransformPreview?.(undefined);
         }}
       >
         {content}
@@ -1191,7 +1178,8 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         <Transformer
           ref={transformerRef}
           name="selection-transformer"
-          rotateEnabled
+          rotateEnabled={object.data.kind !== "ghost"}
+          resizeEnabled={object.data.kind !== "ghost"}
           flipEnabled={false}
           borderStroke="#ffffff"
           borderDash={[4, 4]}

@@ -263,9 +263,10 @@ export function PropertiesPanel() {
         )}
         {object.data.kind === "ghost" && (
           <>
-            <label className="toggle-row"><span><FieldLabel>Mostrar seta</FieldLabel><small>Liga a posição Ghost ao jogador</small></span><input type="checkbox" checked={object.data.showArrow !== false} onChange={(event) => object.data.kind === "ghost" && updateDrawing(object.id, { data: { ...object.data, showArrow: event.target.checked } })} /><span /></label>
-            <label className="stacked-field"><span><FieldLabel>Largura da posição</FieldLabel><b>{Math.round(object.data.radiusX * 200)}%</b></span><input type="range" min={.018} max={.12} step={.002} value={object.data.radiusX} onChange={(event) => object.data.kind === "ghost" && updateDrawing(object.id, { data: { ...object.data, radiusX: Number(event.target.value) } })} /></label>
-            <label className="stacked-field"><span><FieldLabel>Perspetiva no relvado</FieldLabel><b>{Math.round(object.data.radiusY * 1000)}</b></span><input type="range" min={.006} max={.05} step={.001} value={object.data.radiusY} onChange={(event) => object.data.kind === "ghost" && updateDrawing(object.id, { data: { ...object.data, radiusY: Number(event.target.value) } })} /></label>
+            <p className="property-help">Arraste o jogador recortado diretamente no relvado para ajustar a nova posição.</p>
+            <label className="toggle-row"><span><FieldLabel>Ocultar posição original</FieldLabel><small>Reconstrói o relvado por baixo do jogador</small></span><input type="checkbox" checked={object.data.hideOriginal !== false} onChange={(event) => object.data.kind === "ghost" && updateDrawing(object.id, { data: { ...object.data, hideOriginal: event.target.checked } })} /><span /></label>
+            <label className="stacked-field"><span><FieldLabel>Tamanho do jogador</FieldLabel><b>{Math.round(object.transform.scaleX * 100)}%</b></span><input type="range" min={.45} max={2.2} step={.05} value={object.transform.scaleX} onChange={(event) => { const scale = Number(event.target.value); updateTransform({ scaleX: scale, scaleY: scale }); }} /></label>
+            <label className="stacked-field"><span><FieldLabel>Opacidade do jogador</FieldLabel><b>{Math.round((object.data.playerOpacity ?? .96) * 100)}%</b></span><input type="range" min={.2} max={1} step={.05} value={object.data.playerOpacity ?? .96} onChange={(event) => object.data.kind === "ghost" && updateDrawing(object.id, { data: { ...object.data, playerOpacity: Number(event.target.value) } })} /></label>
           </>
         )}
         {object.data.kind === "longBallArrow" && (

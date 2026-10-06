@@ -1,5 +1,127 @@
 import type { NormalizedBox, Point } from "@/types/drawing";
 
+function addPlayerSilhouettePath(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  bodyWidth: number,
+  bodyHeight: number,
+  footX: number,
+  footY: number,
+) {
+  context.beginPath();
+  context.ellipse(x + bodyWidth * .5, y + bodyHeight * .1, bodyWidth * .19, bodyHeight * .085, 0, 0, Math.PI * 2);
+  context.moveTo(x + bodyWidth * .84, y + bodyHeight * .39);
+  context.ellipse(x + bodyWidth * .5, y + bodyHeight * .39, bodyWidth * .34, bodyHeight * .25, 0, 0, Math.PI * 2);
+  context.moveTo(x + bodyWidth * .81, y + bodyHeight * .73);
+  context.ellipse(x + bodyWidth * .5, y + bodyHeight * .73, bodyWidth * .31, bodyHeight * .27, 0, 0, Math.PI * 2);
+  context.moveTo(x + bodyWidth * .34, y + bodyHeight * .17);
+  context.lineTo(x + bodyWidth * .66, y + bodyHeight * .17);
+  context.lineTo(x + bodyWidth * .76, y + bodyHeight * .54);
+  context.lineTo(x + bodyWidth * .62, y + bodyHeight * .63);
+  context.lineTo(x + bodyWidth * .38, y + bodyHeight * .63);
+  context.lineTo(x + bodyWidth * .24, y + bodyHeight * .54);
+  context.closePath();
+  context.moveTo(x + bodyWidth * .31, y + bodyHeight * .23);
+  context.lineTo(x + bodyWidth * .16, y + bodyHeight * .52);
+  context.lineTo(x + bodyWidth * .27, y + bodyHeight * .57);
+  context.lineTo(x + bodyWidth * .43, y + bodyHeight * .3);
+  context.closePath();
+  context.moveTo(x + bodyWidth * .69, y + bodyHeight * .23);
+  context.lineTo(x + bodyWidth * .84, y + bodyHeight * .52);
+  context.lineTo(x + bodyWidth * .73, y + bodyHeight * .57);
+  context.lineTo(x + bodyWidth * .57, y + bodyHeight * .3);
+  context.closePath();
+  context.moveTo(x + bodyWidth * .38, y + bodyHeight * .57);
+  context.lineTo(x + bodyWidth * .52, y + bodyHeight * .6);
+  context.lineTo(x + bodyWidth * .47, y + bodyHeight * .99);
+  context.lineTo(x + bodyWidth * .25, y + bodyHeight * .99);
+  context.closePath();
+  context.moveTo(x + bodyWidth * .48, y + bodyHeight * .6);
+  context.lineTo(x + bodyWidth * .62, y + bodyHeight * .57);
+  context.lineTo(x + bodyWidth * .75, y + bodyHeight * .99);
+  context.lineTo(x + bodyWidth * .53, y + bodyHeight * .99);
+  context.closePath();
+  context.moveTo(x + bodyWidth * .56, y + bodyHeight * .97);
+  context.ellipse(x + bodyWidth * .36, y + bodyHeight * .97, bodyWidth * .2, bodyHeight * .045, 0, 0, Math.PI * 2);
+  context.moveTo(x + bodyWidth * .84, y + bodyHeight * .97);
+  context.ellipse(x + bodyWidth * .64, y + bodyHeight * .97, bodyWidth * .2, bodyHeight * .045, 0, 0, Math.PI * 2);
+  context.moveTo(x + bodyWidth * .22, y + bodyHeight * .43);
+  context.lineTo(x + bodyWidth * .78, y + bodyHeight * .43);
+  context.lineTo(footX + bodyWidth * .56, footY + bodyHeight * .018);
+  context.lineTo(footX - bodyWidth * .56, footY + bodyHeight * .018);
+  context.closePath();
+}
+
+export function hidePlayerOriginal(
+  context: CanvasRenderingContext2D,
+  video: HTMLVideoElement,
+  box: NormalizedBox,
+  canvasWidth: number,
+  canvasHeight: number,
+  foot: Point,
+) {
+  const x = box.x * canvasWidth;
+  const y = box.y * canvasHeight;
+  const bodyWidth = box.width * canvasWidth;
+  const bodyHeight = box.height * canvasHeight;
+  const sourceWidth = box.width * video.videoWidth;
+  const sourceHeight = box.height * video.videoHeight;
+  const sourceY = Math.max(0, Math.min(video.videoHeight - sourceHeight, box.y * video.videoHeight));
+  const leftSourceX = (box.x - box.width * 1.2) * video.videoWidth;
+  const rightSourceX = (box.x + box.width * 1.2) * video.videoWidth;
+  const sourceX = Math.max(0, Math.min(
+    video.videoWidth - sourceWidth,
+    leftSourceX >= 0 ? leftSourceX : rightSourceX,
+  ));
+  context.save();
+  addPlayerSilhouettePath(context, x, y, bodyWidth, bodyHeight, foot.x * canvasWidth, foot.y * canvasHeight);
+  context.clip();
+  context.filter = `blur(${Math.max(1.5, bodyWidth * .07)}px)`;
+  context.drawImage(video, sourceX, sourceY, sourceWidth, sourceHeight, x - bodyWidth * .04, y - bodyHeight * .02, bodyWidth * 1.08, bodyHeight * 1.04);
+  context.restore();
+}
+
+export function drawMovedPlayer(
+  context: CanvasRenderingContext2D,
+  video: HTMLVideoElement,
+  box: NormalizedBox,
+  canvasWidth: number,
+  canvasHeight: number,
+  destination: Point,
+  scaleX = 1,
+  scaleY = 1,
+  rotation = 0,
+  opacity = 1,
+) {
+  const bodyWidth = Math.max(4, box.width * canvasWidth * Math.abs(scaleX));
+  const bodyHeight = Math.max(8, box.height * canvasHeight * Math.abs(scaleY));
+  const destinationX = destination.x * canvasWidth;
+  const destinationY = destination.y * canvasHeight;
+  const x = -bodyWidth / 2;
+  const y = -bodyHeight;
+  const sourceX = box.x * video.videoWidth;
+  const sourceY = box.y * video.videoHeight;
+  const sourceWidth = box.width * video.videoWidth;
+  const sourceHeight = box.height * video.videoHeight;
+
+  context.save();
+  context.translate(destinationX, destinationY);
+  context.rotate(rotation * Math.PI / 180);
+  context.globalAlpha = opacity;
+  context.fillStyle = "rgba(0,0,0,.42)";
+  context.shadowColor = "rgba(0,0,0,.58)";
+  context.shadowBlur = Math.max(5, bodyWidth * .16);
+  context.beginPath();
+  context.ellipse(0, Math.max(1, bodyHeight * .018), bodyWidth * .43, Math.max(2, bodyHeight * .045), 0, 0, Math.PI * 2);
+  context.fill();
+  context.shadowBlur = 0;
+  addPlayerSilhouettePath(context, x, y, bodyWidth, bodyHeight, 0, 0);
+  context.clip();
+  context.drawImage(video, sourceX, sourceY, sourceWidth, sourceHeight, x, y, bodyWidth, bodyHeight);
+  context.restore();
+}
+
 export function drawPlayerForeground(
   context: CanvasRenderingContext2D,
   video: HTMLVideoElement,
