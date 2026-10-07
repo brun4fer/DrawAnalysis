@@ -16,7 +16,7 @@ interface Props {
 
 const EXPORT_WIDTH = 1280;
 const EXPORT_HEIGHT = 720;
-const FPS = 30;
+const FPS = 25;
 
 const nextPaint = () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 
@@ -27,9 +27,9 @@ function safeFileName(value: string) {
 function recordingFormat() {
   if (typeof MediaRecorder === "undefined") throw new Error("Este browser não permite exportar vídeo.");
   const formats = [
-    { mime: "video/mp4;codecs=avc1.42E01E,mp4a.40.2", extension: "mp4" },
-    { mime: "video/mp4;codecs=h264,aac", extension: "mp4" },
     { mime: "video/mp4", extension: "mp4" },
+    { mime: "video/mp4;codecs=avc1.64003E,mp4a.40.2", extension: "mp4" },
+    { mime: "video/mp4;codecs=avc1.42E01E,mp4a.40.2", extension: "mp4" },
     { mime: "video/webm;codecs=vp9,opus", extension: "webm" },
     { mime: "video/webm;codecs=vp8,opus", extension: "webm" },
     { mime: "video/webm", extension: "webm" },
@@ -37,6 +37,30 @@ function recordingFormat() {
   const selected = formats.find((format) => MediaRecorder.isTypeSupported(format.mime));
   if (!selected) throw new Error("Não foi encontrado um formato de vídeo compatível neste browser.");
   return selected;
+}
+
+function describeError(value: unknown) {
+  if (value instanceof DOMException) return `${value.name}: ${value.message}`;
+  if (value instanceof Error) return value.message || value.name;
+  if (value instanceof Event) {
+    const recorderError = (value as Event & { error?: DOMException }).error;
+    if (recorderError) return `${recorderError.name}: ${recorderError.message}`;
+    return `Evento ${value.type || "desconhecido"}`;
+  }
+  if (typeof value === "string") return value;
+  try { return JSON.stringify(value); }
+  catch { return String(value); }
+}
+
+function mediaPlaybackError(video: HTMLVideoElement) {
+  if (!video.error) return null;
+  const messages: Record<number, string> = {
+    1: "a reprodução do vídeo foi cancelada",
+    2: "falha de rede durante a leitura do vídeo",
+    3: "o browser não conseguiu descodificar um fotograma",
+    4: "o formato original do vídeo não é suportado",
+  };
+  return new Error(`Erro no vídeo de origem: ${messages[video.error.code] ?? `código ${video.error.code}`}.`);
 }
 
 function waitForVideo(video: HTMLVideoElement) {
@@ -92,6 +116,7 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
   const overlayCaptureRef = useRef<(() => HTMLCanvasElement | null) | null>(null);
   const cancelledRef = useRef(false);
   const recorderRef = useRef<MediaRecorder | null>(null);
+  const outputStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
 
@@ -123,12 +148,14 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
     cancelledRef.current = true;
     setMessage("A cancelar a exportação…");
     if (recorderRef.current?.state !== "inactive") recorderRef.current?.stop();
+    window.setTimeout(() => outputStreamRef.current?.getTracks().forEach((track) => track.stop()), 0);
     videoRef.current?.pause();
   };
 
   useEffect(() => () => {
     cancelledRef.current = true;
     if (recorderRef.current?.state !== "inactive") recorderRef.current?.stop();
+    outputStreamRef.current?.getTracks().forEach((track) => track.stop());
     void audioContextRef.current?.close();
   }, []);
 
@@ -184,15 +211,23 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
       const format = recordingFormat();
       setExportedExtension(format.extension);
       const outputStream = canvas.captureStream(FPS);
+      outputStreamRef.current = outputStream;
       const audioTrack = audioDestinationRef.current?.stream.getAudioTracks()[0];
       if (audioTrack) outputStream.addTrack(audioTrack);
       const chunks: Blob[] = [];
-      const recorder = new MediaRecorder(outputStream, { mimeType: format.mime, videoBitsPerSecond: 7_000_000, audioBitsPerSecond: 160_000 });
+      const recorder = new MediaRecorder(outputStream, { mimeType: format.mime, videoBitsPerSecond: 4_500_000, audioBitsPerSecond: 128_000 });
       recorderRef.current = recorder;
       const stopped = new Promise<Blob>((resolve, reject) => {
         recorder.addEventListener("dataavailable", (event) => { if (event.data.size) chunks.push(event.data); });
-        recorder.addEventListener("error", () => reject(new Error("O browser interrompeu a gravação do vídeo.")), { once: true });
-        recorder.addEventListener("stop", () => resolve(new Blob(chunks, { type: format.mime })), { once: true });
+        recorder.addEventListener("error", (event) => {
+          const detail = describeError(event);
+          reject(new Error(`O gravador do browser foi interrompido (${detail}).`));
+        }, { once: true });
+        recorder.addEventListener("stop", () => {
+          const blob = new Blob(chunks, { type: recorder.mimeType || format.mime });
+          if (!blob.size) reject(new Error("O browser terminou a gravação sem produzir dados."));
+          else resolve(blob);
+        }, { once: true });
       });
       const totalDuration = exportSlides.reduce((total, slide) => total + slideExportDuration(slide), 0) + Math.max(0, exportSlides.length - 1) * gap;
       let completedDuration = 0;
@@ -203,7 +238,10 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
 
       context.fillStyle = "#080a0b";
       context.fillRect(0, 0, canvas.width, canvas.height);
-      recorder.start(1000);
+      // MP4 is more reliable when the browser writes a single continuous
+      // fragment; WebM can safely flush intermediate chunks.
+      if (format.extension === "mp4") recorder.start();
+      else recorder.start(1000);
       try {
         const { toPng } = await import("html-to-image");
         for (let index = 0; index < exportSlides.length; index += 1) {
@@ -230,6 +268,8 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
             const startedAt = performance.now();
             while (true) {
               ensureActive();
+              const playbackError = mediaPlaybackError(video);
+              if (playbackError) throw playbackError;
               const elapsed = Math.min(duration, (performance.now() - startedAt) / 1000);
               const point = timelineTimeToSource(timelineStart + elapsed, freezes);
               if (point.freeze) {
@@ -288,9 +328,12 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
         if (recorder.state !== "inactive") recorder.stop();
       }
 
+      setProgress(99);
+      setMessage("A finalizar o ficheiro de vídeo…");
       const blob = await stopped;
       recorderRef.current = null;
-      outputStream.getVideoTracks().forEach((track) => track.stop());
+      outputStream.getTracks().forEach((track) => track.stop());
+      outputStreamRef.current = null;
       ensureActive();
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
@@ -308,8 +351,11 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
         if (!disposed) onClose();
         return;
       }
+      console.error("Falha na exportação TactiDraw", caught);
+      outputStreamRef.current?.getTracks().forEach((track) => track.stop());
+      outputStreamRef.current = null;
       if (!disposed) {
-        setError(caught instanceof Error ? caught.message : "Não foi possível exportar o vídeo.");
+        setError(describeError(caught) || "Não foi possível exportar o vídeo.");
         setMessage("A exportação não foi concluída.");
         setPhase("error");
       }
