@@ -26,9 +26,7 @@ export function DrawingPreviewCanvas({ drawings, playerTracks, currentTime, widt
   const labelStageRef = useRef<Konva.Stage>(null);
   const occlusionCanvasRef = useRef<HTMLCanvasElement>(null);
   const zoomCanvasRef = useRef<HTMLCanvasElement>(null);
-  const visible = drawings
-    .filter((drawing) => getObjectStateAtTime(drawing, currentTime).visible)
-    .sort((left, right) => Number(right.data.kind === "spotlight") - Number(left.data.kind === "spotlight"));
+  const visible = drawings.filter((drawing) => getObjectStateAtTime(drawing, currentTime).visible);
 
   useEffect(() => {
     if (!registerCapture) return;

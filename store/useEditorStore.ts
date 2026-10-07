@@ -1,12 +1,13 @@
 "use client";
 
 import { create } from "zustand";
-import type { DrawingKeyframe, DrawingObject, PlayerTrack, PlayerTrackSample, Tool } from "@/types/drawing";
+import type { DrawingKeyframe, DrawingObject, PlayerTrack, PlayerTrackSample, Tool, ToolFavorite } from "@/types/drawing";
 import type { AnalysisSlide, FreezeFrame } from "@/types/slide";
 import { createId } from "@/utils/id";
 import { createSlide } from "@/utils/slideFactory";
 import { sourceTimeToTimeline } from "@/utils/videoTimeline";
 import { normalizePresentationSlides } from "@/utils/presentationData";
+import { favoriteFromDrawing, isToolFavorite } from "@/utils/toolFavorites";
 
 interface Snapshot { drawings: DrawingObject[]; slides: AnalysisSlide[] }
 
@@ -21,6 +22,9 @@ interface EditorState {
   future: Snapshot[];
   slides: AnalysisSlide[];
   selectedSlideId: string | null;
+  favorites: ToolFavorite[];
+  activeFavoriteId: string | null;
+  favoriteStorageKey: string;
   setTool: (tool: Tool) => void;
   setSelectedId: (id: string | null) => void;
   setCurrentTime: (time: number) => void;
@@ -33,6 +37,8 @@ interface EditorState {
   updateDrawing: (id: string, patch: Partial<DrawingObject>) => void;
   removeDrawing: (id: string) => void;
   duplicateDrawing: (id: string) => void;
+  moveDrawingLayer: (id: string, direction: -1 | 1) => void;
+  reorderDrawing: (id: string, targetId: string) => void;
   undo: () => void;
   redo: () => void;
   reset: () => void;
@@ -46,11 +52,26 @@ interface EditorState {
   replacePresentation: (slides: AnalysisSlide[]) => void;
   setVideoSource: (id: string, sourceUrl?: string) => void;
   insertFreezeFrame: (sourceTime: number, duration: number) => void;
+  loadFavorites: (storageKey: string) => void;
+  saveDrawingAsFavorite: (drawingId: string) => void;
+  removeFavorite: (favoriteId: string) => void;
+  activateFavorite: (favoriteId: string) => void;
 }
 
 const copy = (drawings: DrawingObject[]) => structuredClone(drawings);
 const copySlides = (slides: AnalysisSlide[]) => structuredClone(slides);
 const initialVideoSlide = { ...createSlide("video", 0), id: "initial-video-slide", name: "Vídeo / Jogada" };
+const DEFAULT_FAVORITES_KEY = "tactidraw:tool-favorites";
+
+function persistFavorites(storageKey: string, favorites: ToolFavorite[]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(storageKey, JSON.stringify(favorites));
+  void fetch("/api/tool-favorites", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ favorites }),
+  }).catch(() => undefined);
+}
 
 function withVideoDrawings(slides: AnalysisSlide[], selectedSlideId: string | null, drawings: DrawingObject[]) {
   return slides.map((slide) => slide.id === selectedSlideId && slide.content.kind === "video"
@@ -69,7 +90,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   future: [],
   slides: [initialVideoSlide],
   selectedSlideId: initialVideoSlide.id,
-  setTool: (tool) => set({ tool }),
+  favorites: [],
+  activeFavoriteId: null,
+  favoriteStorageKey: DEFAULT_FAVORITES_KEY,
+  setTool: (tool) => set({ tool, activeFavoriteId: null }),
   setSelectedId: (selectedId) => set({ selectedId }),
   setCurrentTime: (currentTime) => set({ currentTime }),
   setDuration: (duration) => set({ duration }),
@@ -156,6 +180,33 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     duplicate.transform.y += 0.02;
     get().addDrawing(duplicate);
   },
+  moveDrawingLayer: (id, direction) => set((state) => {
+    const index = state.drawings.findIndex((drawing) => drawing.id === id);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= state.drawings.length) return state;
+    const drawings = [...state.drawings];
+    [drawings[index], drawings[target]] = [drawings[target], drawings[index]];
+    return {
+      history: [...state.history, { drawings: copy(state.drawings), slides: copySlides(state.slides) }].slice(-80),
+      future: [],
+      drawings,
+      slides: withVideoDrawings(state.slides, state.selectedSlideId, drawings),
+    };
+  }),
+  reorderDrawing: (id, targetId) => set((state) => {
+    const sourceIndex = state.drawings.findIndex((drawing) => drawing.id === id);
+    const targetIndex = state.drawings.findIndex((drawing) => drawing.id === targetId);
+    if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return state;
+    const drawings = [...state.drawings];
+    const [moved] = drawings.splice(sourceIndex, 1);
+    drawings.splice(targetIndex, 0, moved);
+    return {
+      history: [...state.history, { drawings: copy(state.drawings), slides: copySlides(state.slides) }].slice(-80),
+      future: [],
+      drawings,
+      slides: withVideoDrawings(state.slides, state.selectedSlideId, drawings),
+    };
+  }),
   undo: () => set((state) => {
     const previous = state.history.at(-1);
     if (!previous) return state;
@@ -320,5 +371,53 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       isPlaying: false,
       selectedId: null,
     };
+  }),
+  loadFavorites: (storageKey) => {
+    if (typeof window === "undefined") return;
+    let localFavorites: ToolFavorite[] = [];
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem(storageKey) ?? "[]") as unknown;
+      localFavorites = Array.isArray(parsed) ? parsed.filter(isToolFavorite).slice(0, 24) : [];
+      set({
+        favoriteStorageKey: storageKey,
+        favorites: localFavorites,
+        activeFavoriteId: null,
+      });
+    } catch {
+      set({ favoriteStorageKey: storageKey, favorites: [], activeFavoriteId: null });
+    }
+    void fetch("/api/tool-favorites")
+      .then(async (response) => {
+        if (!response.ok) return;
+        const result = await response.json() as { favorites?: unknown };
+        const cloudFavorites = Array.isArray(result.favorites) ? result.favorites.filter(isToolFavorite).slice(0, 24) : [];
+        if (get().favoriteStorageKey !== storageKey) return;
+        if (cloudFavorites.length || !localFavorites.length) {
+          window.localStorage.setItem(storageKey, JSON.stringify(cloudFavorites));
+          set({ favorites: cloudFavorites, activeFavoriteId: null });
+        } else {
+          persistFavorites(storageKey, localFavorites);
+        }
+      })
+      .catch(() => undefined);
+  },
+  saveDrawingAsFavorite: (drawingId) => set((state) => {
+    const drawing = state.drawings.find((item) => item.id === drawingId);
+    if (!drawing) return state;
+    const sameTypeCount = state.favorites.filter((item) => item.type === drawing.type).length + 1;
+    const favorite = favoriteFromDrawing(drawing, createId());
+    favorite.name = `${drawing.name || drawing.type} · ${sameTypeCount}`;
+    const favorites = [...state.favorites, favorite].slice(-24);
+    persistFavorites(state.favoriteStorageKey, favorites);
+    return { favorites, activeFavoriteId: null };
+  }),
+  removeFavorite: (favoriteId) => set((state) => {
+    const favorites = state.favorites.filter((item) => item.id !== favoriteId);
+    persistFavorites(state.favoriteStorageKey, favorites);
+    return { favorites, activeFavoriteId: state.activeFavoriteId === favoriteId ? null : state.activeFavoriteId };
+  }),
+  activateFavorite: (favoriteId) => set((state) => {
+    const favorite = state.favorites.find((item) => item.id === favoriteId);
+    return favorite ? { activeFavoriteId: favorite.id, tool: favorite.type } : state;
   }),
 }));

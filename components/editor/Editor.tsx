@@ -22,9 +22,9 @@ import { createSlide } from "@/utils/slideFactory";
 import { prepareSlidesForStorage } from "@/utils/presentationData";
 import type { SlideType } from "@/types/slide";
 
-type Account = { user: { name: string; username: string }; workspace: { name: string } };
+type Account = { user: { id: string; name: string; username: string }; workspace: { id: string; name: string } };
 
-const PowerPointExport = dynamic(() => import("@/components/export/PowerPointExport").then((module) => module.PowerPointExport), { ssr: false });
+const VideoExport = dynamic(() => import("@/components/export/VideoExport").then((module) => module.VideoExport), { ssr: false });
 
 export function Editor() {
   const router = useRouter();
@@ -36,7 +36,7 @@ export function Editor() {
   const [presenting, setPresenting] = useState(false);
   const [cloudOpen, setCloudOpen] = useState(false);
   const [projectsOpen, setProjectsOpen] = useState(false);
-  const [powerPointExportOpen, setPowerPointExportOpen] = useState(false);
+  const [videoExportOpen, setVideoExportOpen] = useState(false);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState("Apresentação sem título");
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -44,7 +44,7 @@ export function Editor() {
   const [notice, setNotice] = useState("");
   const {
     selectedId, removeDrawing, undo, redo, setTool,
-    drawings, slides, selectedSlideId, addSlide, updateSlide, replacePresentation, setVideoSource, setIsPlaying,
+    drawings, slides, selectedSlideId, addSlide, updateSlide, replacePresentation, setVideoSource, setIsPlaying, loadFavorites,
   } = useEditorStore();
   const selectedSlide = slides.find((slide) => slide.id === selectedSlideId) ?? null;
   const isVideoSlide = selectedSlide?.content.kind === "video";
@@ -54,9 +54,13 @@ export function Editor() {
   useEffect(() => {
     void fetch("/api/account").then(async (response) => {
       if (response.status === 401) { router.replace("/login"); return; }
-      if (response.ok) setAccount(await response.json() as Account);
+      if (response.ok) {
+        const result = await response.json() as Account;
+        setAccount(result);
+        loadFavorites(`tactidraw:tool-favorites:${result.workspace.id}:${result.user.id}`);
+      }
     });
-  }, [router]);
+  }, [loadFavorites, router]);
 
   useEffect(() => {
     const sourceUrls = sourceUrlsRef.current;
@@ -126,6 +130,7 @@ export function Editor() {
     const imageSlide = createSlide("image", slides.length);
     imageSlide.name = `Frame · ${selectedSlide.name}`;
     imageSlide.caption = selectedSlide.caption;
+    imageSlide.captionOpacity = selectedSlide.captionOpacity;
     if (imageSlide.content.kind === "image") imageSlide.content.imageDataUrl = imageDataUrl;
     addSlide(imageSlide);
   };
@@ -152,16 +157,26 @@ export function Editor() {
     router.refresh();
   }
 
-  const openPowerPointExport = useCallback(() => {
+  const openVideoExport = useCallback(() => {
     setIsPlaying(false);
-    setPowerPointExportOpen(true);
+    setVideoExportOpen(true);
   }, [setIsPlaying]);
-  const closePowerPointExport = useCallback(() => setPowerPointExportOpen(false), []);
+  const closeVideoExport = useCallback(() => setVideoExportOpen(false), []);
+
+  const openPreview = useCallback(() => {
+    setPresenting(true);
+    if (!document.fullscreenElement) void document.documentElement.requestFullscreen().catch(() => undefined);
+  }, []);
+
+  const closePreview = useCallback(() => {
+    setPresenting(false);
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+  }, []);
 
   return (
     <main className="app-shell presentation-builder">
       <input ref={inputRef} className="sr-only" type="file" accept="video/*" onChange={(event) => { openFile(event.target.files?.[0]); event.target.value = ""; }} />
-      <TopBar filename={filename} isVideoSlide={isVideoSlide} onOpen={() => inputRef.current?.click()} onAddSlide={() => setPickerOpen(true)} onPreview={() => setPresenting(true)} onCapture={captureAsImageSlide} onCloud={() => setCloudOpen(true)} onProjects={() => setProjectsOpen(true)} onSave={() => void saveProject()} onExport={openPowerPointExport} onLogout={() => void logout()} projectName={projectName} saveState={saveState} account={account} />
+      <TopBar filename={filename} isVideoSlide={isVideoSlide} onOpen={() => inputRef.current?.click()} onPreview={openPreview} onCapture={captureAsImageSlide} onCloud={() => setCloudOpen(true)} onProjects={() => setProjectsOpen(true)} onSave={() => void saveProject()} onExport={openVideoExport} onLogout={() => void logout()} projectName={projectName} saveState={saveState} account={account} />
       {notice && <button className="editor-notice" onClick={() => setNotice("")}>{notice}<span>×</span></button>}
       <div className="presentation-workspace">
         <SlideList onAdd={() => setPickerOpen(true)} />
@@ -176,6 +191,7 @@ export function Editor() {
                 clipEnd={selectedSlide.content.endTime}
                 freezeFrames={selectedSlide.content.freezeFrames}
                 caption={selectedSlide.caption}
+                captionOpacity={selectedSlide.captionOpacity}
                 onChooseVideo={() => inputRef.current?.click()}
                 onDurationReady={(videoDuration) => {
                   if (selectedSlide.content.kind === "video" && selectedSlide.content.endTime === undefined) updateSlide(selectedSlide.id, { content: { ...selectedSlide.content, endTime: videoDuration } });
@@ -195,8 +211,8 @@ export function Editor() {
       {pickerOpen && <SlideTypePicker onSelect={addNewSlide} onClose={() => setPickerOpen(false)} />}
       {cloudOpen && <CloudLibraryModal onSelect={selectCloudAsset} onClose={() => setCloudOpen(false)} />}
       {projectsOpen && <ProjectLibraryModal slides={slides} selectedSlideId={selectedSlideId} activeDrawings={drawings} onClose={() => setProjectsOpen(false)} onOpen={(project) => { setProjectId(project.id); setProjectName(project.name); replacePresentation(project.slides); setSaveState("idle"); }} />}
-      {presenting && <PresentationMode onClose={() => setPresenting(false)} />}
-      {powerPointExportOpen && <PowerPointExport slides={slides} projectName={projectName} onClose={closePowerPointExport} />}
+      {presenting && <PresentationMode onClose={closePreview} />}
+      {videoExportOpen && <VideoExport slides={slides} selectedSlideId={selectedSlideId} projectName={projectName} onClose={closeVideoExport} />}
     </main>
   );
 }

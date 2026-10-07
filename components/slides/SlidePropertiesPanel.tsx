@@ -25,6 +25,7 @@ export function SlidePropertiesPanel() {
         <h3>APRESENTAÇÃO</h3>
         <label className="slide-prop-field"><span><Clock3 size={12} /> Duração</span><div><input type="number" min={1} max={60} step={.5} value={slide.duration} onChange={(event) => updateSlide(slide.id, { duration: Math.max(1, Number(event.target.value)) })} /><i>s</i></div></label>
         <label className="slide-prop-field vertical"><span>Legenda no fundo da imagem</span><textarea rows={3} placeholder="Escreva a mensagem a apresentar..." value={slide.caption} onChange={(event) => updateSlide(slide.id, { caption: event.target.value })} /></label>
+        <label className="slide-prop-field"><span>Opacidade da legenda</span><input type="range" min={.25} max={1} step={.05} value={slide.captionOpacity ?? .74} onChange={(event) => updateSlide(slide.id, { captionOpacity: Number(event.target.value) })} /></label>
       </section>
     </aside>
   );

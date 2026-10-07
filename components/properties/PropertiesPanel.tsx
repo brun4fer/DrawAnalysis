@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, LocateFixed, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, LocateFixed, Star, Trash2 } from "lucide-react";
 import { useEditorStore } from "@/store/useEditorStore";
 import type { ActionLabel, LineDesign, PlayerLabel, PlayerRingDesign, TextDesign, ZoneDesign } from "@/types/drawing";
 import type { VideoSlideContent } from "@/types/slide";
@@ -22,7 +22,7 @@ function withFillOpacity(color: string, opacity: number) {
 }
 
 export function PropertiesPanel() {
-  const { drawings, selectedId, updateDrawing, removeDrawing, duplicateDrawing, slides, selectedSlideId, updateSlide, setPlayerTrackStatus, currentTime, duration: videoDuration } = useEditorStore();
+  const { drawings, selectedId, updateDrawing, removeDrawing, duplicateDrawing, moveDrawingLayer, saveDrawingAsFavorite, slides, selectedSlideId, updateSlide, setPlayerTrackStatus, currentTime, duration: videoDuration } = useEditorStore();
   const object = drawings.find((drawing) => drawing.id === selectedId);
   const activeSlide = slides.find((slide) => slide.id === selectedSlideId);
 
@@ -42,7 +42,7 @@ export function PropertiesPanel() {
           <div><kbd>, .</kbd><em>Frame a frame</em></div>
           <div><kbd>Del</kbd><em>Eliminar objeto</em></div>
         </div>
-        {activeSlide?.content.kind === "video" && <VideoSlidePresentationSettings slideId={activeSlide.id} content={activeSlide.content} slideDuration={activeSlide.duration} caption={activeSlide.caption} currentTime={currentTime} videoDuration={videoDuration} onUpdate={(patch) => updateSlide(activeSlide.id, patch)} />}
+        {activeSlide?.content.kind === "video" && <VideoSlidePresentationSettings slideId={activeSlide.id} content={activeSlide.content} slideDuration={activeSlide.duration} caption={activeSlide.caption} captionOpacity={activeSlide.captionOpacity ?? .74} currentTime={currentTime} videoDuration={videoDuration} onUpdate={(patch) => updateSlide(activeSlide.id, patch)} />}
       </aside>
     );
   }
@@ -138,6 +138,7 @@ export function PropertiesPanel() {
   const playerTrack = object.target?.kind === "player" && activeSlide?.content.kind === "video"
     ? activeSlide.content.playerTracks?.find((track) => track.id === object.target?.trackId)
     : undefined;
+  const layerIndex = drawings.findIndex((drawing) => drawing.id === object.id);
 
   return (
     <aside className="properties-panel">
@@ -265,6 +266,8 @@ export function PropertiesPanel() {
           <>
             <p className="property-help">Arraste o jogador recortado diretamente no relvado para ajustar a nova posição.</p>
             <label className="toggle-row"><span><FieldLabel>Ocultar posição original</FieldLabel><small>Reconstrói o relvado por baixo do jogador</small></span><input type="checkbox" checked={object.data.hideOriginal !== false} onChange={(event) => object.data.kind === "ghost" && updateDrawing(object.id, { data: { ...object.data, hideOriginal: event.target.checked } })} /><span /></label>
+            <label className="toggle-row"><span><FieldLabel>Mostrar seta no relvado</FieldLabel><small>Indica o movimento entre as duas posições</small></span><input type="checkbox" checked={object.data.showArrow !== false} onChange={(event) => object.data.kind === "ghost" && updateDrawing(object.id, { data: { ...object.data, showArrow: event.target.checked } })} /><span /></label>
+            <label className="toggle-row"><span><FieldLabel>Marcar posição original</FieldLabel><small>Círculo tracejado no ponto de partida</small></span><input type="checkbox" checked={object.data.showOrigin !== false} onChange={(event) => object.data.kind === "ghost" && updateDrawing(object.id, { data: { ...object.data, showOrigin: event.target.checked } })} /><span /></label>
             <label className="stacked-field"><span><FieldLabel>Tamanho do jogador</FieldLabel><b>{Math.round(object.transform.scaleX * 100)}%</b></span><input type="range" min={.45} max={2.2} step={.05} value={object.transform.scaleX} onChange={(event) => { const scale = Number(event.target.value); updateTransform({ scaleX: scale, scaleY: scale }); }} /></label>
             <label className="stacked-field"><span><FieldLabel>Opacidade do jogador</FieldLabel><b>{Math.round((object.data.playerOpacity ?? .96) * 100)}%</b></span><input type="range" min={.2} max={1} step={.05} value={object.data.playerOpacity ?? .96} onChange={(event) => object.data.kind === "ghost" && updateDrawing(object.id, { data: { ...object.data, playerOpacity: Number(event.target.value) } })} /></label>
           </>
@@ -437,6 +440,9 @@ export function PropertiesPanel() {
       </section>
 
       <div className="property-actions">
+        <button className="secondary-button favorite-save-button" onClick={() => saveDrawingAsFavorite(object.id)}><Star size={15} /> Guardar favorito</button>
+        <button className="secondary-button" disabled={layerIndex === drawings.length - 1} onClick={() => moveDrawingLayer(object.id, 1)}><ArrowUp size={15} /> Mover para cima</button>
+        <button className="secondary-button" disabled={layerIndex <= 0} onClick={() => moveDrawingLayer(object.id, -1)}><ArrowDown size={15} /> Mover para baixo</button>
         <button className="secondary-button" onClick={() => duplicateDrawing(object.id)}><Copy size={15} /> Duplicar</button>
         <button className="danger-button" onClick={() => removeDrawing(object.id)}><Trash2 size={15} /> Eliminar</button>
       </div>
@@ -448,14 +454,15 @@ function TextContentField({ value, onChange }: { value: string; onChange: (value
   return <label className="text-field"><FieldLabel>Conteúdo</FieldLabel><textarea rows={2} value={value} onChange={(event) => onChange(event.target.value)} /></label>;
 }
 
-function VideoSlidePresentationSettings({ content, slideDuration, caption, currentTime, videoDuration, onUpdate }: {
+function VideoSlidePresentationSettings({ content, slideDuration, caption, captionOpacity, currentTime, videoDuration, onUpdate }: {
   slideId: string;
   content: VideoSlideContent;
   slideDuration: number;
   caption: string;
+  captionOpacity: number;
   currentTime: number;
   videoDuration: number;
-  onUpdate: (patch: { content?: VideoSlideContent; duration?: number; caption?: string }) => void;
+  onUpdate: (patch: { content?: VideoSlideContent; duration?: number; caption?: string; captionOpacity?: number }) => void;
 }) {
   const freezeFrames = content.freezeFrames ?? [];
   const sourceDuration = getSourceDuration(videoDuration, freezeFrames);
@@ -473,6 +480,7 @@ function VideoSlidePresentationSettings({ content, slideDuration, caption, curre
       <div className="duration-readout"><span>Duração com pausas</span><strong>{Math.max(0, presentationDuration).toFixed(2)} s</strong></div>
       <label className="slide-prop-field"><span>Duração do slide</span><div><input type="number" min={1} max={60} step={.5} value={slideDuration} onChange={(event) => onUpdate({ duration: Math.max(1, Number(event.target.value)) })} /><i>s</i></div></label>
       <label className="slide-prop-field vertical"><span>Legenda no fundo da imagem</span><textarea rows={3} placeholder="Escreva a mensagem a apresentar..." value={caption} onChange={(event) => onUpdate({ caption: event.target.value })} /></label>
+      <label className="stacked-field"><span><FieldLabel>Opacidade da legenda</FieldLabel><b>{Math.round(captionOpacity * 100)}%</b></span><input type="range" min={.25} max={1} step={.05} value={captionOpacity} onChange={(event) => onUpdate({ captionOpacity: Number(event.target.value) })} /></label>
     </section>
   );
 }

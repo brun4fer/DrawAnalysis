@@ -2,11 +2,12 @@ import type { Prisma } from "@prisma/client";
 import { handleApiError, readJson } from "@/lib/api";
 import { requireWorkspace } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { SETTINGS_PROJECT_PREFIX } from "@/lib/settings";
 
 export async function GET() {
   try {
     const { workspace } = await requireWorkspace();
-    const projects = await prisma.project.findMany({ where: { workspaceId: workspace.id }, select: { id: true, name: true, version: true, createdAt: true, updatedAt: true }, orderBy: { updatedAt: "desc" } });
+    const projects = await prisma.project.findMany({ where: { workspaceId: workspace.id, NOT: { name: { startsWith: SETTINGS_PROJECT_PREFIX } } }, select: { id: true, name: true, version: true, createdAt: true, updatedAt: true }, orderBy: { updatedAt: "desc" } });
     return Response.json({ projects });
   } catch (error) { return handleApiError(error); }
 }

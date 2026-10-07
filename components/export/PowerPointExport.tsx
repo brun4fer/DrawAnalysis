@@ -294,18 +294,18 @@ export function PowerPointExport({ slides, projectName, onClose }: Props) {
           if (analysisSlide.caption.trim()) {
             pptSlide.addText(analysisSlide.caption, {
               x: 0,
-              y: 6.78,
+              y: 7.0,
               w: SLIDE_WIDTH,
-              h: .72,
-              margin: .12,
+              h: .5,
+              margin: .08,
               fontFace: "Aptos",
-              fontSize: 18,
+              fontSize: 16,
               bold: true,
               color: "111111",
               align: "center",
               valign: "middle",
               breakLine: false,
-              fill: { color: "FFFFFF", transparency: 0 },
+              fill: { color: "FFFFFF", transparency: Math.round((1 - (analysisSlide.captionOpacity ?? .74)) * 100) },
               line: { color: "FFFFFF", transparency: 100 },
             });
           }

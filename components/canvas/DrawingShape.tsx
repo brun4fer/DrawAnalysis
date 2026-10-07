@@ -524,21 +524,23 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
           );
       }
       case "ghost": {
-        if (!canEdit) return null;
         const destination = { x: data.destination.x * width, y: data.destination.y * height };
         const selectionWidth = Math.max(18, data.radiusX * width * 2 * Math.abs(transform.scaleX));
         const selectionHeight = Math.max(34, data.radiusY * height * 2 * Math.abs(transform.scaleY));
+        if (!canEdit) return null;
         return (
-          <Rect
-            x={destination.x - selectionWidth / 2}
-            y={destination.y - selectionHeight}
-            width={selectionWidth}
-            height={selectionHeight}
-            fill="#ffffff01"
-            stroke={selected ? "#a3ff12" : "#ffffff01"}
-            strokeWidth={selected ? 1.5 : 1}
-            dash={selected ? [5, 4] : []}
-          />
+          <Group opacity={temporalState.opacity}>
+            <Rect
+              x={destination.x - selectionWidth / 2}
+              y={destination.y - selectionHeight}
+              width={selectionWidth}
+              height={selectionHeight}
+              fill="#ffffff01"
+              stroke={selected ? "#a3ff12" : "#ffffff01"}
+              strokeWidth={selected ? 1.5 : 1}
+              dash={selected ? [5, 4] : []}
+            />
+          </Group>
         );
       }
       case "spotlight": {

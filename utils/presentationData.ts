@@ -7,6 +7,7 @@ export function normalizePresentationSlides(slides: AnalysisSlide[]) {
   return slides.map((slide) => ({
     ...slide,
     caption: slide.caption ?? slide.question ?? "",
+    captionOpacity: slide.captionOpacity ?? .74,
     question: undefined,
   }));
 }

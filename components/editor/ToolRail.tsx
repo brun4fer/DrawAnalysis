@@ -1,10 +1,11 @@
 "use client";
 
+import { Star, X } from "lucide-react";
 import { useEditorStore } from "@/store/useEditorStore";
 import { TOOLS } from "@/components/tools/toolDefinitions";
 
 export function ToolRail() {
-  const { tool, setTool } = useEditorStore();
+  const { tool, setTool, favorites, activeFavoriteId, activateFavorite, removeFavorite } = useEditorStore();
   const hint = tool === "polygon"
     ? "Clique nos pontos · Enter fecha"
     : tool === "triangle"
@@ -39,6 +40,26 @@ export function ToolRail() {
           <span>{shortcut}</span>
         </button>
       ))}
+      <div className="favorite-tools-section">
+        <div className="favorite-tools-title"><Star size={10} /> FAVORITOS</div>
+        {favorites.length ? favorites.map((favorite) => {
+          const definition = TOOLS.find((item) => item.id === favorite.type);
+          const Icon = definition?.icon ?? Star;
+          return (
+            <div className="favorite-tool-slot" key={favorite.id}>
+              <button
+                className={`favorite-tool-button${activeFavoriteId === favorite.id ? " active" : ""}`}
+                onClick={() => activateFavorite(favorite.id)}
+                title={`${favorite.name} · usar preset`}
+              >
+                <Icon size={16} />
+                <i style={{ background: favorite.style.stroke }} />
+              </button>
+              <button className="favorite-tool-remove" onClick={() => removeFavorite(favorite.id)} title="Remover dos favoritos"><X size={9} /></button>
+            </div>
+          );
+        }) : <span className="favorite-tools-empty">Guarde um desenho nas propriedades.</span>}
+      </div>
       <div className="tool-hint">{hint}</div>
     </aside>
   );

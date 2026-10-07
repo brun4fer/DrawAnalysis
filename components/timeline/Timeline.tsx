@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { ChevronDown, Layers3, Lock, Minus, PauseCircle, Plus, Scissors, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, GripVertical, Layers3, Lock, Minus, PauseCircle, Plus, Scissors, X } from "lucide-react";
 import { useEditorStore } from "@/store/useEditorStore";
 import { formatTime } from "@/components/video/VideoControls";
 import { freezeRange, getSourceDuration, sourceTimeToTimeline, timelineTimeToSource } from "@/utils/videoTimeline";
@@ -9,12 +9,15 @@ import { freezeRange, getSourceDuration, sourceTimeToTimeline, timelineTimeToSou
 const MIN_DURATION = 0.08;
 
 export function Timeline() {
-  const { drawings, duration, currentTime, selectedId, setCurrentTime, setSelectedId, setIsPlaying, updateDrawing, slides, selectedSlideId, updateSlide, insertFreezeFrame } = useEditorStore();
+  const { drawings, duration, currentTime, selectedId, setCurrentTime, setSelectedId, setIsPlaying, updateDrawing, moveDrawingLayer, reorderDrawing, slides, selectedSlideId, updateSlide, insertFreezeFrame } = useEditorStore();
   const trackRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
   const [freezeDialogOpen, setFreezeDialogOpen] = useState(false);
   const [freezeDuration, setFreezeDuration] = useState(2);
   const [freezeTargetSourceTime, setFreezeTargetSourceTime] = useState(0);
+  const [draggedLayerId, setDraggedLayerId] = useState<string | null>(null);
+  const [dragOverLayerId, setDragOverLayerId] = useState<string | null>(null);
+  const [clipDrag, setClipDrag] = useState<{ start: number; end: number } | null>(null);
   const safeDuration = Math.max(duration, 1);
   const timelineWidth = `${zoom * 100}%`;
   const activeSlide = slides.find((slide) => slide.id === selectedSlideId);
@@ -25,7 +28,10 @@ export function Timeline() {
   const sourceClipEnd = Math.min(sourceDuration || safeDuration, (videoContent?.endTime ?? sourceDuration) || safeDuration);
   const clipStart = sourceTimeToTimeline(sourceClipStart, freezeFrames);
   const clipEnd = sourceTimeToTimeline(sourceClipEnd, freezeFrames);
+  const visibleClipStart = clipDrag?.start ?? clipStart;
+  const visibleClipEnd = clipDrag?.end ?? clipEnd;
   const currentPoint = timelineTimeToSource(currentTime, freezeFrames);
+  const layerDrawings = [...drawings].reverse();
 
   const updateClip = (startTime: number, endTime: number) => {
     if (!activeSlide || !videoContent) return;
@@ -81,24 +87,54 @@ export function Timeline() {
 
   const beginClipTrim = (event: React.PointerEvent, mode: "move" | "start" | "end") => {
     event.stopPropagation();
+    event.preventDefault();
     const track = trackRef.current;
     if (!track || !videoContent || !duration) return;
+    setIsPlaying(false);
     const initialX = event.clientX;
     const initialStart = clipStart;
     const initialEnd = clipEnd;
     const width = track.getBoundingClientRect().width;
-    const onUp = (upEvent: PointerEvent) => {
-      const delta = (upEvent.clientX - initialX) / width * safeDuration;
-      if (mode === "start") updateClip(Math.max(0, Math.min(initialEnd - MIN_DURATION, initialStart + delta)), initialEnd);
-      if (mode === "end") updateClip(initialStart, Math.min(duration, Math.max(initialStart + MIN_DURATION, initialEnd + delta)));
+    const pointerId = event.pointerId;
+    const rangeAt = (clientX: number) => {
+      const delta = (clientX - initialX) / width * safeDuration;
+      if (mode === "start") return { start: Math.max(0, Math.min(initialEnd - MIN_DURATION, initialStart + delta)), end: initialEnd };
+      if (mode === "end") return { start: initialStart, end: Math.min(duration, Math.max(initialStart + MIN_DURATION, initialEnd + delta)) };
       if (mode === "move") {
         const length = initialEnd - initialStart;
         const start = Math.max(0, Math.min(duration - length, initialStart + delta));
-        updateClip(start, start + length);
+        return { start, end: start + length };
       }
-      window.removeEventListener("pointerup", onUp);
+      return { start: initialStart, end: initialEnd };
     };
-    window.addEventListener("pointerup", onUp, { once: true });
+    const cleanup = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      document.body.classList.remove("is-trimming-video");
+    };
+    const onMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      moveEvent.preventDefault();
+      setClipDrag(rangeAt(moveEvent.clientX));
+    };
+    const onUp = (upEvent: PointerEvent) => {
+      if (upEvent.pointerId !== pointerId) return;
+      const next = rangeAt(upEvent.clientX);
+      setClipDrag(null);
+      updateClip(next.start, next.end);
+      cleanup();
+    };
+    const onCancel = (cancelEvent: PointerEvent) => {
+      if (cancelEvent.pointerId !== pointerId) return;
+      setClipDrag(null);
+      cleanup();
+    };
+    document.body.classList.add("is-trimming-video");
+    setClipDrag({ start: initialStart, end: initialEnd });
+    window.addEventListener("pointermove", onMove, { passive: false });
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
   };
 
   const ticks = Array.from({ length: 11 }, (_, index) => index / 10 * safeDuration);
@@ -122,9 +158,31 @@ export function Timeline() {
       </div>
       <div className="timeline-body">
         <div className="track-labels">
-          <div className="ruler-label">FAIXAS <ChevronDown size={12} /></div>
+          <div className="ruler-label">CAMADAS · CIMA = FRENTE <ChevronDown size={12} /></div>
           <div className="video-track-label"><span className="video-dot" /> Vídeo</div>
-          {drawings.map((object) => <button key={object.id} className={selectedId === object.id ? "selected" : ""} onClick={() => setSelectedId(object.id)}><span className={`type-dot type-${object.type}`} />{object.name}</button>)}
+          {layerDrawings.map((object, index) => (
+            <div
+              key={object.id}
+              className={`layer-row${dragOverLayerId === object.id ? " drag-over" : ""}`}
+              draggable
+              onDragStart={(event) => { setDraggedLayerId(object.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", object.id); }}
+              onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDragOverLayerId(object.id); }}
+              onDrop={(event) => {
+                event.preventDefault();
+                const sourceId = draggedLayerId ?? event.dataTransfer.getData("text/plain");
+                if (sourceId && sourceId !== object.id) reorderDrawing(sourceId, object.id);
+                setDraggedLayerId(null);
+                setDragOverLayerId(null);
+              }}
+              onDragEnd={() => { setDraggedLayerId(null); setDragOverLayerId(null); }}
+            >
+              <button className={`layer-label${selectedId === object.id ? " selected" : ""}`} onClick={() => setSelectedId(object.id)} title={`${object.name} · arraste para mudar a camada`}><GripVertical size={12} /><span className={`type-dot type-${object.type}`} /><span>{object.name}</span></button>
+              <div className="layer-row-actions">
+                <button disabled={index === 0} onClick={() => moveDrawingLayer(object.id, 1)} title="Mover para cima"><ArrowUp size={11} /></button>
+                <button disabled={index === layerDrawings.length - 1} onClick={() => moveDrawingLayer(object.id, -1)} title="Mover para baixo"><ArrowDown size={11} /></button>
+              </div>
+            </div>
+          ))}
         </div>
         <div className="tracks-scroll">
           <div className="tracks" ref={trackRef} style={{ width: timelineWidth }} onPointerDown={(e) => seekFromPointer(e.clientX)}>
@@ -137,14 +195,14 @@ export function Timeline() {
                 const range = freezeRange(freeze, freezeFrames);
                 return <button key={freeze.id} className="freeze-frame-clip" style={{ left: `${range.start / safeDuration * 100}%`, width: `${Math.max(.7, freeze.duration / safeDuration * 100)}%` }} onPointerDown={(event) => { event.stopPropagation(); setCurrentTime(range.start + freeze.duration / 2); }} title={`Imagem parada durante ${freeze.duration.toFixed(1)} segundos`}><PauseCircle size={10} /><span>{freeze.duration.toFixed(1)}s</span></button>;
               })}
-              <div className="clip-outside left" style={{ width: `${clipStart / safeDuration * 100}%` }} />
-              <div className="clip-outside right" style={{ width: `${Math.max(0, safeDuration - clipEnd) / safeDuration * 100}%` }} />
-              <div className="video-trim-range" style={{ left: `${clipStart / safeDuration * 100}%`, width: `${Math.max(.2, (clipEnd - clipStart) / safeDuration * 100)}%` }} onPointerDown={(event) => beginClipTrim(event, "move")}>
+              <div className="clip-outside left" style={{ width: `${visibleClipStart / safeDuration * 100}%` }} />
+              <div className="clip-outside right" style={{ width: `${Math.max(0, safeDuration - visibleClipEnd) / safeDuration * 100}%` }} />
+              <div className={`video-trim-range${clipDrag ? " dragging" : ""}`} style={{ left: `${visibleClipStart / safeDuration * 100}%`, width: `${Math.max(.2, (visibleClipEnd - visibleClipStart) / safeDuration * 100)}%` }} onPointerDown={(event) => beginClipTrim(event, "move")}>
                 <i className="trim-handle left" onPointerDown={(event) => beginClipTrim(event, "start")}><span>IN</span></i>
                 <i className="trim-handle right" onPointerDown={(event) => beginClipTrim(event, "end")}><span>OUT</span></i>
               </div>
             </div>
-            {drawings.map((object) => (
+            {layerDrawings.map((object) => (
               <div className="object-track" key={object.id}>
                 <div
                   className={`object-clip type-${object.type} ${selectedId === object.id ? "selected" : ""}`}

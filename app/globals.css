@@ -76,13 +76,19 @@ button:disabled { opacity: .3; cursor: default; }
 .tool-button span { position: absolute; right: 3px; bottom: 2px; font-size: 7px; color: #5e686d; }
 .tool-button.active span { color: #94c94b; }
 .tool-hint { margin-top: auto; padding: 7px 2px 0; text-align: center; color: #566066; font-size: 8px; line-height: 1.4; border-top: 1px solid var(--line-soft); }
+.favorite-tools-section { width: 100%; display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; margin-top: 7px; padding-top: 8px; border-top: 1px solid var(--line-soft); }
+.favorite-tools-title { width: 100%; display: flex; align-items: center; justify-content: center; gap: 4px; color: #8c995f; font-size: 6px; letter-spacing: .7px; }
+.favorite-tool-slot { position: relative; }
+.favorite-tool-button { position: relative; width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid #364139; border-radius: 5px; background: #151b18; color: #aab4af; cursor: pointer; }.favorite-tool-button:hover, .favorite-tool-button.active { border-color: var(--lime); color: var(--lime); background: #1b2717; }.favorite-tool-button i { position: absolute; right: 2px; bottom: 2px; width: 6px; height: 6px; border: 1px solid #ffffff55; border-radius: 50%; }
+.favorite-tool-remove { position: absolute; z-index: 2; top: -4px; right: -4px; width: 13px; height: 13px; display: none; place-items: center; padding: 0; border: 1px solid #603638; border-radius: 50%; background: #2c1719; color: #ff959a; cursor: pointer; }.favorite-tool-slot:hover .favorite-tool-remove { display: grid; }
+.favorite-tools-empty { width: 52px; color: #4f5954; font-size: 6px; line-height: 1.3; text-align: center; }
 
 .video-workspace { min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) 48px; background: #080a0b; }
 .video-workspace:fullscreen { width: 100vw; height: 100vh; background: #000; }
 .video-area { position: relative; display: flex; align-items: center; justify-content: center; min-height: 0; overflow: hidden; background-color: #080a0b; background-image: radial-gradient(circle at center, #171b1e 0, #080a0b 65%); }
 .video-frame { position: relative; flex: none; background: #000; box-shadow: 0 18px 60px #000a; overflow: hidden; }
 .video-frame video { display: block; width: 100%; height: 100%; object-fit: fill; user-select: none; }
-.video-caption { position: absolute; z-index: 12; left: 0; right: 0; bottom: 0; min-height: 46px; display: grid; place-items: center; padding: 9px 18px; background: #fff; color: #101010; font-size: clamp(14px, 1.35vw, 22px); font-weight: 750; line-height: 1.15; text-align: center; box-shadow: 0 -4px 18px #0008; pointer-events: none; }
+.video-caption { position: absolute; z-index: 12; left: 0; right: 0; bottom: 0; min-height: 32px; display: grid; place-items: center; padding: 6px 16px 5px; color: #101010; font-size: clamp(12px, 1.15vw, 19px); font-weight: 750; line-height: 1.1; text-align: center; box-shadow: 0 -3px 14px #0005; backdrop-filter: blur(3px); pointer-events: none; }
 .canvas-overlay { position: absolute; inset: 0; touch-action: none; }
 .drawing-stage canvas { touch-action: none; }
 .drawing-stage { position: relative; z-index: 1; }
@@ -191,6 +197,7 @@ input[type="range"] { accent-color: var(--lime); }
 .player-label-position-buttons button:hover { border-color: #75954e; color: var(--lime); }
 .keyframe-count { color: #596368; font-size: 8px; margin-top: 4px; }
 .property-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 12px 13px; }
+.property-actions .favorite-save-button { grid-column: 1 / -1; border-color: #65753a; color: #cfff88; background: #182015; }
 .danger-button { border-color: #632f30; background: #351a1c; color: #ff8588; }
 
 .timeline-panel { min-height: 0; border-top: 1px solid var(--line); background: #0e1113; display: grid; grid-template-rows: 35px minmax(0, 1fr); }
@@ -208,8 +215,9 @@ input[type="range"] { accent-color: var(--lime); }
 .timeline-body { min-height: 0; display: grid; grid-template-columns: 145px minmax(0, 1fr); overflow: hidden; }
 .track-labels { min-height: 0; border-right: 1px solid var(--line); overflow: hidden auto; }
 .ruler-label { height: 27px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; color: #515b60; font-size: 8px; border-bottom: 1px solid var(--line-soft); }
-.video-track-label, .track-labels button { width: 100%; height: 31px; display: flex; align-items: center; gap: 7px; padding: 0 10px; border: 0; border-bottom: 1px solid var(--line-soft); background: transparent; color: #8a9498; text-align: left; font-size: 9px; white-space: nowrap; overflow: hidden; cursor: pointer; }
-.track-labels button.selected { background: #a3ff120b; color: #d7dddf; }
+.video-track-label, .layer-label { width: 100%; height: 30px; display: flex; align-items: center; gap: 6px; min-width: 0; padding: 0 5px 0 7px; border: 0; background: transparent; color: #8a9498; text-align: left; font-size: 9px; white-space: nowrap; overflow: hidden; cursor: pointer; }.layer-label > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }.layer-label > svg { flex: none; color: #4e595e; cursor: grab; }
+.layer-label.selected { background: #a3ff120b; color: #d7dddf; }
+.layer-row { height: 31px; display: grid; grid-template-columns: minmax(0, 1fr) 38px; border-bottom: 1px solid var(--line-soft); transition: background .12s, box-shadow .12s; }.layer-row.drag-over { background: #a3ff1212; box-shadow: inset 0 2px 0 var(--lime); }.layer-row-actions { display: flex; align-items: center; justify-content: center; gap: 2px; padding-right: 3px; }.layer-row-actions button { width: 16px; height: 20px; display: grid; place-items: center; padding: 0; border: 1px solid #293136; border-radius: 2px; background: #171c1f; color: #738087; cursor: pointer; }.layer-row-actions button:hover:not(:disabled) { border-color: #78994c; color: var(--lime); }.layer-row-actions button:disabled { opacity: .25; cursor: default; }
 .video-dot, .type-dot { width: 6px; height: 6px; border-radius: 50%; background: #e4e8e9; flex: none; }
 .type-dot { background: var(--lime); }.type-dot.type-arrow, .type-dot.type-line { background: #47cfff; }.type-dot.type-text { background: #ffb356; }.type-dot.type-polygon, .type-dot.type-triangle { background: #bc80ff; }
 .type-dot.type-playerRing { background: #a3ff12; box-shadow: 0 0 6px #a3ff12; }.type-dot.type-spotlight { background: #fff4a4; box-shadow: 0 0 6px #fff4a4; }
@@ -222,6 +230,8 @@ input[type="range"] { accent-color: var(--lime); }
 .video-track, .object-track { height: 31px; position: relative; border-bottom: 1px solid var(--line-soft); }
 .clip-outside { position: absolute; top: 0; bottom: 0; z-index: 1; background: #050607c2; pointer-events: none; }.clip-outside.left { left: 0; }.clip-outside.right { right: 0; }
 .video-trim-range { position: absolute; top: 3px; height: 25px; z-index: 2; border-top: 1px solid var(--lime); border-bottom: 1px solid var(--lime); background: #a3ff1209; cursor: grab; }
+.video-trim-range.dragging { cursor: grabbing; background: #a3ff121b; box-shadow: 0 0 12px #a3ff1238; }
+.is-trimming-video, .is-trimming-video * { cursor: ew-resize !important; user-select: none !important; }
 .trim-handle { position: absolute; top: -2px; bottom: -2px; width: 8px; border-radius: 2px; background: var(--lime); cursor: ew-resize; }.trim-handle.left { left: -4px; }.trim-handle.right { right: -4px; }
 .trim-handle span { position: absolute; top: -16px; padding: 2px 3px; border-radius: 2px; background: var(--lime); color: #11160a; font-size: 6px; font-style: normal; opacity: 0; pointer-events: none; }.trim-handle.left span { left: 0; }.trim-handle.right span { right: 0; }.video-trim-range:hover .trim-handle span { opacity: 1; }
 .video-wave { position: absolute; inset: 6px 0; display: flex; align-items: center; gap: 2px; opacity: .25; overflow: hidden; }
@@ -284,7 +294,7 @@ input[type="range"] { accent-color: var(--lime); }
 .presentation-content { position: relative; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); gap: 0; padding: 22px 34px 16px; }
 .presentation-image { min-height: 0; display: flex; align-items: center; justify-content: center; }
 .presentation-image img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; box-shadow: 0 20px 70px #000; }
-.presentation-caption { position: absolute; z-index: 20; left: 34px; right: 34px; bottom: 16px; min-height: 58px; display: grid; place-items: center; padding: 12px 24px; background: #fff; color: #101010; font-size: clamp(17px, 2vw, 28px); font-weight: 750; line-height: 1.2; text-align: center; box-shadow: 0 -5px 24px #0008; }
+.presentation-caption { position: absolute; z-index: 20; left: 34px; right: 34px; bottom: 0; min-height: 44px; display: grid; place-items: center; padding: 8px 22px 7px; color: #101010; font-size: clamp(15px, 1.7vw, 24px); font-weight: 750; line-height: 1.12; text-align: center; box-shadow: 0 -4px 18px #0006; backdrop-filter: blur(4px); }
 .presentation-mode > footer { display: grid; grid-template-columns: 50px 1fr 50px; align-items: center; gap: 20px; padding: 0 24px; border-top: 1px solid #202629; background: #0d1113; }
 .presentation-progress { display: flex; align-items: center; justify-content: center; gap: 6px; }
 .presentation-progress i { width: 18px; height: 3px; border-radius: 2px; background: #30383c; }.presentation-progress i.active { width: 32px; background: var(--lime); }
@@ -382,6 +392,7 @@ input[type="range"] { accent-color: var(--lime); }
 .powerpoint-export-body { display: flex; align-items: center; flex-direction: column; padding: 26px 27px 20px; text-align: center; }.powerpoint-export-body > svg { margin-bottom: 12px; color: #76827c; }.powerpoint-export-body > strong { font-size: 12px; }.powerpoint-export-body > p { max-width: 410px; min-height: 34px; margin: 8px 0 17px; color: #748079; font-size: 9px; line-height: 1.6; }
 .powerpoint-export-progress { width: 100%; height: 7px; overflow: hidden; border-radius: 999px; background: #252d29; }.powerpoint-export-progress i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #70ba24, var(--lime)); transition: width .18s ease; }.powerpoint-export-body > small { margin-top: 7px; color: var(--lime); font-family: ui-monospace, monospace; font-size: 9px; }
 .powerpoint-export-dialog > footer { display: flex; justify-content: flex-end; padding: 11px 18px; border-top: 1px solid var(--line); }.powerpoint-export-dialog > footer button { height: 32px; padding: 0 16px; border: 1px solid #344139; border-radius: 4px; background: #171d19; color: #aeb8b3; font-size: 9px; font-weight: 700; cursor: pointer; }.powerpoint-export-dialog > footer button.primary { border-color: var(--lime); background: var(--lime); color: #11160a; }
+.video-export-config { display: flex; flex-direction: column; gap: 15px; padding: 23px 25px; }.video-export-config label { display: grid; grid-template-columns: 170px minmax(0, 1fr); align-items: center; gap: 12px; }.video-export-config label > span { color: #aeb8b3; font-size: 10px; }.video-export-config select, .video-export-config input { width: 100%; height: 34px; border: 1px solid #364139; border-radius: 5px; background: #0b0f0d; color: #e3e8e5; padding: 0 10px; }.video-export-config label > div { display: grid; grid-template-columns: minmax(0, 1fr) 65px; align-items: center; gap: 7px; }.video-export-config label i { color: #65716b; font-size: 8px; font-style: normal; }.video-export-config p { margin: 3px 0 0; padding: 11px 12px; border-left: 2px solid var(--lime); background: #182019; color: #748079; font-size: 9px; line-height: 1.55; }
 .powerpoint-export-capture { position: fixed; left: -20000px; top: 0; z-index: -1000; width: 1280px; height: 720px; overflow: hidden; pointer-events: none; background: #080a0b; }
 .powerpoint-export-capture > .slide-stage-shell { width: 1280px; height: 720px; min-width: 1280px; min-height: 720px; padding: 0; background: #080a0b; }.powerpoint-export-capture > .slide-stage-shell > .slide-stage { width: 1280px; height: 720px; max-height: none; aspect-ratio: auto; box-shadow: none; }
 .powerpoint-export-video-frame, .powerpoint-export-video-frame > video, .powerpoint-export-drawing-layer { width: 1280px; height: 720px; }.powerpoint-export-video-frame { position: relative; overflow: hidden; background: #000; }.powerpoint-export-video-frame > video { display: block; object-fit: fill; }.powerpoint-export-drawing-layer { position: absolute; inset: 0; }

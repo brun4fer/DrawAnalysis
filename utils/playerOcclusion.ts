@@ -59,26 +59,77 @@ export function hidePlayerOriginal(
   box: NormalizedBox,
   canvasWidth: number,
   canvasHeight: number,
-  foot: Point,
 ) {
-  const x = box.x * canvasWidth;
-  const y = box.y * canvasHeight;
-  const bodyWidth = box.width * canvasWidth;
-  const bodyHeight = box.height * canvasHeight;
-  const sourceWidth = box.width * video.videoWidth;
-  const sourceHeight = box.height * video.videoHeight;
-  const sourceY = Math.max(0, Math.min(video.videoHeight - sourceHeight, box.y * video.videoHeight));
-  const leftSourceX = (box.x - box.width * 1.2) * video.videoWidth;
-  const rightSourceX = (box.x + box.width * 1.2) * video.videoWidth;
-  const sourceX = Math.max(0, Math.min(
-    video.videoWidth - sourceWidth,
-    leftSourceX >= 0 ? leftSourceX : rightSourceX,
+  const bodyWidth = Math.max(4, box.width * canvasWidth);
+  const bodyHeight = Math.max(8, box.height * canvasHeight);
+  const paddingX = Math.max(3, bodyWidth * .48);
+  const paddingTop = Math.max(2, bodyHeight * .13);
+  const paddingBottom = Math.max(2, bodyHeight * .1);
+  const destinationX = Math.max(0, box.x * canvasWidth - paddingX);
+  const destinationY = Math.max(0, box.y * canvasHeight - paddingTop);
+  const destinationRight = Math.min(canvasWidth, (box.x + box.width) * canvasWidth + paddingX);
+  const destinationBottom = Math.min(canvasHeight, (box.y + box.height) * canvasHeight + paddingBottom);
+  const destinationWidth = Math.max(1, destinationRight - destinationX);
+  const destinationHeight = Math.max(1, destinationBottom - destinationY);
+
+  const sourceWidth = destinationWidth / canvasWidth * video.videoWidth;
+  const sourceHeight = destinationHeight / canvasHeight * video.videoHeight;
+  const originalSourceX = destinationX / canvasWidth * video.videoWidth;
+  const sourceY = Math.max(0, Math.min(
+    video.videoHeight - sourceHeight,
+    destinationY / canvasHeight * video.videoHeight,
   ));
+  const sourceGap = Math.max(sourceWidth * .08, box.width * video.videoWidth * .35);
+  const leftSourceX = originalSourceX - sourceWidth - sourceGap;
+  const rightSourceX = originalSourceX + sourceWidth + sourceGap;
+  const roomOnLeft = leftSourceX >= 0;
+  const roomOnRight = rightSourceX + sourceWidth <= video.videoWidth;
+  const sourceX = roomOnLeft
+    ? leftSourceX
+    : roomOnRight
+      ? rightSourceX
+      : Math.max(0, Math.min(video.videoWidth - sourceWidth, originalSourceX - sourceWidth));
+
+  const patch = document.createElement("canvas");
+  patch.width = Math.max(1, Math.ceil(destinationWidth));
+  patch.height = Math.max(1, Math.ceil(destinationHeight));
+  const patchContext = patch.getContext("2d");
+  if (!patchContext) return;
+
+  // Replace the complete detected area, rather than only an estimated body
+  // silhouette. The feathered mask hides loose arms/legs without leaving a
+  // visible rectangular repair on the pitch.
+  patchContext.filter = `blur(${Math.max(1.2, bodyWidth * .075)}px)`;
+  patchContext.drawImage(
+    video,
+    Math.max(0, Math.min(video.videoWidth - sourceWidth, sourceX)),
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    -2,
+    -2,
+    patch.width + 4,
+    patch.height + 4,
+  );
+  patchContext.filter = "none";
+  patchContext.globalCompositeOperation = "destination-in";
+  const horizontalFeather = patchContext.createLinearGradient(0, 0, patch.width, 0);
+  horizontalFeather.addColorStop(0, "rgba(0,0,0,0)");
+  horizontalFeather.addColorStop(.14, "rgba(0,0,0,1)");
+  horizontalFeather.addColorStop(.86, "rgba(0,0,0,1)");
+  horizontalFeather.addColorStop(1, "rgba(0,0,0,0)");
+  patchContext.fillStyle = horizontalFeather;
+  patchContext.fillRect(0, 0, patch.width, patch.height);
+  const verticalFeather = patchContext.createLinearGradient(0, 0, 0, patch.height);
+  verticalFeather.addColorStop(0, "rgba(0,0,0,0)");
+  verticalFeather.addColorStop(.1, "rgba(0,0,0,1)");
+  verticalFeather.addColorStop(.9, "rgba(0,0,0,1)");
+  verticalFeather.addColorStop(1, "rgba(0,0,0,0)");
+  patchContext.fillStyle = verticalFeather;
+  patchContext.fillRect(0, 0, patch.width, patch.height);
+
   context.save();
-  addPlayerSilhouettePath(context, x, y, bodyWidth, bodyHeight, foot.x * canvasWidth, foot.y * canvasHeight);
-  context.clip();
-  context.filter = `blur(${Math.max(1.5, bodyWidth * .07)}px)`;
-  context.drawImage(video, sourceX, sourceY, sourceWidth, sourceHeight, x - bodyWidth * .04, y - bodyHeight * .02, bodyWidth * 1.08, bodyHeight * 1.04);
+  context.drawImage(patch, destinationX, destinationY, destinationWidth, destinationHeight);
   context.restore();
 }
 

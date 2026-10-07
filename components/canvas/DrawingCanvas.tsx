@@ -12,6 +12,7 @@ import { createId } from "@/utils/id";
 import { getObjectStateAtTime } from "@/utils/temporalRenderer";
 import { timelineTimeToSource } from "@/utils/videoTimeline";
 import { samplePlayerTrackAtTime, targetOffsetAtTime } from "@/utils/playerTracking";
+import { applyFavoriteData } from "@/utils/toolFavorites";
 import { DrawingShape } from "./DrawingShape";
 import { PlayerOcclusionCanvas } from "./PlayerOcclusionCanvas";
 import { PlayerLabelOverlay } from "./PlayerLabelOverlay";
@@ -166,7 +167,7 @@ async function detectPlayerAtPoint(video: HTMLVideoElement, click: Point) {
 
 export function DrawingCanvas({ width, height, registerCapture, getVideoElement }: Props) {
   const {
-    tool, drawings, selectedId, currentTime, duration, isPlaying, slides, selectedSlideId,
+    tool, drawings, selectedId, currentTime, duration, isPlaying, slides, selectedSlideId, favorites, activeFavoriteId,
     addDrawing, addPlayerTrack, appendPlayerTrackingSample, setPlayerTrackStatus,
     updateDrawing, setSelectedId, setTool,
   } = useEditorStore();
@@ -246,6 +247,10 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       : options?.trackingEnabled
         ? Math.max(currentTime + .04, duration || defaultEndTime)
         : Math.min(duration || defaultEndTime, defaultEndTime);
+    const favorite = favorites.find((item) => item.id === activeFavoriteId && item.type === type);
+    const defaultActionLabel = ["line", "arrow", "longBallArrow"].includes(type)
+      ? { visible: false, value: String(actionCount), position: .5, color: "#ffffff", backgroundColor: "#174ea6", fontSize: .022 }
+      : undefined;
     const object: DrawingObject = {
       id: createId(),
       name: `${labelFor(type)} ${count}`,
@@ -255,19 +260,19 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       trackingEnabled: options?.trackingEnabled ?? false,
       target: options?.target,
       keyframes: [],
-      animation: { fadeIn: 0, fadeOut: 0, motion: "none", pulseAmount: .05, pulseSpeed: 1.4 },
-      actionLabel: ["line", "arrow", "longBallArrow"].includes(type)
-        ? { visible: false, value: String(actionCount), position: .5, color: "#ffffff", backgroundColor: "#174ea6", fontSize: .022 }
-        : undefined,
-      style: { ...DEFAULT_STYLE, ...effectStyle, dash: [] },
+      animation: favorite?.animation ? structuredClone(favorite.animation) : { fadeIn: 0, fadeOut: 0, motion: "none", pulseAmount: .05, pulseSpeed: 1.4 },
+      actionLabel: defaultActionLabel && favorite?.actionLabel
+        ? { ...structuredClone(favorite.actionLabel), value: defaultActionLabel.value }
+        : defaultActionLabel,
+      style: favorite ? structuredClone(favorite.style) : { ...DEFAULT_STYLE, ...effectStyle, dash: [] },
       transform: { ...DEFAULT_TRANSFORM },
-      data,
+      data: favorite ? applyFavoriteData(data, favorite) : data,
     };
     addDrawing(object);
     setDraft(null);
     if (!options?.keepTool) setTool("select");
     return object;
-  }, [addDrawing, currentTime, drawings, duration, setTool]);
+  }, [activeFavoriteId, addDrawing, currentTime, drawings, duration, favorites, setTool]);
 
   const createRingForPlayer = ({ track, sample }: IdentifiedPlayer) => {
     const radiusX = clamp(sample.bbox.width * 2.2, 0.04, 0.09);
@@ -408,6 +413,8 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         radiusY: Math.max(.02, sample.bbox.height / 2),
         hideOriginal: true,
         playerOpacity: .96,
+        showArrow: true,
+        showOrigin: true,
       }, { target: { kind: "player", trackId: track.id, anchor: "feet", referenceFoot: sample.foot } });
       setPendingGhost(null);
       return;
@@ -703,9 +710,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     return null;
   })();
 
-  const visible = drawings
-    .filter((drawing) => getObjectStateAtTime(drawing, currentTime).visible)
-    .sort((left, right) => Number(right.data.kind === "spotlight") - Number(left.data.kind === "spotlight"));
+  const visible = drawings.filter((drawing) => getObjectStateAtTime(drawing, currentTime).visible);
 
   return (
     <>

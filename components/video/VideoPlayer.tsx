@@ -23,11 +23,12 @@ interface Props {
   clipEnd?: number;
   freezeFrames?: FreezeFrame[];
   caption?: string;
+  captionOpacity?: number;
   onChooseVideo: () => void;
   onDurationReady?: (duration: number) => void;
 }
 
-export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer({ source, clipStart = 0, clipEnd, freezeFrames, caption, onChooseVideo, onDurationReady }, ref) {
+export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer({ source, clipStart = 0, clipEnd, freezeFrames, caption, captionOpacity = .74, onChooseVideo, onDurationReady }, ref) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const areaRef = useRef<HTMLDivElement>(null);
   const fullscreenRef = useRef<HTMLDivElement>(null);
@@ -285,7 +286,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
               onEnded={() => setIsPlaying(false)}
             />
             <div className="canvas-overlay"><DrawingCanvas width={size.width} height={size.height} registerCapture={registerCapture} getVideoElement={getVideoElement} /></div>
-            {caption && <div className="video-caption">{caption}</div>}
+            {caption && <div className="video-caption" style={{ backgroundColor: `rgba(255,255,255,${captionOpacity})` }}>{caption}</div>}
           </div>
         ) : (
           <button className="empty-video" onClick={onChooseVideo}>
