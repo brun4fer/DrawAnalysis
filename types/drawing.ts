@@ -111,12 +111,12 @@ export type DrawingData =
   | { kind: "spotlight"; target: Point; radiusX: number; radiusY: number; beamHeight: number; design?: "beam" | "isolation"; darkness?: number; feather?: number }
   | { kind: "zoom"; center: Point; radius: number; zoom: number }
   | { kind: "ellipse"; center: Point; radiusX: number; radiusY: number }
-  | { kind: "rectangle"; origin: Point; width: number; height: number; fillDesign?: ZoneDesign; stripeColor?: string; stripeSpacing?: number; stripeAngle?: number }
-  | { kind: "longBallArrow"; start: Point; end: Point; curveHeight: number }
-  | { kind: "line"; points: Point[]; lineDesign?: LineDesign; secondaryColor?: string }
+  | { kind: "rectangle"; origin: Point; width: number; height: number; fillDesign?: ZoneDesign; stripeColor?: string; stripeSpacing?: number; stripeAngle?: number; stripeOpacity?: number }
+  | { kind: "longBallArrow"; start: Point; end: Point; curveHeight: number; showLandingZone?: boolean; landingZoneColor?: string; landingZoneSize?: number }
+  | { kind: "line"; points: Point[]; lineDesign?: LineDesign; secondaryColor?: string; startTarget?: DrawingTarget; endTarget?: DrawingTarget }
   | { kind: "glimpse"; origin: Point; target: Point; spread: number }
-  | { kind: "polygon"; points: Point[]; zoneDesign?: ZoneDesign; stripeColor?: string; stripeSpacing?: number; stripeAngle?: number }
-  | { kind: "triangle"; points: Point[]; fillDesign?: ZoneDesign; stripeColor?: string; stripeSpacing?: number; stripeAngle?: number }
+  | { kind: "polygon"; points: Point[]; zoneDesign?: ZoneDesign; stripeColor?: string; stripeSpacing?: number; stripeAngle?: number; stripeOpacity?: number }
+  | { kind: "triangle"; points: Point[]; fillDesign?: ZoneDesign; stripeColor?: string; stripeSpacing?: number; stripeAngle?: number; stripeOpacity?: number }
   | { kind: "arrow" | "freeDraw"; points: Point[] }
   | { kind: "text"; origin: Point; text: string; fontSize: number; textDesign?: TextDesign; groundTilt?: number; groundDepth?: number };
 

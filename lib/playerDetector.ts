@@ -19,12 +19,14 @@ async function loadModel(): Promise<CocoModel> {
   if (!modelPromise) {
     modelPromise = (async () => {
       const tf = await import("@tensorflow/tfjs-core");
+      // COCO-SSD uses CPU kernels for non-maximum suppression even when the
+      // model itself runs through WebGL, so both registries must be loaded.
+      await import("@tensorflow/tfjs-backend-cpu");
       try {
         await import("@tensorflow/tfjs-backend-webgl");
         const enabled = await tf.setBackend("webgl");
         if (!enabled) throw new Error("WebGL indisponível");
       } catch {
-        await import("@tensorflow/tfjs-backend-cpu");
         await tf.setBackend("cpu");
       }
       await tf.ready();

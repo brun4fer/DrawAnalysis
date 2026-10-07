@@ -27,19 +27,20 @@ export function applyFavoriteData(base: DrawingData, favorite: ToolFavorite): Dr
     case "zoom":
       return base.kind === "zoom" ? { ...base, radius: saved.radius, zoom: saved.zoom } : base;
     case "rectangle":
-      return base.kind === "rectangle" ? { ...base, fillDesign: saved.fillDesign, stripeColor: saved.stripeColor, stripeSpacing: saved.stripeSpacing, stripeAngle: saved.stripeAngle } : base;
+      return base.kind === "rectangle" ? { ...base, fillDesign: saved.fillDesign, stripeColor: saved.stripeColor, stripeSpacing: saved.stripeSpacing, stripeAngle: saved.stripeAngle, stripeOpacity: saved.stripeOpacity } : base;
     case "line":
       return base.kind === "line" ? { ...base, lineDesign: saved.lineDesign, secondaryColor: saved.secondaryColor } : base;
     case "glimpse":
       return base.kind === "glimpse" ? { ...base, spread: saved.spread } : base;
     case "polygon":
-      return base.kind === "polygon" ? { ...base, zoneDesign: saved.zoneDesign, stripeColor: saved.stripeColor, stripeSpacing: saved.stripeSpacing, stripeAngle: saved.stripeAngle } : base;
+      return base.kind === "polygon" ? { ...base, zoneDesign: saved.zoneDesign, stripeColor: saved.stripeColor, stripeSpacing: saved.stripeSpacing, stripeAngle: saved.stripeAngle, stripeOpacity: saved.stripeOpacity } : base;
     case "triangle":
-      return base.kind === "triangle" ? { ...base, fillDesign: saved.fillDesign, stripeColor: saved.stripeColor, stripeSpacing: saved.stripeSpacing, stripeAngle: saved.stripeAngle } : base;
+      return base.kind === "triangle" ? { ...base, fillDesign: saved.fillDesign, stripeColor: saved.stripeColor, stripeSpacing: saved.stripeSpacing, stripeAngle: saved.stripeAngle, stripeOpacity: saved.stripeOpacity } : base;
     case "text":
       return base.kind === "text" ? { ...base, fontSize: saved.fontSize, textDesign: saved.textDesign, groundTilt: saved.groundTilt, groundDepth: saved.groundDepth } : base;
-    case "ellipse":
     case "longBallArrow":
+      return base.kind === "longBallArrow" ? { ...base, curveHeight: saved.curveHeight, showLandingZone: saved.showLandingZone, landingZoneColor: saved.landingZoneColor, landingZoneSize: saved.landingZoneSize } : base;
+    case "ellipse":
     case "arrow":
     case "freeDraw":
       return base;

@@ -64,14 +64,41 @@ function mediaPlaybackError(video: HTMLVideoElement) {
 }
 
 function waitForVideo(video: HTMLVideoElement) {
-  if (video.readyState >= HTMLMediaElement.HAVE_METADATA && Number.isFinite(video.duration)) return Promise.resolve();
+  if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && Number.isFinite(video.duration)) return Promise.resolve();
   return new Promise<void>((resolve, reject) => {
     const timeout = window.setTimeout(() => reject(new Error("O vídeo demorou demasiado tempo a abrir.")), 20000);
-    const loaded = () => { window.clearTimeout(timeout); video.removeEventListener("error", failed); resolve(); };
-    const failed = () => { window.clearTimeout(timeout); video.removeEventListener("loadedmetadata", loaded); reject(new Error("Não foi possível abrir um dos vídeos.")); };
-    video.addEventListener("loadedmetadata", loaded, { once: true });
+    const loaded = () => {
+      window.clearTimeout(timeout);
+      video.removeEventListener("error", failed);
+      resolve();
+    };
+    const failed = () => {
+      window.clearTimeout(timeout);
+      video.removeEventListener("loadeddata", loaded);
+      reject(mediaPlaybackError(video) ?? new Error("Não foi possível abrir um dos vídeos."));
+    };
+    video.addEventListener("loadeddata", loaded, { once: true });
     video.addEventListener("error", failed, { once: true });
   });
+}
+
+async function prepareVideoSource(video: HTMLVideoElement, source: string, slideNumber: number) {
+  video.pause();
+  const sourceChanged = video.getAttribute("src") !== source;
+  if (sourceChanged) {
+    video.removeAttribute("src");
+    video.load();
+    await nextPaint();
+    video.src = source;
+    video.load();
+  }
+  try {
+    await waitForVideo(video);
+  } catch (error) {
+    throw new Error(`Falha ao carregar o vídeo do slide ${slideNumber}: ${describeError(error)}`);
+  }
+  const playbackError = mediaPlaybackError(video);
+  if (playbackError) throw new Error(`Falha no vídeo do slide ${slideNumber}: ${playbackError.message}`);
 }
 
 function seekVideo(video: HTMLVideoElement, time: number) {
@@ -84,21 +111,13 @@ function seekVideo(video: HTMLVideoElement, time: number) {
   });
 }
 
-function loadImage(source: string) {
-  return new Promise<HTMLImageElement>((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error("Não foi possível preparar um slide para o vídeo."));
-    image.src = source;
-  });
-}
-
 function slideExportDuration(slide: AnalysisSlide) {
   if (slide.content.kind !== "video") return Math.max(.25, slide.duration);
   const content = slide.content;
   const end = content.endTime ?? content.startTime + Math.max(.25, slide.duration);
   const freezes = orderedFreezeFrames(content.freezeFrames).filter((freeze) => freeze.sourceTime >= content.startTime && freeze.sourceTime <= end);
-  return Math.max(.25, end - content.startTime + freezes.reduce((total, freeze) => total + freeze.duration, 0));
+  const availableDuration = end - content.startTime + freezes.reduce((total, freeze) => total + freeze.duration, 0);
+  return Math.max(.25, Math.min(slide.duration, availableDuration));
 }
 
 export function VideoExport({ slides, selectedSlideId, projectName, onClose }: Props) {
@@ -208,8 +227,43 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
       canvas.height = EXPORT_HEIGHT;
       const context = canvas.getContext("2d");
       if (!context) throw new Error("Não foi possível iniciar o renderizador de vídeo.");
+      if (!exportSlides.length) throw new Error("Não existem slides para exportar.");
       const format = recordingFormat();
       setExportedExtension(format.extension);
+
+      // Static slides are composed before recording starts. This prevents a
+      // slow DOM/image capture from interrupting the transition between two
+      // already-recorded slides.
+      const preparedStaticSlides = new Map<string, HTMLCanvasElement>();
+      const { toCanvas } = await import("html-to-image");
+      for (let index = 0; index < exportSlides.length; index += 1) {
+        const slide = exportSlides[index];
+        if (slide.content.kind === "video") continue;
+        ensureActive();
+        setMessage(`A preparar slide ${index + 1}/${exportSlides.length}…`);
+        await showSlide(slide);
+        const root = captureRootRef.current?.querySelector<HTMLElement>(".slide-stage-shell");
+        if (!root) throw new Error(`Não foi possível preparar o slide ${index + 1}.`);
+        try {
+          const prepared = await toCanvas(root, {
+            width: EXPORT_WIDTH,
+            height: EXPORT_HEIGHT,
+            canvasWidth: EXPORT_WIDTH,
+            canvasHeight: EXPORT_HEIGHT,
+            pixelRatio: 1,
+            cacheBust: true,
+            backgroundColor: "#080a0b",
+            // The persistent video element is hidden on static slides, but
+            // html-to-image would still try to clone its empty source and
+            // reject with a generic image `error` event.
+            filter: (node) => !(node instanceof HTMLVideoElement),
+          });
+          preparedStaticSlides.set(slide.id, prepared);
+        } catch (caught) {
+          throw new Error(`Falha ao compor o slide ${index + 1}: ${describeError(caught)}`);
+        }
+      }
+
       const outputStream = canvas.captureStream(FPS);
       outputStreamRef.current = outputStream;
       const audioTrack = audioDestinationRef.current?.stream.getAudioTracks()[0];
@@ -217,11 +271,13 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
       const chunks: Blob[] = [];
       const recorder = new MediaRecorder(outputStream, { mimeType: format.mime, videoBitsPerSecond: 4_500_000, audioBitsPerSecond: 128_000 });
       recorderRef.current = recorder;
+      let recorderFailure: Error | null = null;
       const stopped = new Promise<Blob>((resolve, reject) => {
         recorder.addEventListener("dataavailable", (event) => { if (event.data.size) chunks.push(event.data); });
         recorder.addEventListener("error", (event) => {
           const detail = describeError(event);
-          reject(new Error(`O gravador do browser foi interrompido (${detail}).`));
+          recorderFailure = new Error(`O gravador do browser foi interrompido (${detail}).`);
+          reject(recorderFailure);
         }, { once: true });
         recorder.addEventListener("stop", () => {
           const blob = new Blob(chunks, { type: recorder.mimeType || format.mime });
@@ -229,6 +285,12 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
           else resolve(blob);
         }, { once: true });
       });
+      void stopped.catch(() => undefined);
+      const ensureRecording = () => {
+        ensureActive();
+        if (recorderFailure) throw recorderFailure;
+        if (recorder.state === "inactive") throw new Error("O gravador do browser parou antes de concluir a apresentação.");
+      };
       const totalDuration = exportSlides.reduce((total, slide) => total + slideExportDuration(slide), 0) + Math.max(0, exportSlides.length - 1) * gap;
       let completedDuration = 0;
       const updateProgress = (elapsed: number, label: string) => {
@@ -243,31 +305,31 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
       if (format.extension === "mp4") recorder.start();
       else recorder.start(1000);
       try {
-        const { toPng } = await import("html-to-image");
         for (let index = 0; index < exportSlides.length; index += 1) {
           const slide = exportSlides[index];
-          ensureActive();
+          ensureRecording();
+          setMessage(`A abrir slide ${index + 1}/${exportSlides.length}…`);
           await showSlide(slide);
 
           if (slide.content.kind === "video") {
             const content: VideoSlideContent = slide.content;
             const video = videoRef.current;
             if (!video || !content.sourceUrl) throw new Error(`O slide ${index + 1} não tem o vídeo disponível neste dispositivo.`);
-            video.src = content.sourceUrl;
-            video.load();
-            await waitForVideo(video);
+            setMessage(`A carregar vídeo do slide ${index + 1}/${exportSlides.length}…`);
+            await prepareVideoSource(video, content.sourceUrl, index + 1);
             const sourceEnd = Math.max(content.startTime, Math.min(content.endTime ?? video.duration, video.duration));
             const freezes = orderedFreezeFrames(content.freezeFrames).filter((freeze) => freeze.sourceTime >= content.startTime && freeze.sourceTime <= sourceEnd);
             const timelineStart = sourceTimeToTimeline(content.startTime, freezes);
             const timelineEnd = sourceTimeToTimeline(sourceEnd, freezes);
-            const duration = Math.max(.05, timelineEnd - timelineStart);
+            const duration = Math.max(.05, Math.min(slide.duration, timelineEnd - timelineStart));
             await seekVideo(video, content.startTime);
             setTimelineTime(timelineStart);
             await nextPaint();
+            video.muted = false;
             try { await video.play(); } catch { video.muted = true; await video.play(); }
             const startedAt = performance.now();
             while (true) {
-              ensureActive();
+              ensureRecording();
               const playbackError = mediaPlaybackError(video);
               if (playbackError) throw playbackError;
               const elapsed = Math.min(duration, (performance.now() - startedAt) / 1000);
@@ -277,7 +339,10 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
                 if (Math.abs(video.currentTime - point.sourceTime) > .025) await seekVideo(video, point.sourceTime);
               } else {
                 if (Math.abs(video.currentTime - point.sourceTime) > .2) video.currentTime = point.sourceTime;
-                if (video.paused && elapsed < duration) await video.play();
+                if (video.paused && elapsed < duration) {
+                  try { await video.play(); }
+                  catch (caught) { throw new Error(`Falha ao reproduzir o slide ${index + 1}: ${describeError(caught)}`); }
+                }
               }
               setTimelineTime(timelineStart + elapsed);
               await nextPaint();
@@ -289,14 +354,12 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
             video.pause();
             completedDuration += duration;
           } else {
-            const root = captureRootRef.current;
-            if (!root) throw new Error(`Não foi possível renderizar o slide ${index + 1}.`);
-            const imageData = await toPng(root, { width: EXPORT_WIDTH, height: EXPORT_HEIGHT, canvasWidth: EXPORT_WIDTH, canvasHeight: EXPORT_HEIGHT, pixelRatio: 1, cacheBust: true, backgroundColor: "#080a0b" });
-            const image = await loadImage(imageData);
+            const image = preparedStaticSlides.get(slide.id);
+            if (!image) throw new Error(`O slide ${index + 1} não ficou preparado para a exportação.`);
             const duration = Math.max(.25, slide.duration);
             const startedAt = performance.now();
             while (true) {
-              ensureActive();
+              ensureRecording();
               const elapsed = Math.min(duration, (performance.now() - startedAt) / 1000);
               context.fillStyle = "#080a0b";
               context.fillRect(0, 0, canvas.width, canvas.height);
@@ -312,7 +375,7 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
           if (index < exportSlides.length - 1 && gap > 0) {
             const startedAt = performance.now();
             while (true) {
-              ensureActive();
+              ensureRecording();
               const elapsed = Math.min(gap, (performance.now() - startedAt) / 1000);
               context.fillStyle = "#080a0b";
               context.fillRect(0, 0, canvas.width, canvas.height);

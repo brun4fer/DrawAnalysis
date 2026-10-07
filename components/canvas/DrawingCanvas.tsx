@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Konva from "konva";
-import { Arrow, Ellipse, Layer, Line, Rect, Stage, Text } from "react-konva";
+import { Arc, Arrow, Ellipse, Layer, Line, Rect, Stage, Text } from "react-konva";
 import { detectPlayers } from "@/lib/playerDetector";
 import { useEditorStore } from "@/store/useEditorStore";
-import type { DrawingData, DrawingObject, NormalizedBox, ObjectTransform, PlayerTrack, Point, Tool } from "@/types/drawing";
+import type { DrawingData, DrawingObject, DrawingTarget, NormalizedBox, ObjectTransform, PlayerTrack, Point, Tool } from "@/types/drawing";
 import { DEFAULT_STYLE, DEFAULT_TRANSFORM } from "@/types/drawing";
 import { flattenPoints, toNormalized } from "@/utils/coordinates";
 import { createId } from "@/utils/id";
@@ -25,7 +25,7 @@ interface Props {
   getVideoElement?: () => HTMLVideoElement | null;
 }
 
-interface Draft { tool: Tool; start: Point; points: Point[]; current: Point }
+interface Draft { tool: Tool; start: Point; points: Point[]; current: Point; startTarget?: DrawingTarget }
 interface DetectionEffect { phase: "scanning" | "locked" | "failed"; click: Point; box?: NormalizedBox; score?: number }
 interface IdentifiedPlayer { track: PlayerTrack; sample: PlayerTrack["samples"][number] }
 
@@ -235,8 +235,14 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
           ? { stroke: "#ffffff", fill: "#ffffff12", strokeWidth: 4, shadowColor: "#000000", shadowBlur: 12, shadowOpacity: .82, shadowOffsetX: 2, shadowOffsetY: 5 }
           : type === "glimpse"
             ? { stroke: "#ffffff", fill: "#ffffff38", strokeWidth: 2, shadowColor: "#ffffff", shadowBlur: 18, shadowOpacity: .6 }
-        : type === "arrow" || type === "longBallArrow"
-          ? { stroke: "#65d9ff", strokeWidth: 5, shadowColor: "#000000", shadowBlur: 10, shadowOpacity: .68, shadowOffsetX: 3, shadowOffsetY: 5 }
+          : type === "ellipse"
+            ? { stroke: "#a3ff12", fill: "#a3ff126b", strokeWidth: 4, shadowColor: "#000000", shadowBlur: 11, shadowOpacity: .58, shadowOffsetX: 4, shadowOffsetY: 6 }
+          : type === "line"
+            ? { stroke: "#65d9ff", strokeWidth: 6, shadowColor: "#000000", shadowBlur: 9, shadowOpacity: .58, shadowOffsetX: 4, shadowOffsetY: 7 }
+        : type === "arrow"
+          ? { stroke: "#65d9ff", strokeWidth: 7, shadowColor: "#000000", shadowBlur: 9, shadowOpacity: .58, shadowOffsetX: 4, shadowOffsetY: 7 }
+          : type === "longBallArrow"
+            ? { stroke: "#65d9ff", strokeWidth: 6, shadowColor: "#000000", shadowBlur: 12, shadowOpacity: .62, shadowOffsetX: 5, shadowOffsetY: 8 }
           : {};
     const timelinePoint = timelineTimeToSource(currentTime, activeFreezeFramesRef.current);
     const isFreezeDrawing = Boolean(timelinePoint.freeze && timelinePoint.freezeStart !== undefined && timelinePoint.freezeEnd !== undefined);
@@ -396,7 +402,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       radiusX: clamp(sample.bbox.width * 1.65, .035, .11),
       radiusY: clamp(sample.bbox.width * .42, .012, .035),
       beamHeight: clamp(sample.bbox.height * 1.18, .12, .42),
-      design: "isolation",
+      design: "beam",
       darkness: .68,
       feather: .48,
     }, { target: { kind: "player", trackId: track.id, anchor: "feet", referenceFoot: sample.foot } });
@@ -586,23 +592,25 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     setTrackingQuality(null);
   };
 
-  const finishPolygon = useCallback(() => {
-    if (draft?.tool !== "polygon") return;
-    const points = draft.points.filter((point, index, all) => {
-      if (index === 0) return true;
-      const previous = all[index - 1];
-      return Math.hypot(point.x - previous.x, point.y - previous.y) > 0.003;
-    });
-    if (points.length >= 3) makeDrawing("polygon", { kind: "polygon", points, zoneDesign: "solid", stripeColor: "#ffffff", stripeSpacing: .014, stripeAngle: 58 });
-  }, [draft, makeDrawing]);
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Enter" && tool === "polygon") finishPolygon();
+  const lineAnchorAtPoint = (point: Point) => {
+    const candidates = (activeVideoContent?.playerTracks ?? [])
+      .filter((track) => track.samples.length)
+      .map((track) => ({ track, sample: samplePlayerTrackAtTime(track, currentTime) }));
+    const direct = [...candidates].reverse().find(({ sample }) => containsPoint(sample.bbox, point));
+    const nearby = direct ?? candidates
+      .map((candidate) => ({ ...candidate, distance: Math.hypot(candidate.sample.foot.x - point.x, candidate.sample.foot.y - point.y) }))
+      .filter((candidate) => candidate.distance <= .035)
+      .sort((left, right) => left.distance - right.distance)[0];
+    if (!nearby) return null;
+    return {
+      point: nearby.sample.foot,
+      target: { kind: "player", trackId: nearby.track.id, anchor: "feet", referenceFoot: nearby.sample.foot } as DrawingTarget,
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [finishPolygon, tool]);
+  };
+
+  const polygonPointAt = (point: Point, points: Point[]) => points.findIndex((candidate) =>
+    Math.hypot((candidate.x - point.x) * width, (candidate.y - point.y) * height) <= 13,
+  );
 
   const onPointerDown = (event: Konva.KonvaEventObject<PointerEvent>) => {
     if (event.target !== event.target.getStage()) return;
@@ -635,9 +643,18 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     }
     if (tool === "triangle" || tool === "polygon") {
       const existingPoints = draft?.tool === tool ? draft.points : [];
+      if (tool === "polygon" && existingPoints.length >= 3) {
+        const closingIndex = polygonPointAt(point, existingPoints);
+        if (closingIndex >= 0) {
+          const points = [...existingPoints.slice(closingIndex), ...existingPoints.slice(0, closingIndex)];
+          makeDrawing("polygon", { kind: "polygon", points, zoneDesign: "solid", stripeColor: "#ffffff", stripeSpacing: .014, stripeAngle: 58, stripeOpacity: .72 });
+          return;
+        }
+      }
+      if (tool === "polygon" && polygonPointAt(point, existingPoints) >= 0) return;
       const points = [...existingPoints, point];
       if (tool === "triangle" && points.length === 3) {
-        makeDrawing("triangle", { kind: "triangle", points, fillDesign: "solid", stripeColor: "#ffffff", stripeSpacing: .014, stripeAngle: 58 });
+        makeDrawing("triangle", { kind: "triangle", points, fillDesign: "solid", stripeColor: "#ffffff", stripeSpacing: .014, stripeAngle: 58, stripeOpacity: .72 });
       } else {
         setDraft({ tool, start: points[0], points, current: point });
       }
@@ -662,14 +679,27 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         stripeColor: "#ffffff",
         stripeSpacing: .014,
         stripeAngle: 58,
+        stripeOpacity: .72,
       });
       if (tool === "arrow") makeDrawing("arrow", { kind: "arrow", points: [draft.start, point] });
-      if (tool === "line") makeDrawing("line", { kind: "line", points: [draft.start, point], lineDesign: "single", secondaryColor: "#ffffff" });
-      if (tool === "longBallArrow") makeDrawing("longBallArrow", { kind: "longBallArrow", start: draft.start, end: point, curveHeight: .13 });
+      if (tool === "line") {
+        const endAnchor = lineAnchorAtPoint(point);
+        makeDrawing("line", {
+          kind: "line",
+          points: [draft.start, endAnchor?.point ?? point],
+          lineDesign: "single",
+          secondaryColor: "#ffffff",
+          startTarget: draft.startTarget,
+          endTarget: endAnchor?.target,
+        });
+      }
+      if (tool === "longBallArrow") makeDrawing("longBallArrow", { kind: "longBallArrow", start: draft.start, end: point, curveHeight: .13, showLandingZone: true, landingZoneColor: "#65d9ff", landingZoneSize: 1 });
       if (tool === "glimpse") makeDrawing("glimpse", { kind: "glimpse", origin: draft.start, target: point, spread: 38 });
       return;
     }
-    setDraft({ tool, start: point, points: [point], current: point });
+    const startAnchor = tool === "line" ? lineAnchorAtPoint(point) : null;
+    const start = startAnchor?.point ?? point;
+    setDraft({ tool, start, points: [start], current: start, startTarget: startAnchor?.target });
   };
 
   const onPointerMove = (event: Konva.KonvaEventObject<PointerEvent>) => {
@@ -677,7 +707,11 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     const point = pointFromStage(event.target.getStage()!);
     if (!point) return;
     if (tool === "freeDraw") setDraft({ ...draft, points: [...draft.points, point], current: point });
-    else setDraft({ ...draft, current: point });
+    else if (tool === "line") setDraft({ ...draft, current: lineAnchorAtPoint(point)?.point ?? point });
+    else if (tool === "polygon" && draft.points.length >= 3) {
+      const snapIndex = polygonPointAt(point, draft.points);
+      setDraft({ ...draft, current: snapIndex >= 0 ? draft.points[snapIndex] : point });
+    } else setDraft({ ...draft, current: point });
   };
 
   const onPointerUp = () => {
@@ -695,16 +729,37 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     if (tool === "longBallArrow") {
       const start = { x: draft.start.x * width, y: draft.start.y * height };
       const end = { x: draft.current.x * width, y: draft.current.y * height };
-      const control = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 - height * .26 };
+      const deltaX = end.x - start.x;
+      const deltaY = end.y - start.y;
+      const distance = Math.max(1, Math.hypot(deltaX, deltaY));
+      let normalX = -deltaY / distance;
+      let normalY = deltaX / distance;
+      if (normalY > 0 || (Math.abs(normalY) < .001 && normalX > 0)) {
+        normalX *= -1;
+        normalY *= -1;
+      }
+      const arcHeight = Math.min(.13 * height * 1.6, distance * .68);
+      const control = {
+        x: (start.x + end.x) / 2 + normalX * arcHeight,
+        y: (start.y + end.y) / 2 + normalY * arcHeight,
+      };
       const points = Array.from({ length: 25 }, (_, index) => {
         const t = index / 24;
         const inverse = 1 - t;
         return { x: inverse * inverse * start.x + 2 * inverse * t * control.x + t * t * end.x, y: inverse * inverse * start.y + 2 * inverse * t * control.y + t * t * end.y };
       }).flatMap(({ x, y }) => [x, y]);
-      return <Arrow listening={false} {...style} fill={DEFAULT_STYLE.stroke} points={points} pointerLength={12} pointerWidth={12} />;
+      return <Arrow listening={false} stroke="#65d9ff" strokeWidth={6} fill="#65d9ff" dash={[7, 6]} opacity={.9} shadowColor="#000000" shadowBlur={9} shadowOpacity={.58} shadowOffsetX={4} shadowOffsetY={7} points={points} pointerLength={17} pointerWidth={18} lineCap="round" lineJoin="round" />;
     }
-    if (tool === "line") return <Line listening={false} {...style} points={flattenPoints([draft.start, draft.current], width, height)} />;
-    if (tool === "glimpse") return <Line listening={false} {...style} stroke="#ffffff" strokeWidth={18} opacity={.28} points={flattenPoints([draft.start, draft.current], width, height)} />;
+    if (tool === "line") return <Line listening={false} stroke="#65d9ff" strokeWidth={6} dash={[7, 6]} opacity={.9} shadowColor="#000000" shadowBlur={9} shadowOpacity={.58} shadowOffsetX={4} shadowOffsetY={7} lineCap="round" lineJoin="round" points={flattenPoints([draft.start, draft.current], width, height)} />;
+    if (tool === "glimpse") {
+      const originX = draft.start.x * width;
+      const originY = draft.start.y * height;
+      const deltaX = (draft.current.x - draft.start.x) * width;
+      const deltaY = (draft.current.y - draft.start.y) * height;
+      const length = Math.max(12, Math.hypot(deltaX, deltaY));
+      const spread = 38;
+      return <Arc listening={false} x={originX} y={originY} innerRadius={0} outerRadius={length} angle={spread} rotation={Math.atan2(deltaY, deltaX) * 180 / Math.PI - spread / 2} fillRadialGradientStartPoint={{ x: 0, y: 0 }} fillRadialGradientEndPoint={{ x: 0, y: 0 }} fillRadialGradientStartRadius={0} fillRadialGradientEndRadius={length} fillRadialGradientColorStops={[0, "rgba(255,255,255,.5)", .55, "rgba(255,255,255,.2)", 1, "rgba(255,255,255,0)"]} />;
+    }
     if (tool === "freeDraw") return <Line listening={false} {...style} points={flattenPoints(draft.points, width, height)} tension={0.35} />;
     if (tool === "triangle" || tool === "polygon") return <Line listening={false} {...style} points={flattenPoints([...draft.points, draft.current], width, height)} closed={tool === "triangle" && draft.points.length === 2} />;
     return null;
@@ -722,8 +777,6 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      onDblClick={finishPolygon}
-      onDblTap={finishPolygon}
     >
       <Layer>
         {detectionBoxes.map((box, index) => (
@@ -753,6 +806,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
             onChange={(patch) => updateDrawing(object.id, patch)}
             renderMode="base"
             targetOffset={targetOffsetAtTime(object, activeVideoContent?.playerTracks, currentTime)}
+            playerTracks={activeVideoContent?.playerTracks}
             onTransformPreview={object.data.kind === "ghost" ? (transform) => setGhostTransformPreview((current) => {
               if (transform) return { ...current, [object.id]: transform };
               const next = { ...current };
@@ -763,7 +817,15 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         ))}
         {preview}
         {draft && (tool === "polygon" || tool === "triangle") && draft.points.map((point, index) => (
-          <Ellipse listening={false} key={index} x={point.x * width} y={point.y * height} radiusX={4} radiusY={4} fill="#fff" />
+          <Ellipse
+            listening={false}
+            key={index}
+            x={point.x * width}
+            y={point.y * height}
+            radiusX={tool === "polygon" && draft.points.length >= 3 && polygonPointAt(draft.current, [point]) === 0 ? 6 : 4}
+            radiusY={tool === "polygon" && draft.points.length >= 3 && polygonPointAt(draft.current, [point]) === 0 ? 6 : 4}
+            fill={tool === "polygon" && draft.points.length >= 3 && polygonPointAt(draft.current, [point]) === 0 ? "#a3ff12" : "#fff"}
+          />
         ))}
         {tool === "text" && <Text text="Clique para adicionar texto" x={16} y={16} fill="#fff" opacity={0.5} fontSize={13} />}
       </Layer>

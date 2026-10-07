@@ -62,6 +62,7 @@ export function DrawingPreviewCanvas({ drawings, playerTracks, currentTime, widt
             onChange={() => undefined}
             renderMode="base"
             targetOffset={targetOffsetAtTime(object, playerTracks, currentTime)}
+            playerTracks={playerTracks}
           />
         ))}
       </Layer>

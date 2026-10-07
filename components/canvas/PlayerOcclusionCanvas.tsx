@@ -118,8 +118,16 @@ export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(functi
     if (!canvas || !video || !context || !video.videoWidth || !video.videoHeight) return;
     context.clearRect(0, 0, canvas.width, canvas.height);
 
-    const activeTargets = drawings.filter((drawing) => drawing.target?.kind === "player" && getObjectStateAtTime(drawing, currentTime).visible);
-    const trackIds = [...new Set(activeTargets.map((drawing) => drawing.target?.trackId).filter((id): id is string => Boolean(id)))];
+    const activeTargets = drawings.filter((drawing) => getObjectStateAtTime(drawing, currentTime).visible);
+    const trackIds = [...new Set(activeTargets.flatMap((drawing) => {
+      const ids: string[] = [];
+      if (drawing.target?.kind === "player") ids.push(drawing.target.trackId);
+      if (drawing.data.kind === "line") {
+        if (drawing.data.startTarget?.trackId) ids.push(drawing.data.startTarget.trackId);
+        if (drawing.data.endTarget?.trackId) ids.push(drawing.data.endTarget.trackId);
+      }
+      return ids;
+    }))];
     for (const trackId of trackIds) {
       const track = playerTracks?.find((item) => item.id === trackId);
       if (!track?.samples.length) continue;
