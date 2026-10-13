@@ -38,6 +38,31 @@ export function createSlide(type: SlideType, index: number): AnalysisSlide {
     case "title": return { ...base, name: "Novo capítulo", content: { kind: "title", text: "ORGANIZAÇÃO OFENSIVA", subtitle: "Análise do jogo", body: "", background: "#101914", alignment: "left", fontSize: 64 } };
     case "text": return { ...base, name: "Conclusão", content: { kind: "text", title: "PRINCÍPIO", text: "Forçar o adversário a jogar por fora.", background: "#111518", alignment: "center", fontSize: 44, position: { x: .5, y: .5 } } };
     case "lineup": return { ...base, name: "Escalação", content: { kind: "lineup", formation: "4-3-3", players: playersForFormation("4-3-3"), teamColor: "#a3ff12", goalkeeperColor: "#ffb347", title: "ONZE INICIAL", subtitle: "4-3-3" } };
+    case "written-report": return {
+      ...base,
+      name: "Relatório · Organização ofensiva",
+      duration: 8,
+      content: {
+        kind: "written-report",
+        team: "Equipa adversária",
+        matchday: "Jornada",
+        matchDate: "",
+        stadium: "",
+        pitchDimensions: "",
+        weather: "",
+        coach: "",
+        generalFields: [],
+        tacticalSystems: ["4-3-3"],
+        formation: "4-3-3",
+        players: playersForFormation("4-3-3"),
+        teamColor: "#a3ff12",
+        goalkeeperColor: "#ffb347",
+        moment: "Organização ofensiva",
+        submoment: "Construção",
+        description: "Descreva os comportamentos, princípios e referências observadas.",
+        diagramMarks: [],
+      },
+    };
     case "video": return { ...base, name: "Vídeo / Jogada", duration: 8, content: { kind: "video", fileName: "", startTime: 0, drawings: [], playerTracks: [] } };
     case "kickoff": return { ...base, name: "Pontapé de saída", content: { kind: "kickoff", players: kickoffPlayers(), homeColor: "#a3ff12", awayColor: "#ef5b67", title: "PONTAPÉ DE SAÍDA", boardObjects: [] } };
     case "tactical-board": return { ...base, name: "Quadro tático", content: { kind: "tactical-board", players: kickoffPlayers(), homeColor: "#4cc9f0", awayColor: "#ff5d73", title: "ORGANIZAÇÃO TÁTICA", boardObjects: [] } };

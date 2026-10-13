@@ -13,6 +13,7 @@ export function LineupSlide({ content, interactive = true, onChange }: Props) {
         <FootballPitch
           players={content.players}
           homeColor={content.teamColor}
+          goalkeeperColor={content.goalkeeperColor}
           interactive={interactive}
           onMove={(id, position) => onChange?.({ ...content, players: content.players.map((player) => player.id === id ? { ...player, position } : player) })}
         />

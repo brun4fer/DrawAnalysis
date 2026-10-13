@@ -3,6 +3,7 @@
 import { Camera, Cloud, Download, Eye, FolderOpen, LogOut, Redo2, RotateCcw, Save, Undo2 } from "lucide-react";
 import { useEditorStore } from "@/store/useEditorStore";
 import { InstallAppButton } from "@/components/pwa/InstallAppButton";
+import { APP_PRODUCT } from "@/lib/product";
 
 interface Props {
   filename: string;
@@ -24,7 +25,7 @@ export function TopBar({ filename, isVideoSlide, onOpen, onPreview, onCapture, o
   const { undo, redo, reset, history, future, slides } = useEditorStore();
   return (
     <header className="topbar">
-      <div className="brand"><span className="brand-mark">T</span><span>Tacti<strong>Draw</strong></span></div>
+      <div className="brand"><span className="brand-mark">{APP_PRODUCT.mark}</span><span>{APP_PRODUCT.brandLead}<strong>{APP_PRODUCT.brandStrong}</strong></span></div>
       <button className="project-chip" onClick={onProjects} title="Abrir projetos"><span className="status-dot ready" />{projectName} · {slides.length} slides</button>
       <div className="topbar-spacer" />
       <button className="topbar-text-action" onClick={onProjects}><FolderOpen size={15} /> Projetos</button>

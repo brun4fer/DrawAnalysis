@@ -1,6 +1,6 @@
 import type { DrawingObject, PlayerTrack, Point } from "./drawing";
 
-export type SlideType = "title" | "text" | "lineup" | "video" | "kickoff" | "tactical-board" | "image";
+export type SlideType = "title" | "text" | "lineup" | "written-report" | "video" | "kickoff" | "tactical-board" | "image";
 export type SlideAlignment = "left" | "center" | "right";
 
 export interface SlidePlayer {
@@ -43,6 +43,40 @@ export interface LineupSlideContent {
   subtitle: string;
 }
 
+export interface ReportCustomField {
+  id: string;
+  label: string;
+  value: string;
+}
+
+export interface ReportDiagramMark {
+  id: string;
+  type: "arrow" | "zone" | "free";
+  points: Point[];
+  color: string;
+}
+
+export interface WrittenReportSlideContent {
+  kind: "written-report";
+  team: string;
+  matchday: string;
+  matchDate: string;
+  stadium: string;
+  pitchDimensions: string;
+  weather: string;
+  coach: string;
+  generalFields: ReportCustomField[];
+  tacticalSystems: string[];
+  formation: string;
+  players: SlidePlayer[];
+  teamColor: string;
+  goalkeeperColor: string;
+  moment: string;
+  submoment: string;
+  description: string;
+  diagramMarks: ReportDiagramMark[];
+}
+
 export interface VideoSlideContent {
   kind: "video";
   fileName: string;
@@ -78,7 +112,7 @@ export interface ImageSlideContent {
   drawings: DrawingObject[];
 }
 
-export type SlideContent = TitleSlideContent | TextSlideContent | LineupSlideContent | VideoSlideContent | BoardSlideContent | ImageSlideContent;
+export type SlideContent = TitleSlideContent | TextSlideContent | LineupSlideContent | WrittenReportSlideContent | VideoSlideContent | BoardSlideContent | ImageSlideContent;
 
 export interface AnalysisSlide {
   id: string;

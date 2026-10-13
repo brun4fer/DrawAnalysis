@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2, FileVideo2, LoaderCircle, X, XCircle } from "lucide-react";
 import { DrawingPreviewCanvas } from "@/components/canvas/DrawingPreviewCanvas";
+import { APP_PRODUCT } from "@/lib/product";
 import { SlideRenderer } from "@/components/slides/SlideRenderer";
 import type { AnalysisSlide, VideoSlideContent } from "@/types/slide";
 import { orderedFreezeFrames, sourceTimeToTimeline, timelineTimeToSource } from "@/utils/videoTimeline";
@@ -246,8 +247,8 @@ export function PowerPointExport({ slides, projectName, onClose }: Props) {
         ensureActive();
         const pptx = new PptxGenJS();
         pptx.layout = "LAYOUT_WIDE";
-        pptx.author = "TactiDraw";
-        pptx.company = "TactiDraw";
+        pptx.author = APP_PRODUCT.name;
+        pptx.company = APP_PRODUCT.name;
         pptx.subject = "Apresentação de análise de futebol";
         pptx.title = projectName;
         pptx.theme = {
@@ -309,7 +310,7 @@ export function PowerPointExport({ slides, projectName, onClose }: Props) {
               line: { color: "FFFFFF", transparency: 100 },
             });
           }
-          pptSlide.addNotes(`Slide TactiDraw · duração configurada: ${analysisSlide.duration}s`);
+          pptSlide.addNotes(`Slide ${APP_PRODUCT.name} · duração configurada: ${analysisSlide.duration}s`);
         }
 
         ensureActive();

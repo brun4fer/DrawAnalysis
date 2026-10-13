@@ -6,12 +6,13 @@ import type { SlidePlayer } from "@/types/slide";
 interface Props {
   players: SlidePlayer[];
   homeColor: string;
+  goalkeeperColor?: string;
   awayColor?: string;
   interactive?: boolean;
   onMove?: (playerId: string, position: { x: number; y: number }) => void;
 }
 
-export function FootballPitch({ players, homeColor, awayColor = "#ef5b67", interactive = true, onMove }: Props) {
+export function FootballPitch({ players, homeColor, goalkeeperColor, awayColor = "#ef5b67", interactive = true, onMove }: Props) {
   const fieldRef = useRef<HTMLDivElement>(null);
 
   const beginDrag = (event: React.PointerEvent<HTMLButtonElement>, playerId: string) => {
@@ -48,7 +49,7 @@ export function FootballPitch({ players, homeColor, awayColor = "#ef5b67", inter
         <button
           key={player.id}
           className={`pitch-player ${interactive ? "interactive" : ""}`}
-          style={{ left: `${player.position.x * 100}%`, top: `${player.position.y * 100}%`, background: player.team === "home" ? homeColor : awayColor }}
+          style={{ left: `${player.position.x * 100}%`, top: `${player.position.y * 100}%`, background: player.team === "home" ? (goalkeeperColor && (player.number === 1 || player.name.trim().toUpperCase() === "GR") ? goalkeeperColor : homeColor) : awayColor }}
           onPointerDown={(event) => beginDrag(event, player.id)}
           title={`${player.number} · ${player.name}`}
         >

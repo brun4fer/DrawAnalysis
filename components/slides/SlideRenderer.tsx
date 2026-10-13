@@ -8,6 +8,7 @@ import { KickoffSlide } from "./kickoff/KickoffSlide";
 import { TacticalBoardSlide } from "./tactical/TacticalBoardSlide";
 import { ImageSlide } from "./image/ImageSlide";
 import { VideoSlidePreview } from "./video/VideoSlidePreview";
+import { WrittenReportSlide } from "./report/WrittenReportSlide";
 
 interface Props {
   slide: AnalysisSlide;
@@ -25,6 +26,7 @@ export function SlideRenderer({ slide, videoEditor, interactive = true, onConten
       case "title": return <TitleSlide content={content} />;
       case "text": return <TextSlide content={content} />;
       case "lineup": return <LineupSlide content={content} interactive={interactive} onChange={(value) => onContentChange?.(value)} />;
+      case "written-report": return <WrittenReportSlide content={content} interactive={interactive} onChange={(value) => onContentChange?.(value)} />;
       case "kickoff": return <KickoffSlide content={content} interactive={interactive} onChange={(value) => onContentChange?.(value)} />;
       case "tactical-board": return <TacticalBoardSlide content={content} interactive={interactive} onChange={(value) => onContentChange?.(value)} />;
       case "image": return <ImageSlide content={content} />;

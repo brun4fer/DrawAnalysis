@@ -37,17 +37,19 @@ model Workspace {
 }
 
 model Project {
-  id          String   @id @default(cuid())
-  workspaceId String
-  createdById String
-  name        String
-  data        Json
-  version     Int      @default(1)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id             String   @id @default(cuid())
+  workspaceId    String
+  createdById    String
+  productVariant String   @default("tactidraw") @map("product_variant")
+  name           String
+  data           Json
+  version        Int      @default(1)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   createdBy User      @relation("ProjectCreator", fields: [createdById], references: [id], onDelete: Restrict)
 
   @@index([workspaceId, updatedAt])
+  @@index([workspaceId, productVariant, updatedAt])
 }

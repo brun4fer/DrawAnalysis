@@ -1,4 +1,5 @@
 import type { TitleSlideContent } from "@/types/slide";
+import { APP_PRODUCT } from "@/lib/product";
 
 export function TitleSlide({ content }: { content: TitleSlideContent }) {
   return (
@@ -9,7 +10,7 @@ export function TitleSlide({ content }: { content: TitleSlideContent }) {
         <h1 style={{ fontSize: `${content.fontSize}px` }}>{content.text}</h1>
         {content.body && <p>{content.body}</p>}
       </div>
-      <div className="slide-corner-mark">TACTI<span>DRAW</span></div>
+      <div className="slide-corner-mark">{APP_PRODUCT.brandLead.toUpperCase()}<span>{APP_PRODUCT.brandStrong.toUpperCase()}</span></div>
     </div>
   );
 }

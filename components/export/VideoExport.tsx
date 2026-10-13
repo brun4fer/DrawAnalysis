@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2, FileVideo2, LoaderCircle, X, XCircle } from "lucide-react";
 import { DrawingPreviewCanvas } from "@/components/canvas/DrawingPreviewCanvas";
+import { APP_PRODUCT } from "@/lib/product";
 import { SlideRenderer } from "@/components/slides/SlideRenderer";
 import type { AnalysisSlide, VideoSlideContent } from "@/types/slide";
 import { orderedFreezeFrames, sourceTimeToTimeline, timelineTimeToSource } from "@/utils/videoTimeline";
@@ -414,7 +415,7 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
         if (!disposed) onClose();
         return;
       }
-      console.error("Falha na exportação TactiDraw", caught);
+      console.error(`Falha na exportação ${APP_PRODUCT.name}`, caught);
       outputStreamRef.current?.getTracks().forEach((track) => track.stop());
       outputStreamRef.current = null;
       if (!disposed) {

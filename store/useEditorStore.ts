@@ -8,6 +8,7 @@ import { createSlide } from "@/utils/slideFactory";
 import { sourceTimeToTimeline } from "@/utils/videoTimeline";
 import { normalizePresentationSlides } from "@/utils/presentationData";
 import { favoriteFromDrawing, isToolFavorite } from "@/utils/toolFavorites";
+import { APP_PRODUCT } from "@/lib/product";
 
 interface Snapshot { drawings: DrawingObject[]; slides: AnalysisSlide[] }
 
@@ -60,8 +61,10 @@ interface EditorState {
 
 const copy = (drawings: DrawingObject[]) => structuredClone(drawings);
 const copySlides = (slides: AnalysisSlide[]) => structuredClone(slides);
-const initialVideoSlide = { ...createSlide("video", 0), id: "initial-video-slide", name: "Vídeo / Jogada" };
-const DEFAULT_FAVORITES_KEY = "tactidraw:tool-favorites";
+const initialSlide = APP_PRODUCT.variant === "written-report"
+  ? { ...createSlide("written-report", 0), id: "initial-written-report-slide" }
+  : { ...createSlide("video", 0), id: "initial-video-slide", name: "Vídeo / Jogada" };
+const DEFAULT_FAVORITES_KEY = `${APP_PRODUCT.variant}:tool-favorites`;
 
 function persistFavorites(storageKey: string, favorites: ToolFavorite[]) {
   if (typeof window === "undefined") return;
@@ -88,8 +91,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   isPlaying: false,
   history: [],
   future: [],
-  slides: [initialVideoSlide],
-  selectedSlideId: initialVideoSlide.id,
+  slides: [initialSlide],
+  selectedSlideId: initialSlide.id,
   favorites: [],
   activeFavoriteId: null,
   favoriteStorageKey: DEFAULT_FAVORITES_KEY,

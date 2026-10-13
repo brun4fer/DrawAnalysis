@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Relatório Escrito">
+  <rect width="512" height="512" rx="112" fill="#0d1512"/>
+  <path d="M142 96h164l64 64v256H142z" fill="#16241b" stroke="#a3ff12" stroke-width="20" stroke-linejoin="round"/>
+  <path d="M306 96v72h64" fill="none" stroke="#a3ff12" stroke-width="20" stroke-linejoin="round"/>
+  <path d="M192 226h128M192 278h128M192 330h82" fill="none" stroke="#eef5ef" stroke-width="18" stroke-linecap="round"/>
+</svg>

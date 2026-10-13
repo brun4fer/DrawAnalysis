@@ -1,6 +1,6 @@
 "use client";
 
-import { AlignLeft, ClipboardType, Film, ImageIcon, LayoutTemplate, Presentation, ShieldHalf, X } from "lucide-react";
+import { AlignLeft, ClipboardList, ClipboardType, Film, ImageIcon, LayoutTemplate, Presentation, ShieldHalf, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { SlideType } from "@/types/slide";
 
@@ -10,6 +10,7 @@ const choices: Array<{ type: SlideType; label: string; description: string; icon
   { type: "title", label: "Título / Secção", description: "Separador para um novo capítulo da análise", icon: LayoutTemplate },
   { type: "text", label: "Texto / Frase", description: "Conclusão, princípio ou mensagem-chave", icon: ClipboardType },
   { type: "lineup", label: "Escalação", description: "Onze inicial e formação editável", icon: ShieldHalf },
+  { type: "written-report", label: "Relatório escrito", description: "Dados do jogo, esquema, momento, desenho e descrição", icon: ClipboardList },
   { type: "video", label: "Vídeo / Jogada", description: "Vídeo local, desenhos, timeline e tracking", icon: Film },
   { type: "kickoff", label: "Pontapé de saída", description: "Sequência inicial num campo tático", icon: Presentation },
   { type: "tactical-board", label: "Quadro tático", description: "Campo livre para construir uma situação", icon: AlignLeft },

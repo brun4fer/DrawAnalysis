@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Download, MonitorDown, X } from "lucide-react";
+import { APP_PRODUCT } from "@/lib/product";
 
 interface InstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -54,12 +55,12 @@ export function InstallAppButton() {
       {helpOpen && (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Instalar aplicação">
           <section className="install-help-modal">
-            <header><div><span>APLICAÇÃO PARA O COMPUTADOR</span><h2><MonitorDown size={20} /> Instalar TactiDraw</h2></div><button onClick={() => setHelpOpen(false)} title="Fechar"><X size={19} /></button></header>
+            <header><div><span>APLICAÇÃO PARA O COMPUTADOR</span><h2><MonitorDown size={20} /> Instalar {APP_PRODUCT.name}</h2></div><button onClick={() => setHelpOpen(false)} title="Fechar"><X size={19} /></button></header>
             <div>
               <p>Depois de a aplicação estar publicada na Vercel, abre o endereço no Chrome ou Edge.</p>
               <ol>
                 <li>Procura o ícone de instalação no lado direito da barra de endereço.</li>
-                <li>Em alternativa, abre o menu do browser e escolhe <strong>Instalar TactiDraw</strong> ou <strong>Aplicações → Instalar este site como aplicação</strong>.</li>
+                <li>Em alternativa, abre o menu do browser e escolhe <strong>Instalar {APP_PRODUCT.name}</strong> ou <strong>Aplicações → Instalar este site como aplicação</strong>.</li>
                 <li>Confirma <strong>Instalar</strong> e ativa a opção para criar o atalho no ambiente de trabalho.</li>
               </ol>
               <small>Em localhost também pode ser instalada, mas só funcionará enquanto o servidor local estiver ligado. Para uso normal, instala a versão da Vercel.</small>

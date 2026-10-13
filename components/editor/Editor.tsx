@@ -21,6 +21,7 @@ import { TOOLS } from "@/components/tools/toolDefinitions";
 import { createSlide } from "@/utils/slideFactory";
 import { prepareSlidesForStorage } from "@/utils/presentationData";
 import type { SlideType } from "@/types/slide";
+import { APP_PRODUCT } from "@/lib/product";
 
 type Account = { user: { id: string; name: string; username: string }; workspace: { id: string; name: string } };
 
@@ -38,7 +39,7 @@ export function Editor() {
   const [projectsOpen, setProjectsOpen] = useState(false);
   const [videoExportOpen, setVideoExportOpen] = useState(false);
   const [projectId, setProjectId] = useState<string | null>(null);
-  const [projectName, setProjectName] = useState("Apresentação sem título");
+  const [projectName, setProjectName] = useState(APP_PRODUCT.defaultProjectName);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [account, setAccount] = useState<Account | null>(null);
   const [notice, setNotice] = useState("");
@@ -57,7 +58,7 @@ export function Editor() {
       if (response.ok) {
         const result = await response.json() as Account;
         setAccount(result);
-        loadFavorites(`tactidraw:tool-favorites:${result.workspace.id}:${result.user.id}`);
+        loadFavorites(`${APP_PRODUCT.variant}:tool-favorites:${result.workspace.id}:${result.user.id}`);
       }
     });
   }, [loadFavorites, router]);

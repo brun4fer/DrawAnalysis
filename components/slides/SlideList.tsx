@@ -8,7 +8,7 @@ import type { AnalysisSlide } from "@/types/slide";
 interface Props { onAdd: () => void }
 
 const typeLabels: Record<AnalysisSlide["type"], string> = {
-  title: "TITLE", text: "TEXT", lineup: "LINEUP", video: "VIDEO", kickoff: "KICKOFF", "tactical-board": "TACTICAL", image: "IMAGE",
+  title: "TITLE", text: "TEXT", lineup: "LINEUP", "written-report": "REPORT", video: "VIDEO", kickoff: "KICKOFF", "tactical-board": "TACTICAL", image: "IMAGE",
 };
 
 export function SlideList({ onAdd }: Props) {
@@ -47,7 +47,7 @@ function SlideMiniature({ slide }: { slide: AnalysisSlide }) {
   const content = slide.content;
   if (content.kind === "image" && content.imageDataUrl) return <span className="slide-mini image" style={{ backgroundImage: `url(${content.imageDataUrl})` }} />;
   if (content.kind === "video") return <span className="slide-mini video" style={content.thumbnail ? { backgroundImage: `url(${content.thumbnail})` } : undefined}><Film size={14} /></span>;
-  if (content.kind === "lineup" || content.kind === "kickoff" || content.kind === "tactical-board") return <span className="slide-mini field"><i /><b /><em /></span>;
+  if (content.kind === "lineup" || content.kind === "kickoff" || content.kind === "tactical-board" || content.kind === "written-report") return <span className={`slide-mini field${content.kind === "written-report" ? " report" : ""}`}><i /><b /><em /></span>;
   if (content.kind === "title") return <span className="slide-mini title" style={{ background: content.background }}><b>{content.text.slice(0, 2)}</b></span>;
   if (content.kind === "text") return <span className="slide-mini text" style={{ background: content.background }}><i /><i /><i /></span>;
   return <span className="slide-mini"><ImageIcon size={14} /></span>;

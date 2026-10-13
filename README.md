@@ -1,8 +1,12 @@
-# TactiDraw / DrawAnalysis
+# TactiDraw / GamePlan / Relatório Escrito
 
 Construtor local de apresentações de análise de futebol, construído com Next.js,
 React, TypeScript, Zustand e react-konva. Uma apresentação pode combinar slides
 estáticos, campos táticos, imagens e jogadas em vídeo.
+
+O mesmo código pode ser publicado como **TactiDraw**, **GamePlan** ou
+**Relatório Escrito**. As três variantes usam as mesmas contas e a mesma
+biblioteca cloud, mas mantêm listas de apresentações independentes.
 
 ## Arranque
 
@@ -19,6 +23,8 @@ um URL local do browser e nunca é enviado para um servidor.
 - título / secção;
 - texto / frase;
 - escalação com 4-3-3, 4-2-3-1, 4-4-2, 3-4-3 e 3-5-2;
+- relatório escrito com identificação do jogo, dados gerais, vários esquemas
+  táticos, momento/submomento, campo desenhável e descrição;
 - vídeo / jogada com o editor temporal;
 - pontapé de saída;
 - quadro tático;
@@ -96,6 +102,34 @@ as consultas e alterações de projetos são filtradas pelo `workspaceId` da ses
 Use **Projetos** para guardar, abrir ou eliminar apresentações. `Ctrl+S` guarda o
 projeto aberto.
 
+### Separação entre TactiDraw, GamePlan e Relatório Escrito
+
+Cada projeto tem um `productVariant`. Os registos já existentes recebem
+automaticamente `tactidraw`, por isso continuam disponíveis no TactiDraw e não
+aparecem no GamePlan nem no Relatório Escrito. As rotas de listar, abrir,
+guardar e eliminar validam este campo no servidor.
+
+Para preparar uma base de dados existente, crie primeiro um branch/backup no
+Neon e execute apenas uma vez:
+
+```bash
+npm run db:migrate:product-variant
+```
+
+O script apenas acrescenta a coluna e o índice necessários, confirma a contagem
+de projetos antes e depois e pode ser repetido sem duplicar dados.
+
+Na Vercel, publique o mesmo repositório em três projetos:
+
+- TactiDraw: `APP_VARIANT=tactidraw` e `NEXT_PUBLIC_APP_VARIANT=tactidraw`;
+- GamePlan: `APP_VARIANT=gameplan` e `NEXT_PUBLIC_APP_VARIANT=gameplan`.
+- Relatório Escrito: `APP_VARIANT=written-report` e
+  `NEXT_PUBLIC_APP_VARIANT=written-report`.
+
+Os três deployments devem usar os mesmos `DATABASE_URL`, `DIRECT_URL`,
+`AUTH_SECRET`, `MEDIA_DATABASE_URL` e valores `MEDIA_R2_*`. Assim, as contas e
+os vídeos são comuns, enquanto as apresentações ficam separadas.
+
 O conteúdo binário local não é enviado para a base de dados: URLs temporários,
 frames e imagens em `data:` são removidos do documento antes de guardar. Os
 desenhos, cortes, perguntas, ordem dos slides e referências a vídeos cloud ficam
@@ -116,10 +150,14 @@ Copie `.env.example` para um ficheiro local ignorado pelo Git e configure:
 - `DATABASE_URL`: ligação pooled da base Neon exclusiva do DrawAnalysis;
 - `DIRECT_URL`: ligação direta da mesma base para alterações de schema;
 - `AUTH_SECRET`: segredo aleatório longo para assinar sessões;
+- `APP_VARIANT` e `NEXT_PUBLIC_APP_VARIANT`: `tactidraw`, `gameplan` ou
+  `written-report`;
 - `INITIAL_ADMIN_*`: conta inicial opcional;
 - `MEDIA_DATABASE_URL` e `MEDIA_DIRECT_URL`: catálogo partilhado;
 - `MEDIA_R2_*`: credenciais R2 necessárias apenas para gerar URLs de leitura;
 - `MEDIA_LIBRARY_APP_ID`: mantenha `draw-analysis`.
 
-Depois execute `npm run db:push`, `npm run db:seed` e `npm run dev`. Para validar
-uma entrega use `npm run lint`, `npm run typecheck` e `npm run build`.
+Numa base nova, execute `npm run db:push`, `npm run db:seed` e `npm run dev`.
+Numa base já usada por clientes, aplique a migração específica acima em vez de
+sincronizar o schema às cegas. Para validar uma entrega use `npm run lint`,
+`npm run typecheck` e `npm run build`.

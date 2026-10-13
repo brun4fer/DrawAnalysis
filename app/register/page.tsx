@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
+import { APP_PRODUCT } from "@/lib/product";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -31,7 +32,7 @@ export default function RegisterPage() {
   return (
     <main className="auth-shell">
       <form className="auth-card auth-card-wide" onSubmit={submit}>
-        <div className="auth-brand"><span className="brand-mark">T</span><span>Tacti<strong>Draw</strong></span></div>
+        <div className="auth-brand"><span className="brand-mark">{APP_PRODUCT.mark}</span><span>{APP_PRODUCT.brandLead}<strong>{APP_PRODUCT.brandStrong}</strong></span></div>
         <div><span className="auth-kicker">NOVO WORKSPACE</span><h1>Criar conta</h1><p>Os dados e ligações cloud ficam separados por workspace.</p></div>
         <div className="auth-grid">
           <label>Nome<input autoFocus autoComplete="name" {...field("name")} required /></label>

@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "db:push": "prisma db push",
+    "db:migrate:product-variant": "tsx scripts/migrate-product-variant.ts",
     "db:seed": "prisma db seed",
     "postinstall": "prisma generate && prisma generate --schema prisma-media/schema.prisma"
   },

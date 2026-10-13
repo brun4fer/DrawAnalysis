@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="GamePlan">
+  <rect width="512" height="512" rx="112" fill="#0d1112"/>
+  <rect x="46" y="46" width="420" height="420" rx="86" fill="#a3ff12"/>
+  <path d="M367 190c-25-39-62-59-111-59-77 0-133 54-133 125s56 125 133 125c45 0 84-16 113-47v-94H251v62h49v25c-13 8-28 12-44 12-38 0-66-31-66-83s28-83 66-83c25 0 44 11 58 33z" fill="#11160a"/>
+  <path d="M80 256h35M397 256h35M256 80v29M256 403v29" stroke="#11160a" stroke-width="18" stroke-linecap="round" opacity=".35"/>
+</svg>

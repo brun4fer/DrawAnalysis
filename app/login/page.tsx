@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useState } from "react";
+import { APP_PRODUCT } from "@/lib/product";
 
 function LoginForm() {
   const router = useRouter();
@@ -31,7 +32,7 @@ function LoginForm() {
 
   return (
     <form className="auth-card" onSubmit={submit}>
-      <div className="auth-brand"><span className="brand-mark">T</span><span>Tacti<strong>Draw</strong></span></div>
+      <div className="auth-brand"><span className="brand-mark">{APP_PRODUCT.mark}</span><span>{APP_PRODUCT.brandLead}<strong>{APP_PRODUCT.brandStrong}</strong></span></div>
       <div><span className="auth-kicker">ÁREA PRIVADA</span><h1>Iniciar sessão</h1><p>Entre no seu workspace de análise.</p></div>
       <label>Utilizador<input autoFocus autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} required /></label>
       <label>Password<input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
