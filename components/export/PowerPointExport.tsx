@@ -7,6 +7,7 @@ import { APP_PRODUCT } from "@/lib/product";
 import { SlideRenderer } from "@/components/slides/SlideRenderer";
 import type { AnalysisSlide, VideoSlideContent } from "@/types/slide";
 import { orderedFreezeFrames, sourceTimeToTimeline, timelineTimeToSource } from "@/utils/videoTimeline";
+import { slideBackgroundVideoUrl } from "@/utils/slideMedia";
 
 interface Props {
   slides: AnalysisSlide[];
@@ -82,6 +83,15 @@ function seekVideo(video: HTMLVideoElement, time: number) {
   });
 }
 
+function drawVideoCover(context: CanvasRenderingContext2D, video: HTMLVideoElement, width: number, height: number) {
+  const sourceWidth = video.videoWidth || width;
+  const sourceHeight = video.videoHeight || height;
+  const scale = Math.max(width / sourceWidth, height / sourceHeight);
+  const drawWidth = sourceWidth * scale;
+  const drawHeight = sourceHeight * scale;
+  context.drawImage(video, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
+}
+
 export function PowerPointExport({ slides, projectName, onClose }: Props) {
   const [renderSlide, setRenderSlide] = useState<AnalysisSlide | null>(null);
   const [timelineTime, setTimelineTime] = useState(0);
@@ -91,6 +101,7 @@ export function PowerPointExport({ slides, projectName, onClose }: Props) {
   const [error, setError] = useState("");
   const captureRootRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const backgroundVideoRef = useRef<HTMLVideoElement>(null);
   const overlayCaptureRef = useRef<(() => HTMLCanvasElement | null) | null>(null);
   const cancelledRef = useRef(false);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -107,6 +118,7 @@ export function PowerPointExport({ slides, projectName, onClose }: Props) {
     const recorder = recorderRef.current;
     if (recorder && recorder.state !== "inactive") recorder.stop();
     videoRef.current?.pause();
+    backgroundVideoRef.current?.pause();
   };
 
   useEffect(() => () => {
@@ -241,9 +253,98 @@ export function PowerPointExport({ slides, projectName, onClose }: Props) {
       return { url, extension: format.extension, cover };
     };
 
+    const renderBackgroundVideo = async (
+      slide: AnalysisSlide,
+      slideIndex: number,
+      toCanvas: typeof import("html-to-image")["toCanvas"],
+    ): Promise<RenderedVideo> => {
+      const source = slideBackgroundVideoUrl(slide);
+      const video = backgroundVideoRef.current;
+      const root = captureRootRef.current?.querySelector<HTMLElement>("[data-slide-root]");
+      if (!source || !video || !root) throw new Error(`O fundo em vídeo do slide ${slideIndex + 1} não está disponível.`);
+
+      video.pause();
+      if (video.getAttribute("src") !== source) {
+        video.src = source;
+        video.load();
+      }
+      await waitForVideo(video);
+      ensureActive();
+      const overlay = await toCanvas(root, {
+        width: EXPORT_WIDTH,
+        height: EXPORT_HEIGHT,
+        canvasWidth: EXPORT_WIDTH,
+        canvasHeight: EXPORT_HEIGHT,
+        pixelRatio: 1,
+        cacheBust: true,
+        backgroundColor: "transparent",
+        filter: (node) => !(node instanceof HTMLVideoElement)
+          && !(node instanceof HTMLElement && node.hasAttribute("data-slide-background-media")),
+      });
+      const canvas = document.createElement("canvas");
+      canvas.width = EXPORT_WIDTH;
+      canvas.height = EXPORT_HEIGHT;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Não foi possível compor o fundo em vídeo.");
+      await seekVideo(video, 0);
+      context.fillStyle = "#080a0b";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      drawVideoCover(context, video, canvas.width, canvas.height);
+      context.drawImage(overlay, 0, 0, canvas.width, canvas.height);
+      const cover = canvas.toDataURL("image/jpeg", .9);
+
+      const format = selectRecordingFormat();
+      const stream = canvas.captureStream(30);
+      const chunks: Blob[] = [];
+      const recorder = new MediaRecorder(stream, { mimeType: format.mime, videoBitsPerSecond: 5_500_000 });
+      recorderRef.current = recorder;
+      const stopped = new Promise<Blob>((resolve, reject) => {
+        recorder.addEventListener("dataavailable", (event) => { if (event.data.size) chunks.push(event.data); });
+        recorder.addEventListener("error", () => reject(new Error("O browser interrompeu a gravação do fundo em vídeo.")), { once: true });
+        recorder.addEventListener("stop", () => resolve(new Blob(chunks, { type: format.mime })), { once: true });
+      });
+      video.loop = true;
+      video.muted = true;
+      recorder.start(1000);
+      await video.play().catch(() => undefined);
+      const duration = Math.max(.25, slide.duration);
+      const startedAt = performance.now();
+      let recordingError: unknown;
+      try {
+        while (true) {
+          ensureActive();
+          const elapsed = Math.min(duration, (performance.now() - startedAt) / 1000);
+          const backgroundTime = elapsed % Math.max(.05, video.duration);
+          if (Math.abs(video.currentTime - backgroundTime) > .3) video.currentTime = backgroundTime;
+          context.fillStyle = "#080a0b";
+          context.fillRect(0, 0, canvas.width, canvas.height);
+          drawVideoCover(context, video, canvas.width, canvas.height);
+          context.drawImage(overlay, 0, 0, canvas.width, canvas.height);
+          const slideProgress = elapsed / duration;
+          setProgress(Math.round(((slideIndex + slideProgress) / Math.max(1, exportSlides.length)) * 100));
+          setMessage(`A renderizar fundo ${slideIndex + 1}/${exportSlides.length} · ${Math.round(slideProgress * 100)}%`);
+          if (elapsed >= duration) break;
+          await nextPaint();
+        }
+      } catch (caught) {
+        recordingError = caught;
+      } finally {
+        video.pause();
+        video.loop = false;
+        if (recorder.state !== "inactive") recorder.stop();
+      }
+      const blob = await stopped;
+      recorderRef.current = null;
+      stream.getTracks().forEach((track) => track.stop());
+      if (recordingError) throw recordingError;
+      const url = URL.createObjectURL(blob);
+      mediaUrlsRef.current.push(url);
+      return { url, extension: format.extension, cover };
+    };
+
     const run = async () => {
       try {
-        const [{ default: PptxGenJS }, { toPng }] = await Promise.all([import("pptxgenjs"), import("html-to-image")]);
+        const [{ default: PptxGenJS }, { toPng, toCanvas }] = await Promise.all([import("pptxgenjs"), import("html-to-image")]);
         ensureActive();
         const pptx = new PptxGenJS();
         pptx.layout = "LAYOUT_WIDE";
@@ -266,6 +367,19 @@ export function PowerPointExport({ slides, projectName, onClose }: Props) {
 
           if (analysisSlide.content.kind === "video") {
             const media = await renderVideo(analysisSlide.content, index);
+            pptSlide.addMedia({
+              type: "video",
+              path: media.url,
+              extn: media.extension,
+              cover: media.cover,
+              x: 0,
+              y: 0,
+              w: SLIDE_WIDTH,
+              h: SLIDE_HEIGHT,
+              objectName: analysisSlide.name,
+            });
+          } else if (slideBackgroundVideoUrl(analysisSlide)) {
+            const media = await renderBackgroundVideo(analysisSlide, index, toCanvas);
             pptSlide.addMedia({
               type: "video",
               path: media.url,
@@ -371,6 +485,7 @@ export function PowerPointExport({ slides, projectName, onClose }: Props) {
       </div>
 
       <div ref={captureRootRef} className="powerpoint-export-capture" aria-hidden="true">
+        <video ref={backgroundVideoRef} muted playsInline preload="auto" style={{ display: "none" }} />
         {renderSlide && activeVideo ? (
           <div className="powerpoint-export-video-frame">
             <video ref={videoRef} src={activeVideo.sourceUrl} crossOrigin="anonymous" playsInline preload="auto" />

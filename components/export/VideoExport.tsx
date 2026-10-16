@@ -7,6 +7,7 @@ import { APP_PRODUCT } from "@/lib/product";
 import { SlideRenderer } from "@/components/slides/SlideRenderer";
 import type { AnalysisSlide, VideoSlideContent } from "@/types/slide";
 import { orderedFreezeFrames, sourceTimeToTimeline, timelineTimeToSource } from "@/utils/videoTimeline";
+import { slideBackgroundVideoUrl } from "@/utils/slideMedia";
 
 interface Props {
   slides: AnalysisSlide[];
@@ -110,6 +111,15 @@ function seekVideo(video: HTMLVideoElement, time: number) {
     video.addEventListener("seeked", () => { window.clearTimeout(timeout); resolve(); }, { once: true });
     video.currentTime = target;
   });
+}
+
+function drawVideoCover(context: CanvasRenderingContext2D, video: HTMLVideoElement, width: number, height: number) {
+  const sourceWidth = video.videoWidth || width;
+  const sourceHeight = video.videoHeight || height;
+  const scale = Math.max(width / sourceWidth, height / sourceHeight);
+  const drawWidth = sourceWidth * scale;
+  const drawHeight = sourceHeight * scale;
+  context.drawImage(video, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
 }
 
 function slideExportDuration(slide: AnalysisSlide) {
@@ -236,6 +246,7 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
       // slow DOM/image capture from interrupting the transition between two
       // already-recorded slides.
       const preparedStaticSlides = new Map<string, HTMLCanvasElement>();
+      const preparedBackgroundOverlays = new Map<string, HTMLCanvasElement>();
       const { toCanvas } = await import("html-to-image");
       for (let index = 0; index < exportSlides.length; index += 1) {
         const slide = exportSlides[index];
@@ -243,7 +254,10 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
         ensureActive();
         setMessage(`A preparar slide ${index + 1}/${exportSlides.length}…`);
         await showSlide(slide);
-        const root = captureRootRef.current?.querySelector<HTMLElement>(".slide-stage-shell");
+        const backgroundVideo = slideBackgroundVideoUrl(slide);
+        const root = backgroundVideo
+          ? captureRootRef.current?.querySelector<HTMLElement>("[data-slide-root]")
+          : captureRootRef.current?.querySelector<HTMLElement>(".slide-stage-shell");
         if (!root) throw new Error(`Não foi possível preparar o slide ${index + 1}.`);
         try {
           const prepared = await toCanvas(root, {
@@ -253,13 +267,15 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
             canvasHeight: EXPORT_HEIGHT,
             pixelRatio: 1,
             cacheBust: true,
-            backgroundColor: "#080a0b",
+            backgroundColor: backgroundVideo ? "transparent" : "#080a0b",
             // The persistent video element is hidden on static slides, but
             // html-to-image would still try to clone its empty source and
             // reject with a generic image `error` event.
-            filter: (node) => !(node instanceof HTMLVideoElement),
+            filter: (node) => !(node instanceof HTMLVideoElement)
+              && !(node instanceof HTMLElement && node.hasAttribute("data-slide-background-media")),
           });
-          preparedStaticSlides.set(slide.id, prepared);
+          if (backgroundVideo) preparedBackgroundOverlays.set(slide.id, prepared);
+          else preparedStaticSlides.set(slide.id, prepared);
         } catch (caught) {
           throw new Error(`Falha ao compor o slide ${index + 1}: ${describeError(caught)}`);
         }
@@ -353,6 +369,36 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
               await waitFrame();
             }
             video.pause();
+            completedDuration += duration;
+          } else if (slideBackgroundVideoUrl(slide)) {
+            const source = slideBackgroundVideoUrl(slide)!;
+            const video = videoRef.current;
+            const overlay = preparedBackgroundOverlays.get(slide.id);
+            if (!video || !overlay) throw new Error(`O fundo em vídeo do slide ${index + 1} não ficou preparado.`);
+            setMessage(`A carregar fundo em vídeo do slide ${index + 1}/${exportSlides.length}…`);
+            await prepareVideoSource(video, source, index + 1);
+            await seekVideo(video, 0);
+            video.loop = true;
+            video.muted = true;
+            await video.play().catch(() => undefined);
+            const duration = Math.max(.25, slide.duration);
+            const startedAt = performance.now();
+            while (true) {
+              ensureRecording();
+              const elapsed = Math.min(duration, (performance.now() - startedAt) / 1000);
+              const backgroundTime = elapsed % Math.max(.05, video.duration);
+              if (Math.abs(video.currentTime - backgroundTime) > .3) video.currentTime = backgroundTime;
+              context.fillStyle = "#080a0b";
+              context.fillRect(0, 0, canvas.width, canvas.height);
+              drawVideoCover(context, video, canvas.width, canvas.height);
+              context.drawImage(overlay, 0, 0, canvas.width, canvas.height);
+              drawCaption(context, slide);
+              updateProgress(elapsed, `A renderizar slide ${index + 1}/${exportSlides.length} · ${Math.round(elapsed / duration * 100)}%`);
+              if (elapsed >= duration) break;
+              await waitFrame();
+            }
+            video.pause();
+            video.loop = false;
             completedDuration += duration;
           } else {
             const image = preparedStaticSlides.get(slide.id);

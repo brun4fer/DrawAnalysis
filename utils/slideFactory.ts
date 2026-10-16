@@ -35,9 +35,9 @@ export function createSlide(type: SlideType, index: number): AnalysisSlide {
   const id = createId();
   const base = { id, type, name: `Slide ${index + 1}`, caption: "", captionOpacity: .74, duration: 4 };
   switch (type) {
-    case "title": return { ...base, name: "Novo capítulo", content: { kind: "title", text: "ORGANIZAÇÃO OFENSIVA", subtitle: "Análise do jogo", body: "", background: "#101914", alignment: "left", fontSize: 64 } };
+    case "title": return { ...base, name: "Novo momento", content: { kind: "title", text: "ORGANIZAÇÃO OFENSIVA", subtitle: "MOMENTO DO JOGO", body: "", background: "#101914", backgroundOpacity: 1, overlayOpacity: .12, accentColor: "#a3ff12", crestCorner: "top-right", alignment: "left", fontSize: 64 } };
     case "text": return { ...base, name: "Conclusão", content: { kind: "text", title: "PRINCÍPIO", text: "Forçar o adversário a jogar por fora.", background: "#111518", alignment: "center", fontSize: 44, position: { x: .5, y: .5 } } };
-    case "lineup": return { ...base, name: "Escalação", content: { kind: "lineup", formation: "4-3-3", players: playersForFormation("4-3-3"), teamColor: "#a3ff12", goalkeeperColor: "#ffb347", title: "ONZE INICIAL", subtitle: "4-3-3" } };
+    case "lineup": return { ...base, name: "Onze provável", content: { kind: "lineup", formation: "4-3-3", players: playersForFormation("4-3-3"), teamColor: "#f28c28", goalkeeperColor: "#ffcc00", title: "ONZE PROVÁVEL", subtitle: "4-3-3", clubName: "NOME DO CLUBE", coachName: "Nome do treinador", template: "broadcast", background: "#0a0d0f", backgroundOpacity: 1, overlayOpacity: .62 } };
     case "written-report": return {
       ...base,
       name: "Relatório · Organização ofensiva",

@@ -15,17 +15,19 @@ interface Props {
   videoEditor?: ReactNode;
   interactive?: boolean;
   onContentChange?: (content: SlideContent) => void;
+  presentationTime?: number;
+  presentationPlaying?: boolean;
 }
 
-export function SlideRenderer({ slide, videoEditor, interactive = true, onContentChange }: Props) {
+export function SlideRenderer({ slide, videoEditor, interactive = true, onContentChange, presentationTime, presentationPlaying }: Props) {
   const content = slide.content;
-  if (content.kind === "video") return <>{videoEditor ?? <VideoSlidePreview content={content} slideName={slide.name} />}</>;
+  if (content.kind === "video") return <>{videoEditor ?? <VideoSlidePreview content={content} slideName={slide.name} playbackTime={presentationTime} playing={presentationPlaying} controls={presentationTime === undefined} />}</>;
 
   const rendered = (() => {
     switch (content.kind) {
-      case "title": return <TitleSlide content={content} />;
+      case "title": return <TitleSlide content={content} playbackTime={presentationTime} playing={presentationPlaying} />;
       case "text": return <TextSlide content={content} />;
-      case "lineup": return <LineupSlide content={content} interactive={interactive} onChange={(value) => onContentChange?.(value)} />;
+      case "lineup": return <LineupSlide content={content} interactive={interactive} onChange={(value) => onContentChange?.(value)} playbackTime={presentationTime} playing={presentationPlaying} />;
       case "written-report": return <WrittenReportSlide content={content} interactive={interactive} onChange={(value) => onContentChange?.(value)} />;
       case "kickoff": return <KickoffSlide content={content} interactive={interactive} onChange={(value) => onContentChange?.(value)} />;
       case "tactical-board": return <TacticalBoardSlide content={content} interactive={interactive} onChange={(value) => onContentChange?.(value)} />;

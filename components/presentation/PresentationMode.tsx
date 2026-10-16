@@ -1,32 +1,80 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Maximize, X } from "lucide-react";
 import { useEditorStore } from "@/store/useEditorStore";
 import { SlideRenderer } from "@/components/slides/SlideRenderer";
 
 interface Props { onClose: () => void }
 
+function slideDuration(value: number) {
+  return Math.max(.25, Number.isFinite(value) ? value : 4);
+}
+
 export function PresentationMode({ onClose }: Props) {
   const { slides, selectedSlideId } = useEditorStore();
+  const durations = slides.map((slide) => slideDuration(slide.duration));
+  const totalDuration = durations.reduce((total, duration) => total + duration, 0);
   const initialIndex = Math.max(0, slides.findIndex((slide) => slide.id === selectedSlideId));
-  const [index, setIndex] = useState(initialIndex);
-  const rootRef = useRef<HTMLDivElement>(null);
+  const initialTime = durations.slice(0, initialIndex).reduce((total, duration) => total + duration, 0);
+  const [playhead, setPlayhead] = useState(initialTime);
+  const [playing, setPlaying] = useState(true);
+  const frameRef = useRef<number | null>(null);
+  const previousFrameRef = useRef<number | null>(null);
   const enteredFullscreenRef = useRef(false);
-  const slide = slides[index];
+
+  const active = (() => {
+    let start = 0;
+    for (let index = 0; index < slides.length; index += 1) {
+      const end = start + durations[index];
+      if (playhead < end || index === slides.length - 1) return { index, start, elapsed: Math.max(0, playhead - start) };
+      start = end;
+    }
+    return { index: 0, start: 0, elapsed: 0 };
+  })();
+  const slide = slides[active.index];
+
+  useEffect(() => {
+    if (!playing || totalDuration <= 0) return;
+    const tick = (now: number) => {
+      const previous = previousFrameRef.current ?? now;
+      previousFrameRef.current = now;
+      const delta = Math.min(.1, Math.max(0, (now - previous) / 1000));
+      setPlayhead((current) => {
+        const next = current + delta;
+        if (next >= totalDuration) {
+          setPlaying(false);
+          return Math.max(0, totalDuration - .001);
+        }
+        return next;
+      });
+      frameRef.current = requestAnimationFrame(tick);
+    };
+    previousFrameRef.current = null;
+    frameRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+      previousFrameRef.current = null;
+    };
+  }, [playing, totalDuration]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-      if (event.key === "ArrowLeft") setIndex((value) => Math.max(0, value - 1));
-      if (event.key === "ArrowRight" || event.code === "Space") {
+      if (event.key === "Escape") { onClose(); return; }
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
         event.preventDefault();
-        setIndex((value) => Math.min(slides.length - 1, value + 1));
+        const direction = event.key === "ArrowLeft" ? -5 : 5;
+        setPlayhead((value) => Math.max(0, Math.min(Math.max(0, totalDuration - .001), value + direction)));
+        return;
+      }
+      if (event.code === "Space") {
+        event.preventDefault();
+        setPlaying((value) => !value);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, slides.length]);
+  }, [onClose, totalDuration]);
 
   useEffect(() => {
     if (document.fullscreenElement) enteredFullscreenRef.current = true;
@@ -40,13 +88,11 @@ export function PresentationMode({ onClose }: Props) {
 
   if (!slide) return null;
   return (
-    <div className="presentation-mode presentation-builder-preview" ref={rootRef}>
-      <header><div><span>{String(index + 1).padStart(2, "0")}</span><strong>{slide.name}</strong><i>{slide.type}</i></div><div className="presentation-actions"><button onClick={() => rootRef.current?.requestFullscreen()} title="Ecrã inteiro"><Maximize size={18} /></button><button onClick={onClose} title="Fechar"><X size={20} /></button></div></header>
+    <div className="presentation-mode presentation-builder-preview presentation-clean" aria-label="Pré-visualização em ecrã inteiro. Espaço pausa; setas avançam ou recuam cinco segundos.">
       <div className="presentation-content">
-        <SlideRenderer slide={slide} interactive={false} />
+        <SlideRenderer slide={slide} interactive={false} presentationTime={active.elapsed} presentationPlaying={playing} />
         {slide.caption && <div className="presentation-caption" style={{ backgroundColor: `rgba(255,255,255,${slide.captionOpacity ?? .74})` }}>{slide.caption}</div>}
       </div>
-      <footer><button onClick={() => setIndex((value) => Math.max(0, value - 1))} disabled={index === 0}><ChevronLeft size={24} /></button><div className="presentation-progress">{slides.map((item, itemIndex) => <i key={item.id} className={itemIndex === index ? "active" : ""} />)}</div><button onClick={() => setIndex((value) => Math.min(slides.length - 1, value + 1))} disabled={index === slides.length - 1}><ChevronRight size={24} /></button></footer>
     </div>
   );
 }

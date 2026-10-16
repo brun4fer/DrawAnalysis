@@ -8,7 +8,7 @@ import type { AnalysisSlide } from "@/types/slide";
 interface Props { onAdd: () => void }
 
 const typeLabels: Record<AnalysisSlide["type"], string> = {
-  title: "TITLE", text: "TEXT", lineup: "LINEUP", "written-report": "REPORT", video: "VIDEO", kickoff: "KICKOFF", "tactical-board": "TACTICAL", image: "IMAGE",
+  title: "MOMENT", text: "TEXT", lineup: "XI", "written-report": "REPORT", video: "VIDEO", kickoff: "KICKOFF", "tactical-board": "TACTICAL", image: "IMAGE",
 };
 
 export function SlideList({ onAdd }: Props) {

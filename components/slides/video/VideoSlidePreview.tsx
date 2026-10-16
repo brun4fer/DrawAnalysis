@@ -4,13 +4,19 @@
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FreezeFrame, VideoSlideContent } from "@/types/slide";
-import { freezeRange, orderedFreezeFrames, sourceTimeToTimeline } from "@/utils/videoTimeline";
+import { freezeRange, orderedFreezeFrames, sourceTimeToTimeline, timelineTimeToSource } from "@/utils/videoTimeline";
 
 const DrawingPreviewCanvas = dynamic(() => import("@/components/canvas/DrawingPreviewCanvas").then((module) => module.DrawingPreviewCanvas), { ssr: false });
 
-interface Props { content: VideoSlideContent; slideName: string }
+interface Props {
+  content: VideoSlideContent;
+  slideName: string;
+  playbackTime?: number;
+  playing?: boolean;
+  controls?: boolean;
+}
 
-export function VideoSlidePreview({ content, slideName }: Props) {
+export function VideoSlidePreview({ content, slideName, playbackTime, playing = true, controls = true }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const animationRef = useRef<number | null>(null);
@@ -22,6 +28,8 @@ export function VideoSlidePreview({ content, slideName }: Props) {
   const [currentTime, setCurrentTime] = useState(sourceTimeToTimeline(content.startTime, freezes));
   const [aspect, setAspect] = useState(16 / 9);
   const [size, setSize] = useState({ width: 960, height: 540 });
+  const [mediaReady, setMediaReady] = useState(false);
+  const controlled = playbackTime !== undefined;
   const getVideoElement = useCallback(() => videoRef.current, []);
 
   useEffect(() => {
@@ -49,6 +57,20 @@ export function VideoSlidePreview({ content, slideName }: Props) {
   }, []);
 
   useEffect(() => () => cancelAnimations(), [cancelAnimations]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!controlled || !mediaReady || !video) return;
+    cancelAnimations();
+    const timelineStart = sourceTimeToTimeline(content.startTime, freezes);
+    const timelineEnd = sourceTimeToTimeline(content.endTime ?? video.duration, freezes);
+    const targetTimeline = Math.max(timelineStart, Math.min(timelineEnd, timelineStart + playbackTime));
+    const point = timelineTimeToSource(targetTimeline, freezes);
+    if (Math.abs(video.currentTime - point.sourceTime) > .18) video.currentTime = point.sourceTime;
+    setCurrentTime(targetTimeline);
+    if (playing && !point.freeze && targetTimeline < timelineEnd - .01) void video.play().catch(() => undefined);
+    else video.pause();
+  }, [cancelAnimations, content.endTime, content.startTime, controlled, freezes, mediaReady, playbackTime, playing]);
 
   const playFreeze = (freeze: FreezeFrame) => {
     const video = videoRef.current;
@@ -119,28 +141,36 @@ export function VideoSlidePreview({ content, slideName }: Props) {
           ref={videoRef}
           src={content.sourceUrl}
           crossOrigin="anonymous"
-          controls
-          autoPlay
+          controls={controls}
+          autoPlay={!controlled || playing}
           playsInline
           onLoadedMetadata={(event) => {
             const video = event.currentTarget;
             setAspect(video.videoWidth / video.videoHeight || 16 / 9);
-            video.currentTime = content.startTime;
+            setMediaReady(true);
+            const initialSourceTime = controlled
+              ? timelineTimeToSource(sourceTimeToTimeline(content.startTime, freezes) + (playbackTime ?? 0), freezes).sourceTime
+              : content.startTime;
+            video.currentTime = Math.min(video.duration, initialSourceTime);
             lastSourceTimeRef.current = content.startTime;
             completedFreezesRef.current.clear();
-            setCurrentTime(sourceTimeToTimeline(content.startTime, freezes));
-            void video.play().catch(() => undefined);
+            setCurrentTime(sourceTimeToTimeline(initialSourceTime, freezes));
+            if (!controlled || playing) void video.play().catch(() => undefined);
+            else video.pause();
           }}
           onPlay={() => {
+            if (controlled) return;
             if (animationRef.current !== null) cancelAnimationFrame(animationRef.current);
             animationRef.current = requestAnimationFrame(syncDrawings);
           }}
           onPause={() => {
+            if (controlled) return;
             if (holdingFreezeRef.current) return;
             if (animationRef.current !== null) cancelAnimationFrame(animationRef.current);
             setCurrentTime(sourceTimeToTimeline(videoRef.current?.currentTime ?? content.startTime, freezes));
           }}
           onSeeked={(event) => {
+            if (controlled) return;
             if (holdingFreezeRef.current) return;
             const sourceTime = event.currentTarget.currentTime;
             lastSourceTimeRef.current = sourceTime;

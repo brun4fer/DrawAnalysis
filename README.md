@@ -130,10 +130,10 @@ Os três deployments devem usar os mesmos `DATABASE_URL`, `DIRECT_URL`,
 `AUTH_SECRET`, `MEDIA_DATABASE_URL` e valores `MEDIA_R2_*`. Assim, as contas e
 os vídeos são comuns, enquanto as apresentações ficam separadas.
 
-O conteúdo binário local não é enviado para a base de dados: URLs temporários,
-frames e imagens em `data:` são removidos do documento antes de guardar. Os
-desenhos, cortes, perguntas, ordem dos slides e referências a vídeos cloud ficam
-guardados no Neon.
+Os vídeos locais e URLs temporários não são enviados para a base de dados. As
+imagens usadas nos novos slides de Título / Momento e Onze provável são reduzidas
+no browser e ficam incorporadas no projeto; os desenhos, cortes, ordem dos slides
+e referências a vídeos cloud ficam guardados no Neon.
 
 ## Biblioteca cloud partilhada
 

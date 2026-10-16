@@ -2,6 +2,9 @@ import type { DrawingObject, PlayerTrack, Point } from "./drawing";
 
 export type SlideType = "title" | "text" | "lineup" | "written-report" | "video" | "kickoff" | "tactical-board" | "image";
 export type SlideAlignment = "left" | "center" | "right";
+export type SlideBackgroundMediaType = "image" | "video";
+export type CrestCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
+export type LineupTemplate = "broadcast" | "glass" | "tactical";
 
 export interface SlidePlayer {
   id: string;
@@ -9,6 +12,7 @@ export interface SlidePlayer {
   name: string;
   team: "home" | "away";
   position: Point;
+  photoUrl?: string;
 }
 
 export interface TitleSlideContent {
@@ -18,6 +22,14 @@ export interface TitleSlideContent {
   body: string;
   background: string;
   backgroundImage?: string;
+  backgroundMediaUrl?: string;
+  backgroundMediaType?: SlideBackgroundMediaType;
+  backgroundMediaName?: string;
+  backgroundOpacity?: number;
+  overlayOpacity?: number;
+  accentColor?: string;
+  crestImage?: string;
+  crestCorner?: CrestCorner;
   alignment: SlideAlignment;
   fontSize: number;
 }
@@ -41,6 +53,17 @@ export interface LineupSlideContent {
   goalkeeperColor: string;
   title: string;
   subtitle: string;
+  clubName?: string;
+  clubCrest?: string;
+  coachName?: string;
+  coachPhoto?: string;
+  template?: LineupTemplate;
+  background?: string;
+  backgroundMediaUrl?: string;
+  backgroundMediaType?: SlideBackgroundMediaType;
+  backgroundMediaName?: string;
+  backgroundOpacity?: number;
+  overlayOpacity?: number;
 }
 
 export interface ReportCustomField {
