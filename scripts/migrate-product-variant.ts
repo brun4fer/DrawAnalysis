@@ -30,7 +30,7 @@ async function main() {
     throw new Error(`A contagem de projetos mudou durante a migração (${beforeCount} → ${afterCount}).`);
   }
 
-  console.log(`Migração concluída. ${afterCount} projetos preservados e associados a TactiDraw por defeito.`);
+  console.log(`Migração concluída. ${afterCount} projetos preservados e associados a Opponent Video Analysis por defeito.`);
 }
 
 main()

@@ -1,10 +1,10 @@
-# TactiDraw / GamePlan / Relatório Escrito
+# Opponent Video Analysis / GamePlan / Relatório Escrito
 
 Construtor local de apresentações de análise de futebol, construído com Next.js,
 React, TypeScript, Zustand e react-konva. Uma apresentação pode combinar slides
 estáticos, campos táticos, imagens e jogadas em vídeo.
 
-O mesmo código pode ser publicado como **TactiDraw**, **GamePlan** ou
+O mesmo código pode ser publicado como **Opponent Video Analysis**, **GamePlan** ou
 **Relatório Escrito**. As três variantes usam as mesmas contas e a mesma
 biblioteca cloud, mas mantêm listas de apresentações independentes.
 
@@ -102,10 +102,10 @@ as consultas e alterações de projetos são filtradas pelo `workspaceId` da ses
 Use **Projetos** para guardar, abrir ou eliminar apresentações. `Ctrl+S` guarda o
 projeto aberto.
 
-### Separação entre TactiDraw, GamePlan e Relatório Escrito
+### Separação entre Opponent Video Analysis, GamePlan e Relatório Escrito
 
 Cada projeto tem um `productVariant`. Os registos já existentes recebem
-automaticamente `tactidraw`, por isso continuam disponíveis no TactiDraw e não
+automaticamente `tactidraw`, por isso continuam disponíveis no Opponent Video Analysis e não
 aparecem no GamePlan nem no Relatório Escrito. As rotas de listar, abrir,
 guardar e eliminar validam este campo no servidor.
 
@@ -121,7 +121,7 @@ de projetos antes e depois e pode ser repetido sem duplicar dados.
 
 Na Vercel, publique o mesmo repositório em três projetos:
 
-- TactiDraw: `APP_VARIANT=tactidraw` e `NEXT_PUBLIC_APP_VARIANT=tactidraw`;
+- Opponent Video Analysis: `APP_VARIANT=tactidraw` e `NEXT_PUBLIC_APP_VARIANT=tactidraw`;
 - GamePlan: `APP_VARIANT=gameplan` e `NEXT_PUBLIC_APP_VARIANT=gameplan`.
 - Relatório Escrito: `APP_VARIANT=written-report` e
   `NEXT_PUBLIC_APP_VARIANT=written-report`.

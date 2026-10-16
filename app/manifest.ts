@@ -4,7 +4,7 @@ import { APP_PRODUCT } from "@/lib/product";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/",
-    name: `${APP_PRODUCT.name} — AP Football Analysis`,
+    name: `${APP_PRODUCT.name} — All-in-One Football Ecosystem`,
     short_name: APP_PRODUCT.name,
     description: APP_PRODUCT.description,
     start_url: "/",

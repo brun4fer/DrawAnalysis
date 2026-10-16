@@ -33,11 +33,11 @@ export const APP_PRODUCT = APP_VARIANT === "gameplan"
     }
   : {
       variant: APP_VARIANT,
-      name: "TactiDraw",
-      brandLead: "Tacti",
-      brandStrong: "Draw",
-      mark: "T",
+      name: "Opponent Video Analysis",
+      brandLead: "Opponent Video ",
+      brandStrong: "Analysis",
+      mark: "O",
       iconPath: "/tactidraw-icon.svg",
-      description: "Análise de vídeo, desenhos táticos e apresentações de futebol.",
+      description: "Análise de vídeo do adversário, desenhos táticos e apresentações de futebol.",
       defaultProjectName: "Apresentação sem título",
     };
