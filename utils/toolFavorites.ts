@@ -21,7 +21,7 @@ export function applyFavoriteData(base: DrawingData, favorite: ToolFavorite): Dr
     case "playerRing":
       return base.kind === "playerRing" ? { ...base, radiusX: saved.radiusX, radiusY: saved.radiusY, occlusionWidth: saved.occlusionWidth, labelOffsetY: saved.labelOffsetY, label: saved.label ? structuredClone(saved.label) : undefined, ringDesign: saved.ringDesign, spinEnabled: saved.spinEnabled, spinSpeed: saved.spinSpeed, showRing: saved.showRing, splashEnabled: saved.splashEnabled, splashSpeed: saved.splashSpeed } : base;
     case "ghost":
-      return base.kind === "ghost" ? { ...base, radiusX: saved.radiusX, radiusY: saved.radiusY, hideOriginal: saved.hideOriginal, playerOpacity: saved.playerOpacity, showArrow: saved.showArrow, showOrigin: saved.showOrigin } : base;
+      return base.kind === "ghost" ? { ...base, radiusX: saved.radiusX, radiusY: saved.radiusY, hideOriginal: saved.hideOriginal, playerOpacity: saved.playerOpacity, showArrow: saved.showArrow, showOrigin: saved.showOrigin, animateMovement: saved.animateMovement, returnToOrigin: saved.returnToOrigin, travelDuration: saved.travelDuration } : base;
     case "spotlight":
       return base.kind === "spotlight" ? { ...base, radiusX: saved.radiusX, radiusY: saved.radiusY, beamHeight: saved.beamHeight, design: saved.design, darkness: saved.darkness, feather: saved.feather } : base;
     case "zoom":

@@ -3,8 +3,11 @@
 import { ArrowDown, ArrowUp, Copy, LocateFixed, Star, Trash2 } from "lucide-react";
 import { useEditorStore } from "@/store/useEditorStore";
 import type { ActionLabel, LineDesign, PlayerLabel, PlayerRingDesign, TextDesign, ZoneDesign } from "@/types/drawing";
-import type { VideoSlideContent } from "@/types/slide";
+import type { AnalysisSlide, VideoSlideContent } from "@/types/slide";
+import { resolvedDrawingAnimation } from "@/utils/temporalRenderer";
 import { getSourceDuration, sourceTimeToTimeline, timelineTimeToSource } from "@/utils/videoTimeline";
+import { CaptionControls } from "@/components/slides/CaptionControls";
+import { ColorPalettePicker } from "@/components/ui/ColorPalettePicker";
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return <span className="field-label">{children}</span>;
@@ -42,7 +45,7 @@ export function PropertiesPanel() {
           <div><kbd>, .</kbd><em>Frame a frame</em></div>
           <div><kbd>Del</kbd><em>Eliminar objeto</em></div>
         </div>
-        {activeSlide?.content.kind === "video" && <VideoSlidePresentationSettings slideId={activeSlide.id} content={activeSlide.content} slideDuration={activeSlide.duration} caption={activeSlide.caption} captionOpacity={activeSlide.captionOpacity ?? .74} currentTime={currentTime} videoDuration={videoDuration} onUpdate={(patch) => updateSlide(activeSlide.id, patch)} />}
+        {activeSlide?.content.kind === "video" && <VideoSlidePresentationSettings slide={activeSlide} content={activeSlide.content} currentTime={currentTime} videoDuration={videoDuration} onUpdate={(patch) => updateSlide(activeSlide.id, patch)} />}
       </aside>
     );
   }
@@ -139,6 +142,27 @@ export function PropertiesPanel() {
     ? activeSlide.content.playerTracks?.find((track) => track.id === object.target?.trackId)
     : undefined;
   const layerIndex = drawings.findIndex((drawing) => drawing.id === object.id);
+  const effectiveAnimation = resolvedDrawingAnimation(object);
+  type AnimationPreset = "none" | "fade" | "scaleIn" | "draw" | "reveal" | "pulse";
+  const animationPreset: AnimationPreset = effectiveAnimation.motion === "pulse"
+    ? "pulse"
+    : effectiveAnimation.motion === "draw"
+      ? "draw"
+      : effectiveAnimation.motion === "reveal"
+        ? "reveal"
+        : effectiveAnimation.motion === "scaleIn" || effectiveAnimation.motion === "ringLock"
+          ? "scaleIn"
+          : (effectiveAnimation.fadeIn ?? 0) > 0 || (effectiveAnimation.fadeOut ?? 0) > 0
+            ? "fade"
+            : "none";
+  const updateAnimationPreset = (preset: AnimationPreset) => {
+    if (preset === "none") updateDrawing(object.id, { animation: { ...effectiveAnimation, configured: true, motion: "none", fadeIn: 0, fadeOut: 0 } });
+    if (preset === "fade") updateDrawing(object.id, { animation: { ...effectiveAnimation, configured: true, motion: "none", fadeIn: .35, fadeOut: .4 } });
+    if (preset === "scaleIn") updateDrawing(object.id, { animation: { ...effectiveAnimation, configured: true, motion: object.data.kind === "playerRing" ? "ringLock" : "scaleIn", fadeIn: .4, fadeOut: .45 } });
+    if (preset === "draw") updateDrawing(object.id, { animation: { ...effectiveAnimation, configured: true, motion: "draw", fadeIn: .6, fadeOut: .35 } });
+    if (preset === "reveal") updateDrawing(object.id, { animation: { ...effectiveAnimation, configured: true, motion: "reveal", fadeIn: .65, fadeOut: .35 } });
+    if (preset === "pulse") updateDrawing(object.id, { animation: { ...effectiveAnimation, configured: true, motion: "pulse", fadeIn: .3, fadeOut: .35, pulseAmount: effectiveAnimation.pulseAmount ?? .05, pulseSpeed: effectiveAnimation.pulseSpeed ?? 1.4 } });
+  };
 
   return (
     <aside className="properties-panel">
@@ -201,7 +225,7 @@ export function PropertiesPanel() {
             </label>
             {patternDesign === "striped" && (
               <>
-                <label className="field-row"><FieldLabel>Cor das riscas</FieldLabel><input type="color" value={stripeColor.slice(0, 7)} onChange={(event) => updatePatternAppearance({ stripeColor: event.target.value })} /><code>{stripeColor.slice(0, 7)}</code></label>
+                <div className="field-row"><FieldLabel>Cor das riscas</FieldLabel><ColorPalettePicker value={stripeColor.slice(0, 7)} onChange={(stripeColor) => updatePatternAppearance({ stripeColor })} label="Cor das riscas" /></div>
                 <label className="stacked-field"><span><FieldLabel>Direção das riscas</FieldLabel><b>{Math.round(stripeAngle)}°</b></span><input type="range" min={0} max={180} step={1} value={stripeAngle} onChange={(event) => updatePatternAppearance({ stripeAngle: Number(event.target.value) })} /></label>
                 <label className="stacked-field"><span><FieldLabel>Espaçamento</FieldLabel><b>{Math.round(stripeSpacing * 540)}px</b></span><input type="range" min={.006} max={.04} step={.001} value={stripeSpacing} onChange={(event) => updatePatternAppearance({ stripeSpacing: Number(event.target.value) })} /></label>
                 <label className="stacked-field"><span><FieldLabel>Opacidade das riscas</FieldLabel><b>{Math.round(stripeOpacity * 100)}%</b></span><input type="range" min={0} max={1} step={.05} value={stripeOpacity} onChange={(event) => updatePatternAppearance({ stripeOpacity: Number(event.target.value) })} /></label>
@@ -237,26 +261,26 @@ export function PropertiesPanel() {
             </select>
           </label>
         )}
-        <label className="field-row"><FieldLabel>{isPlayerRing ? "Círculo exterior" : object.data.kind === "line" ? "Cor principal" : object.data.kind === "text" ? "Cor do texto" : object.data.kind === "zoom" ? "Cor da moldura" : object.data.kind === "glimpse" ? "Cor da visão" : "Traço"}</FieldLabel><input type="color" value={object.style.stroke.slice(0, 7)} onChange={(e) => updateStyle({ stroke: e.target.value })} /><code>{object.style.stroke.slice(0, 7)}</code></label>
+        <div className="field-row"><FieldLabel>{isPlayerRing ? "Círculo exterior" : object.data.kind === "line" ? "Cor principal" : object.data.kind === "text" ? "Cor do texto" : object.data.kind === "zoom" ? "Cor da moldura" : object.data.kind === "glimpse" ? "Cor da visão" : "Traço"}</FieldLabel><ColorPalettePicker value={object.style.stroke.slice(0, 7)} opacity={object.style.opacity} onChange={(stroke) => updateStyle({ stroke })} onOpacityChange={(opacity) => updateStyle({ opacity })} label="Cor principal" /></div>
         {object.data.kind === "line" && object.data.lineDesign === "dual" && (
-          <label className="field-row"><FieldLabel>Cor da linha fina</FieldLabel><input type="color" value={(object.data.secondaryColor ?? "#ffffff").slice(0, 7)} onChange={(event) => updateLineAppearance({ secondaryColor: event.target.value })} /><code>{(object.data.secondaryColor ?? "#ffffff").slice(0, 7)}</code></label>
+          <div className="field-row"><FieldLabel>Cor da linha fina</FieldLabel><ColorPalettePicker value={(object.data.secondaryColor ?? "#ffffff").slice(0, 7)} onChange={(secondaryColor) => updateLineAppearance({ secondaryColor })} label="Cor da linha fina" /></div>
         )}
         {!["arrow", "longBallArrow", "line", "freeDraw", "text", "zoom", "glimpse", "ghost", "identifyPlayer", "spotlight"].includes(object.type) && (
-          <label className="field-row"><FieldLabel>{isPlayerRing ? "Círculo interior" : "Preench."}</FieldLabel><input type="color" value={fillColor} onChange={(e) => updateStyle({ fill: isPlayerRing ? e.target.value : withFillOpacity(e.target.value, fillOpacity) })} /><code>{fillColor}</code></label>
+          <div className="field-row"><FieldLabel>{isPlayerRing ? "Círculo interior" : "Preench."}</FieldLabel><ColorPalettePicker value={fillColor} opacity={fillOpacity} onChange={(fill) => updateStyle({ fill: isPlayerRing ? fill : withFillOpacity(fill, fillOpacity) })} onOpacityChange={(opacity) => updateStyle({ fill: withFillOpacity(object.style.fill, opacity) })} label="Cor do preenchimento" /></div>
         )}
         {supportsFill && <label className="stacked-field"><span><FieldLabel>Opacidade do preenchimento</FieldLabel><b>{Math.round(fillOpacity * 100)}%</b></span><input type="range" min={0} max={1} step={.05} value={fillOpacity} onChange={(event) => updateStyle({ fill: withFillOpacity(object.style.fill, Number(event.target.value)) })} /></label>}
         <label className="stacked-field"><span><FieldLabel>Espessura</FieldLabel><b>{object.style.strokeWidth}px</b></span><input type="range" min={0} max={16} step={.5} value={object.style.strokeWidth} onChange={(e) => updateStyle({ strokeWidth: Number(e.target.value) })} /></label>
         <label className="stacked-field"><span><FieldLabel>Opacidade</FieldLabel><b>{Math.round(object.style.opacity * 100)}%</b></span><input type="range" min={0} max={1} step={0.05} value={object.style.opacity} onChange={(e) => updateStyle({ opacity: Number(e.target.value) })} /></label>
-        <label className="field-row"><FieldLabel>{isPlayerRing ? "Luz relvado" : object.type === "arrow" || object.type === "longBallArrow" ? "Cor da sombra" : "Efeito"}</FieldLabel><input type="color" value={(object.style.shadowColor ?? "#000000").slice(0, 7)} onChange={(e) => updateStyle({ shadowColor: e.target.value })} /><code>{(object.style.shadowColor ?? "#000000").slice(0, 7)}</code></label>
+        <div className="field-row"><FieldLabel>{isPlayerRing ? "Luz relvado" : object.type === "arrow" || object.type === "longBallArrow" ? "Cor da sombra" : "Efeito"}</FieldLabel><ColorPalettePicker value={(object.style.shadowColor ?? "#000000").slice(0, 7)} opacity={object.style.shadowOpacity ?? 0} onChange={(shadowColor) => updateStyle({ shadowColor })} onOpacityChange={(shadowOpacity) => updateStyle({ shadowOpacity })} label="Cor do efeito" /></div>
         <label className="stacked-field"><span><FieldLabel>Suavidade</FieldLabel><b>{object.style.shadowBlur ?? 0}px</b></span><input type="range" min={0} max={40} value={object.style.shadowBlur ?? 0} onChange={(e) => updateStyle({ shadowBlur: Number(e.target.value) })} /></label>
         <label className="stacked-field"><span><FieldLabel>Força efeito</FieldLabel><b>{Math.round((object.style.shadowOpacity ?? 0) * 100)}%</b></span><input type="range" min={0} max={1} step={.05} value={object.style.shadowOpacity ?? 0} onChange={(e) => updateStyle({ shadowOpacity: Number(e.target.value) })} /></label>
         <div className="two-fields shadow-offset-fields"><label><FieldLabel>Sombra X</FieldLabel><input type="number" min={-30} max={30} value={object.style.shadowOffsetX ?? 0} onChange={(e) => updateStyle({ shadowOffsetX: Number(e.target.value) })} /></label><label><FieldLabel>Sombra Y</FieldLabel><input type="number" min={-30} max={30} value={object.style.shadowOffsetY ?? 0} onChange={(e) => updateStyle({ shadowOffsetY: Number(e.target.value) })} /></label></div>
         {!isPlayerRing && !["text", "zoom", "glimpse", "spotlight"].includes(object.type) && <label className="field-row"><FieldLabel>Estilo linha</FieldLabel><select value={object.style.dash.length ? "dashed" : "solid"} onChange={(event) => updateStyle({ dash: event.target.value === "dashed" ? [10, 7] : [] })}><option value="solid">Linha contínua</option><option value="dashed">Tracejado</option></select></label>}
         {object.data.kind === "spotlight" && (
           <>
-            <label className="field-row"><FieldLabel>Modelo</FieldLabel><select value={object.data.design ?? "beam"} onChange={(event) => object.data.kind === "spotlight" && updateDrawing(object.id, { data: { ...object.data, design: event.target.value as "beam" | "isolation" } })}><option value="isolation">Isolar jogador</option><option value="beam">Feixe de luz</option></select></label>
-            <label className="stacked-field"><span><FieldLabel>Largura no jogador</FieldLabel><b>{Math.round(object.data.radiusX * 200)}%</b></span><input type="range" min={.02} max={.14} step={.002} value={object.data.radiusX} onChange={(event) => object.data.kind === "spotlight" && updateDrawing(object.id, { data: { ...object.data, radiusX: Number(event.target.value) } })} /></label>
-            <label className="stacked-field"><span><FieldLabel>{object.data.design === "isolation" ? "Área iluminada" : "Altura da luz"}</FieldLabel><b>{Math.round(object.data.beamHeight * 100)}%</b></span><input type="range" min={.08} max={.55} step={.01} value={object.data.beamHeight} onChange={(event) => object.data.kind === "spotlight" && updateDrawing(object.id, { data: { ...object.data, beamHeight: Number(event.target.value) } })} /></label>
+            <label className="field-row"><FieldLabel>Modelo</FieldLabel><select value={object.data.design ?? "beam"} onChange={(event) => object.data.kind === "spotlight" && updateDrawing(object.id, { data: { ...object.data, design: event.target.value as "beam" | "isolation" } })}><option value="beam">Spotlight clássico</option><option value="isolation">Foco com fundo escuro</option></select></label>
+            <label className="stacked-field"><span><FieldLabel>Largura no jogador</FieldLabel><b>{Math.round(object.data.radiusX * 200)}%</b></span><input type="range" min={.02} max={.2} step={.002} value={object.data.radiusX} onChange={(event) => object.data.kind === "spotlight" && updateDrawing(object.id, { data: { ...object.data, radiusX: Number(event.target.value) } })} /></label>
+            <label className="stacked-field"><span><FieldLabel>{(object.data.design ?? "beam") === "isolation" ? "Área iluminada" : "Altura da luz"}</FieldLabel><b>{Math.round(object.data.beamHeight * 100)}%</b></span><input type="range" min={.08} max={.55} step={.01} value={object.data.beamHeight} onChange={(event) => object.data.kind === "spotlight" && updateDrawing(object.id, { data: { ...object.data, beamHeight: Number(event.target.value) } })} /></label>
             <label className="stacked-field"><span><FieldLabel>Base no relvado</FieldLabel><b>{Math.round(object.data.radiusY * 1000)}</b></span><input type="range" min={.006} max={.05} step={.001} value={object.data.radiusY} onChange={(event) => object.data.kind === "spotlight" && updateDrawing(object.id, { data: { ...object.data, radiusY: Number(event.target.value) } })} /></label>
             {(object.data.design ?? "beam") === "isolation" && <><label className="stacked-field"><span><FieldLabel>Escurecimento</FieldLabel><b>{Math.round((object.data.darkness ?? .68) * 100)}%</b></span><input type="range" min={.2} max={.9} step={.02} value={object.data.darkness ?? .68} onChange={(event) => object.data.kind === "spotlight" && updateDrawing(object.id, { data: { ...object.data, darkness: Number(event.target.value) } })} /></label><label className="stacked-field"><span><FieldLabel>Suavidade do recorte</FieldLabel><b>{Math.round((object.data.feather ?? .48) * 100)}%</b></span><input type="range" min={.05} max={.9} step={.02} value={object.data.feather ?? .48} onChange={(event) => object.data.kind === "spotlight" && updateDrawing(object.id, { data: { ...object.data, feather: Number(event.target.value) } })} /></label></>}
           </>
@@ -266,7 +290,12 @@ export function PropertiesPanel() {
             <p className="property-help">Arraste o jogador recortado diretamente no relvado para ajustar a nova posição.</p>
             <label className="toggle-row"><span><FieldLabel>Ocultar posição original</FieldLabel><small>Reconstrói o relvado por baixo do jogador</small></span><input type="checkbox" checked={object.data.hideOriginal !== false} onChange={(event) => object.data.kind === "ghost" && updateDrawing(object.id, { data: { ...object.data, hideOriginal: event.target.checked } })} /><span /></label>
             <label className="toggle-row"><span><FieldLabel>Mostrar seta no relvado</FieldLabel><small>Indica o movimento entre as duas posições</small></span><input type="checkbox" checked={object.data.showArrow !== false} onChange={(event) => object.data.kind === "ghost" && updateDrawing(object.id, { data: { ...object.data, showArrow: event.target.checked } })} /><span /></label>
-            <label className="toggle-row"><span><FieldLabel>Marcar posição original</FieldLabel><small>Círculo tracejado no ponto de partida</small></span><input type="checkbox" checked={object.data.showOrigin !== false} onChange={(event) => object.data.kind === "ghost" && updateDrawing(object.id, { data: { ...object.data, showOrigin: event.target.checked } })} /><span /></label>
+            <label className="toggle-row"><span><FieldLabel>Marcar posição original</FieldLabel><small>Círculo opcional no ponto de partida</small></span><input type="checkbox" checked={object.data.showOrigin ?? false} onChange={(event) => object.data.kind === "ghost" && updateDrawing(object.id, { data: { ...object.data, showOrigin: event.target.checked } })} /><span /></label>
+            <label className="toggle-row"><span><FieldLabel>Animar deslocação</FieldLabel><small>O jogador percorre a seta até ao destino</small></span><input type="checkbox" checked={object.data.animateMovement !== false} onChange={(event) => object.data.kind === "ghost" && updateDrawing(object.id, { data: { ...object.data, animateMovement: event.target.checked } })} /><span /></label>
+            {object.data.animateMovement !== false && <>
+              <label className="toggle-row"><span><FieldLabel>Voltar à origem</FieldLabel><small>Regressa antes de o efeito terminar</small></span><input type="checkbox" checked={object.data.returnToOrigin ?? false} onChange={(event) => object.data.kind === "ghost" && updateDrawing(object.id, { data: { ...object.data, returnToOrigin: event.target.checked } })} /><span /></label>
+              <label className="stacked-field"><span><FieldLabel>Tempo de deslocação</FieldLabel><b>{(object.data.travelDuration ?? .7).toFixed(1)}s</b></span><input type="range" min={.15} max={2.5} step={.05} value={object.data.travelDuration ?? .7} onChange={(event) => object.data.kind === "ghost" && updateDrawing(object.id, { data: { ...object.data, travelDuration: Number(event.target.value) } })} /></label>
+            </>}
             <label className="stacked-field"><span><FieldLabel>Tamanho do jogador</FieldLabel><b>{Math.round(object.transform.scaleX * 100)}%</b></span><input type="range" min={.45} max={2.2} step={.05} value={object.transform.scaleX} onChange={(event) => { const scale = Number(event.target.value); updateTransform({ scaleX: scale, scaleY: scale }); }} /></label>
             <label className="stacked-field"><span><FieldLabel>Opacidade do jogador</FieldLabel><b>{Math.round((object.data.playerOpacity ?? .96) * 100)}%</b></span><input type="range" min={.2} max={1} step={.05} value={object.data.playerOpacity ?? .96} onChange={(event) => object.data.kind === "ghost" && updateDrawing(object.id, { data: { ...object.data, playerOpacity: Number(event.target.value) } })} /></label>
           </>
@@ -276,7 +305,7 @@ export function PropertiesPanel() {
             <label className="stacked-field"><span><FieldLabel>Altura da trajetória</FieldLabel><b>{Math.round(object.data.curveHeight * 100)}%</b></span><input type="range" min={.02} max={.34} step={.01} value={object.data.curveHeight} onChange={(event) => object.data.kind === "longBallArrow" && updateDrawing(object.id, { data: { ...object.data, curveHeight: Number(event.target.value) } })} /></label>
             <label className="toggle-row"><span><FieldLabel>Zona de destino</FieldLabel><small>Marca no relvado onde termina a bola longa</small></span><input type="checkbox" checked={object.data.showLandingZone !== false} onChange={(event) => object.data.kind === "longBallArrow" && updateDrawing(object.id, { data: { ...object.data, showLandingZone: event.target.checked } })} /><span /></label>
             {object.data.showLandingZone !== false && <>
-              <label className="field-row"><FieldLabel>Cor da zona</FieldLabel><input type="color" value={(object.data.landingZoneColor ?? object.style.stroke).slice(0, 7)} onChange={(event) => object.data.kind === "longBallArrow" && updateDrawing(object.id, { data: { ...object.data, landingZoneColor: event.target.value } })} /><code>{(object.data.landingZoneColor ?? object.style.stroke).slice(0, 7)}</code></label>
+              <div className="field-row"><FieldLabel>Cor da zona</FieldLabel><ColorPalettePicker value={(object.data.landingZoneColor ?? object.style.stroke).slice(0, 7)} onChange={(landingZoneColor) => object.data.kind === "longBallArrow" && updateDrawing(object.id, { data: { ...object.data, landingZoneColor } })} label="Cor da zona de destino" /></div>
               <label className="stacked-field"><span><FieldLabel>Tamanho da zona</FieldLabel><b>{Math.round((object.data.landingZoneSize ?? 1) * 100)}%</b></span><input type="range" min={.5} max={2} step={.05} value={object.data.landingZoneSize ?? 1} onChange={(event) => object.data.kind === "longBallArrow" && updateDrawing(object.id, { data: { ...object.data, landingZoneSize: Number(event.target.value) } })} /></label>
             </>}
           </>
@@ -309,8 +338,8 @@ export function PropertiesPanel() {
               <label className="field-row"><FieldLabel>Número / ação</FieldLabel><input type="text" maxLength={4} value={object.actionLabel?.value ?? "1"} onChange={(event) => updateActionLabel({ value: event.target.value })} /></label>
               <label className="stacked-field"><span><FieldLabel>Posição na linha</FieldLabel><b>{Math.round((object.actionLabel?.position ?? .5) * 100)}%</b></span><input type="range" min={.05} max={.95} step={.01} value={object.actionLabel?.position ?? .5} onChange={(event) => updateActionLabel({ position: Number(event.target.value) })} /></label>
               <label className="stacked-field"><span><FieldLabel>Tamanho</FieldLabel><b>{Math.round((object.actionLabel?.fontSize ?? .022) * 540)}px</b></span><input type="range" min={.014} max={.05} step={.002} value={object.actionLabel?.fontSize ?? .022} onChange={(event) => updateActionLabel({ fontSize: Number(event.target.value) })} /></label>
-              <label className="field-row"><FieldLabel>Cor do número</FieldLabel><input type="color" value={(object.actionLabel?.color ?? "#ffffff").slice(0, 7)} onChange={(event) => updateActionLabel({ color: event.target.value })} /><code>{(object.actionLabel?.color ?? "#ffffff").slice(0, 7)}</code></label>
-              <label className="field-row"><FieldLabel>Cor do marcador</FieldLabel><input type="color" value={(object.actionLabel?.backgroundColor ?? "#174ea6").slice(0, 7)} onChange={(event) => updateActionLabel({ backgroundColor: event.target.value })} /><code>{(object.actionLabel?.backgroundColor ?? "#174ea6").slice(0, 7)}</code></label>
+              <div className="field-row"><FieldLabel>Cor do número</FieldLabel><ColorPalettePicker value={(object.actionLabel?.color ?? "#ffffff").slice(0, 7)} onChange={(color) => updateActionLabel({ color })} label="Cor do número" /></div>
+              <div className="field-row"><FieldLabel>Cor do marcador</FieldLabel><ColorPalettePicker value={(object.actionLabel?.backgroundColor ?? "#174ea6").slice(0, 7)} onChange={(backgroundColor) => updateActionLabel({ backgroundColor })} label="Cor do marcador" /></div>
             </>
           )}
         </section>
@@ -362,15 +391,10 @@ export function PropertiesPanel() {
                   onChange={(event) => updatePlayerLabel({ name: event.target.value })}
                 />
               </label>
-              <label className="field-row">
+              <div className="field-row">
                 <FieldLabel>Cor do texto</FieldLabel>
-                <input
-                  type="color"
-                  value={(object.data.label?.color ?? "#ffffff").slice(0, 7)}
-                  onChange={(event) => updatePlayerLabel({ color: event.target.value })}
-                />
-                <code>{(object.data.label?.color ?? "#ffffff").slice(0, 7)}</code>
-              </label>
+                <ColorPalettePicker value={(object.data.label?.color ?? "#ffffff").slice(0, 7)} onChange={(color) => updatePlayerLabel({ color })} label="Cor do texto" />
+              </div>
               <label className="stacked-field">
                 <span><FieldLabel>Tamanho</FieldLabel><b>{Math.round((object.data.label?.fontSize ?? .032) * 540)} px</b></span>
                 <input
@@ -409,8 +433,9 @@ export function PropertiesPanel() {
           <label><FieldLabel>Fim</FieldLabel><input type="number" min={0} step={0.04} value={object.endTime.toFixed(2)} onChange={(e) => updateDrawing(object.id, { endTime: Math.max(Number(e.target.value), object.startTime) })} /></label>
         </div>
         <div className="duration-readout"><span>Duração</span><strong>{duration.toFixed(2)} s</strong></div>
-        <label className="field-row"><FieldLabel>Animação</FieldLabel><select value={object.animation?.motion === "pulse" ? "pulse" : "none"} onChange={(event) => updateDrawing(object.id, { animation: { ...object.animation, motion: event.target.value as "none" | "pulse", fadeIn: 0, fadeOut: 0 } })}><option value="none">Sem animação</option><option value="pulse">Pulse contínuo</option></select></label>
-        {object.animation?.motion === "pulse" && <><label className="stacked-field"><span><FieldLabel>Intensidade</FieldLabel><b>{Math.round((object.animation.pulseAmount ?? .05) * 100)}%</b></span><input type="range" min={.01} max={.2} step={.01} value={object.animation.pulseAmount ?? .05} onChange={(event) => updateDrawing(object.id, { animation: { ...object.animation, pulseAmount: Number(event.target.value) } })} /></label><label className="stacked-field"><span><FieldLabel>Velocidade</FieldLabel><b>{(object.animation.pulseSpeed ?? 1.4).toFixed(1)}x</b></span><input type="range" min={.2} max={3} step={.1} value={object.animation.pulseSpeed ?? 1.4} onChange={(event) => updateDrawing(object.id, { animation: { ...object.animation, pulseSpeed: Number(event.target.value) } })} /></label></>}
+        <label className="field-row"><FieldLabel>Animação</FieldLabel><select value={animationPreset} onChange={(event) => updateAnimationPreset(event.target.value as AnimationPreset)}><option value="none">Sem animação</option><option value="fade">Aparecer e desvanecer</option><option value="scaleIn">Entrada suave</option>{["arrow", "longBallArrow", "line", "freeDraw"].includes(object.type) && <option value="draw">Desenhar progressivamente</option>}{object.data.kind === "text" && <option value="reveal">Revelar da esquerda</option>}<option value="pulse">Pulse contínuo</option></select></label>
+        {animationPreset !== "none" && <><label className="stacked-field"><span><FieldLabel>Tempo de entrada</FieldLabel><b>{(effectiveAnimation.fadeIn ?? 0).toFixed(2)}s</b></span><input type="range" min={.05} max={2} step={.05} value={Math.max(.05, effectiveAnimation.fadeIn ?? .35)} onChange={(event) => updateDrawing(object.id, { animation: { ...effectiveAnimation, configured: true, fadeIn: Number(event.target.value) } })} /></label><label className="stacked-field"><span><FieldLabel>Tempo para desvanecer</FieldLabel><b>{(effectiveAnimation.fadeOut ?? 0).toFixed(2)}s</b></span><input type="range" min={.05} max={2} step={.05} value={Math.max(.05, effectiveAnimation.fadeOut ?? .4)} onChange={(event) => updateDrawing(object.id, { animation: { ...effectiveAnimation, configured: true, fadeOut: Number(event.target.value) } })} /></label></>}
+        {effectiveAnimation.motion === "pulse" && <><label className="stacked-field"><span><FieldLabel>Intensidade</FieldLabel><b>{Math.round((effectiveAnimation.pulseAmount ?? .05) * 100)}%</b></span><input type="range" min={.01} max={.2} step={.01} value={effectiveAnimation.pulseAmount ?? .05} onChange={(event) => updateDrawing(object.id, { animation: { ...effectiveAnimation, configured: true, pulseAmount: Number(event.target.value) } })} /></label><label className="stacked-field"><span><FieldLabel>Velocidade</FieldLabel><b>{(effectiveAnimation.pulseSpeed ?? 1.4).toFixed(1)}x</b></span><input type="range" min={.2} max={3} step={.1} value={effectiveAnimation.pulseSpeed ?? 1.4} onChange={(event) => updateDrawing(object.id, { animation: { ...effectiveAnimation, configured: true, pulseSpeed: Number(event.target.value) } })} /></label></>}
       </section>
 
       <section className="property-section">
@@ -460,15 +485,12 @@ function TextContentField({ value, onChange }: { value: string; onChange: (value
   return <label className="text-field"><FieldLabel>Conteúdo</FieldLabel><textarea rows={2} value={value} onChange={(event) => onChange(event.target.value)} /></label>;
 }
 
-function VideoSlidePresentationSettings({ content, slideDuration, caption, captionOpacity, currentTime, videoDuration, onUpdate }: {
-  slideId: string;
+function VideoSlidePresentationSettings({ slide, content, currentTime, videoDuration, onUpdate }: {
+  slide: AnalysisSlide;
   content: VideoSlideContent;
-  slideDuration: number;
-  caption: string;
-  captionOpacity: number;
   currentTime: number;
   videoDuration: number;
-  onUpdate: (patch: { content?: VideoSlideContent; duration?: number; caption?: string; captionOpacity?: number }) => void;
+  onUpdate: (patch: Partial<AnalysisSlide>) => void;
 }) {
   const freezeFrames = content.freezeFrames ?? [];
   const sourceDuration = getSourceDuration(videoDuration, freezeFrames);
@@ -483,10 +505,8 @@ function VideoSlidePresentationSettings({ content, slideDuration, caption, capti
         <label><FieldLabel>Saída</FieldLabel><input type="number" min={content.startTime + .08} max={sourceDuration} step={.04} value={endTime.toFixed(2)} onChange={(event) => onUpdate({ content: { ...content, endTime: Math.max(content.startTime + .08, Math.min(Number(event.target.value), sourceDuration)) } })} /></label>
       </div>
       <div className="mark-controls"><button disabled={!videoDuration || currentSourceTime >= endTime - .08} onClick={() => onUpdate({ content: { ...content, startTime: currentSourceTime } })}>Marcar IN</button><button disabled={!videoDuration || currentSourceTime <= content.startTime + .08} onClick={() => onUpdate({ content: { ...content, endTime: currentSourceTime } })}>Marcar OUT</button></div>
-      <div className="duration-readout"><span>Duração com pausas</span><strong>{Math.max(0, presentationDuration).toFixed(2)} s</strong></div>
-      <label className="slide-prop-field"><span>Duração do slide</span><div><input type="number" min={1} max={60} step={.5} value={slideDuration} onChange={(event) => onUpdate({ duration: Math.max(1, Number(event.target.value)) })} /><i>s</i></div></label>
-      <label className="slide-prop-field vertical"><span>Legenda no fundo da imagem</span><textarea rows={3} placeholder="Escreva a mensagem a apresentar..." value={caption} onChange={(event) => onUpdate({ caption: event.target.value })} /></label>
-      <label className="stacked-field"><span><FieldLabel>Opacidade da legenda</FieldLabel><b>{Math.round(captionOpacity * 100)}%</b></span><input type="range" min={.25} max={1} step={.05} value={captionOpacity} onChange={(event) => onUpdate({ captionOpacity: Number(event.target.value) })} /></label>
+      <div className="duration-readout"><span>Duração usada no preview e exportação · inclui pausas</span><strong>{Math.max(0, presentationDuration).toFixed(2)} s</strong></div>
+      <CaptionControls slide={slide} onChange={onUpdate} />
     </section>
   );
 }

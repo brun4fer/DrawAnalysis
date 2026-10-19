@@ -1,4 +1,4 @@
-import type { FreezeFrame } from "@/types/slide";
+import type { AnalysisSlide, FreezeFrame, VideoSlideContent } from "@/types/slide";
 
 export interface VideoTimelinePoint {
   sourceTime: number;
@@ -53,4 +53,33 @@ export function timelineTimeToSource(timelineTime: number, freezeFrames?: Freeze
 export function freezeRange(freeze: FreezeFrame, freezeFrames?: FreezeFrame[]) {
   const start = sourceTimeToTimeline(freeze.sourceTime, orderedFreezeFrames(freezeFrames).filter((item) => item.id !== freeze.id));
   return { start, end: start + Math.max(0, freeze.duration) };
+}
+
+export function freezeFramesInsideClip(content: VideoSlideContent, sourceEnd: number) {
+  return orderedFreezeFrames(content.freezeFrames).filter((freeze) =>
+    freeze.sourceTime >= content.startTime && freeze.sourceTime < sourceEnd,
+  );
+}
+
+export function getVideoClipPresentationDuration(content: VideoSlideContent, fallbackSourceDuration: number) {
+  const sourceEnd = Math.max(
+    content.startTime,
+    content.endTime ?? content.startTime + Math.max(0, fallbackSourceDuration),
+  );
+  const freezes = freezeFramesInsideClip(content, sourceEnd);
+  return Math.max(0, sourceEnd - content.startTime)
+    + freezes.reduce((total, freeze) => total + Math.max(0, freeze.duration), 0);
+}
+
+export function getSlidePresentationDuration(slide: AnalysisSlide) {
+  if (slide.content.kind === "tactical-board") {
+    const baseDuration = Math.max(.25, Number.isFinite(slide.duration) ? slide.duration : 4);
+    const movementCount = slide.content.movements?.length ?? 0;
+    if (!movementCount) return baseDuration;
+    const travel = Math.max(.15, slide.content.movementDuration ?? 1.2);
+    const hold = Math.max(0, slide.content.movementHoldDuration ?? .65);
+    return Math.max(baseDuration, hold + movementCount * (travel + hold));
+  }
+  if (slide.content.kind !== "video") return Math.max(.25, Number.isFinite(slide.duration) ? slide.duration : 4);
+  return Math.max(.25, getVideoClipPresentationDuration(slide.content, slide.duration));
 }

@@ -24,7 +24,7 @@ export function TitleSlide({ content, playbackTime, playing }: Props) {
       <div className="slide-background-gradient" style={{ opacity: overlayOpacity }} />
       <div className="slide-accent" style={{ background: content.accentColor ?? "#a3ff12" }} />
       <div className="title-slide-copy">
-        <span style={{ color: content.accentColor ?? "#a3ff12" }}>{content.subtitle}</span>
+        <span style={{ color: content.accentColor ?? "#a3ff12", fontSize: `${content.subtitleFontSize ?? 16}px` }}>{content.subtitle}</span>
         <h1 style={{ fontSize: `${content.fontSize}px` }}>{content.text}</h1>
         {content.body && <p>{content.body}</p>}
       </div>

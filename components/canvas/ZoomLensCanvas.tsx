@@ -2,7 +2,7 @@
 
 import { forwardRef, useEffect } from "react";
 import type { DrawingObject } from "@/types/drawing";
-import { getObjectStateAtTime } from "@/utils/temporalRenderer";
+import { getObjectStateAtTime, resolvedDrawingAnimation } from "@/utils/temporalRenderer";
 
 interface Props {
   drawings: DrawingObject[];
@@ -27,7 +27,8 @@ export const ZoomLensCanvas = forwardRef<HTMLCanvasElement, Props>(function Zoom
       const temporalState = getObjectStateAtTime(drawing, currentTime);
       if (!temporalState.visible) continue;
 
-      const scale = (Math.abs(temporalState.transform.scaleX) + Math.abs(temporalState.transform.scaleY)) / 2;
+      const entranceScale = resolvedDrawingAnimation(drawing).motion === "scaleIn" ? .68 + temporalState.entryProgress * .32 : 1;
+      const scale = (Math.abs(temporalState.transform.scaleX) + Math.abs(temporalState.transform.scaleY)) / 2 * entranceScale;
       const radius = Math.max(18, drawing.data.radius * Math.min(width, height) * scale);
       const centerX = (drawing.data.center.x + temporalState.transform.x) * width;
       const centerY = (drawing.data.center.y + temporalState.transform.y) * height;
@@ -40,6 +41,7 @@ export const ZoomLensCanvas = forwardRef<HTMLCanvasElement, Props>(function Zoom
       const sourceY = Math.max(0, Math.min(video.videoHeight - sourceRadiusY * 2, sourceCenterY - sourceRadiusY));
 
       context.save();
+      context.globalAlpha = temporalState.opacity;
       context.beginPath();
       context.arc(centerX, centerY, radius, 0, Math.PI * 2);
       context.clip();

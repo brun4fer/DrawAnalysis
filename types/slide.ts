@@ -5,6 +5,7 @@ export type SlideAlignment = "left" | "center" | "right";
 export type SlideBackgroundMediaType = "image" | "video";
 export type CrestCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 export type LineupTemplate = "broadcast" | "glass" | "tactical";
+export type WrittenReportLayout = "light-right" | "dark-right" | "accent-right" | "light-left";
 
 export interface SlidePlayer {
   id: string;
@@ -13,7 +14,42 @@ export interface SlidePlayer {
   team: "home" | "away";
   position: Point;
   photoUrl?: string;
+  preferredFoot?: "right" | "left";
+  buttonColor?: string;
+  textColor?: string;
+  size?: number;
 }
+
+export type TacticalBoardMarkType = "arrow" | "line" | "circle" | "rectangle" | "zone" | "free" | "text";
+
+export interface TacticalBoardMark {
+  id: string;
+  type: TacticalBoardMarkType;
+  points: Point[];
+  color: string;
+  fillColor: string;
+  strokeWidth: number;
+  opacity: number;
+  dashed?: boolean;
+  text?: string;
+}
+
+export interface TacticalMovement {
+  id: string;
+  name: string;
+  playerPositions: Record<string, Point>;
+  ballPosition: Point;
+  marks: TacticalBoardMark[];
+}
+
+export interface CaptionSegment {
+  id: string;
+  text: string;
+  color: string;
+  bold?: boolean;
+}
+
+export type BoardLegendSegment = CaptionSegment;
 
 export interface TitleSlideContent {
   kind: "title";
@@ -32,6 +68,7 @@ export interface TitleSlideContent {
   crestCorner?: CrestCorner;
   alignment: SlideAlignment;
   fontSize: number;
+  subtitleFontSize?: number;
 }
 
 export interface TextSlideContent {
@@ -64,6 +101,14 @@ export interface LineupSlideContent {
   backgroundMediaName?: string;
   backgroundOpacity?: number;
   overlayOpacity?: number;
+  panelOpacity?: number;
+  frameColor?: string;
+  pitchColor?: string;
+  playerNumberSize?: number;
+  playerNameSize?: number;
+  playerPhotoScale?: number;
+  playerCardScale?: number;
+  panelScale?: number;
 }
 
 export interface ReportCustomField {
@@ -98,6 +143,26 @@ export interface WrittenReportSlideContent {
   submoment: string;
   description: string;
   diagramMarks: ReportDiagramMark[];
+  title?: string;
+  subtitle?: string;
+  layoutDesign?: WrittenReportLayout;
+  awayColor?: string;
+  homeTextColor?: string;
+  awayTextColor?: string;
+  pitchColor?: string;
+  pitchLineColor?: string;
+  panelColor?: string;
+  textColor?: string;
+  accentColor?: string;
+  panelOpacity?: number;
+  fieldRatio?: number;
+  titleFontSize?: number;
+  subtitleFontSize?: number;
+  bodyFontSize?: number;
+  playerSize?: number;
+  ballPosition?: Point;
+  showBall?: boolean;
+  selectedPlayerId?: string;
 }
 
 export interface VideoSlideContent {
@@ -126,6 +191,29 @@ export interface BoardSlideContent {
   awayColor: string;
   title: string;
   boardObjects: DrawingObject[];
+  homeTextColor?: string;
+  awayTextColor?: string;
+  pitchColor?: string;
+  pitchLineColor?: string;
+  playerSize?: number;
+  ballPosition?: Point;
+  showBall?: boolean;
+  legendSegments?: BoardLegendSegment[];
+  legendBackgroundColor?: string;
+  legendOpacity?: number;
+  legendFontSize?: number;
+  legendHeight?: number;
+  tacticalMarks?: TacticalBoardMark[];
+  movements?: TacticalMovement[];
+  activeMovementId?: string;
+  selectedPlayerId?: string;
+  movementDuration?: number;
+  movementHoldDuration?: number;
+  markColor?: string;
+  markFillColor?: string;
+  markStrokeWidth?: number;
+  markOpacity?: number;
+  markDashed?: boolean;
 }
 
 export interface ImageSlideContent {
@@ -145,6 +233,12 @@ export interface AnalysisSlide {
   subtitle?: string;
   caption: string;
   captionOpacity?: number;
+  captionBackgroundColor?: string;
+  captionTextColor?: string;
+  captionSegments?: CaptionSegment[];
+  captionFontSize?: number;
+  captionHeight?: number;
+  captionPositionY?: number;
   /** Kept only while old saved projects are migrated on load. */
   question?: string;
   duration: number;

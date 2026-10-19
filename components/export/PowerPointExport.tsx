@@ -6,8 +6,9 @@ import { DrawingPreviewCanvas } from "@/components/canvas/DrawingPreviewCanvas";
 import { APP_PRODUCT } from "@/lib/product";
 import { SlideRenderer } from "@/components/slides/SlideRenderer";
 import type { AnalysisSlide, VideoSlideContent } from "@/types/slide";
-import { orderedFreezeFrames, sourceTimeToTimeline, timelineTimeToSource } from "@/utils/videoTimeline";
+import { freezeFramesInsideClip, sourceTimeToTimeline, timelineTimeToSource } from "@/utils/videoTimeline";
 import { slideBackgroundVideoUrl } from "@/utils/slideMedia";
+import { hexWithoutHash } from "@/utils/color";
 
 interface Props {
   slides: AnalysisSlide[];
@@ -163,7 +164,7 @@ export function PowerPointExport({ slides, projectName, onClose }: Props) {
       ensureActive();
 
       const sourceEnd = Math.max(content.startTime, Math.min(content.endTime ?? video.duration, video.duration));
-      const freezes = orderedFreezeFrames(content.freezeFrames).filter((freeze) => freeze.sourceTime >= content.startTime && freeze.sourceTime <= sourceEnd);
+      const freezes = freezeFramesInsideClip(content, sourceEnd);
       const timelineStart = sourceTimeToTimeline(content.startTime, freezes);
       const timelineEnd = sourceTimeToTimeline(sourceEnd, freezes);
       const exportDuration = Math.max(.05, timelineEnd - timelineStart);
@@ -406,22 +407,28 @@ export function PowerPointExport({ slides, projectName, onClose }: Props) {
             pptSlide.addImage({ data: image, x: 0, y: 0, w: SLIDE_WIDTH, h: SLIDE_HEIGHT });
           }
 
-          if (analysisSlide.caption.trim()) {
-            pptSlide.addText(analysisSlide.caption, {
+          const captionSegments = (analysisSlide.captionSegments ?? []).filter((segment) => segment.text.trim());
+          if (analysisSlide.caption.trim() || captionSegments.length) {
+            const captionHeight = Math.max(.035, Math.min(.2, analysisSlide.captionHeight ?? .075));
+            const captionCenter = Math.max(captionHeight / 2, Math.min(1 - captionHeight / 2, analysisSlide.captionPositionY ?? 1 - captionHeight / 2));
+            const captionText = captionSegments.length
+              ? captionSegments.map((segment, segmentIndex) => ({ text: `${segment.text}${segmentIndex < captionSegments.length - 1 ? " " : ""}`, options: { color: hexWithoutHash(segment.color, "#101010"), bold: segment.bold ?? false } }))
+              : analysisSlide.caption;
+            pptSlide.addText(captionText, {
               x: 0,
-              y: 7.0,
+              y: (captionCenter - captionHeight / 2) * SLIDE_HEIGHT,
               w: SLIDE_WIDTH,
-              h: .5,
+              h: captionHeight * SLIDE_HEIGHT,
               margin: .08,
               fontFace: "Aptos",
-              fontSize: 16,
-              bold: true,
-              color: "111111",
+              fontSize: analysisSlide.captionFontSize ?? 22,
+              bold: captionSegments.length ? undefined : true,
+              color: hexWithoutHash(analysisSlide.captionTextColor, "#101010"),
               align: "center",
               valign: "middle",
               breakLine: false,
-              fill: { color: "FFFFFF", transparency: Math.round((1 - (analysisSlide.captionOpacity ?? .74)) * 100) },
-              line: { color: "FFFFFF", transparency: 100 },
+              fill: { color: hexWithoutHash(analysisSlide.captionBackgroundColor, "#ffffff"), transparency: Math.round((1 - (analysisSlide.captionOpacity ?? .74)) * 100) },
+              line: { color: hexWithoutHash(analysisSlide.captionBackgroundColor, "#ffffff"), transparency: 100 },
             });
           }
           pptSlide.addNotes(`Slide ${APP_PRODUCT.name} · duração configurada: ${analysisSlide.duration}s`);
@@ -501,7 +508,7 @@ export function PowerPointExport({ slides, projectName, onClose }: Props) {
               />
             </div>
           </div>
-        ) : renderSlide ? <SlideRenderer slide={renderSlide} interactive={false} /> : null}
+        ) : renderSlide ? <SlideRenderer slide={renderSlide} interactive={false} showCaption={false} /> : null}
       </div>
     </>
   );

@@ -5,6 +5,7 @@ import { useRef } from "react";
 import type { LineupSlideContent, SlidePlayer } from "@/types/slide";
 import { SlideMediaBackground } from "../shared/SlideMediaBackground";
 import { lineupBackgroundMedia } from "@/utils/slideMedia";
+import { hexToRgba } from "@/utils/color";
 
 interface Props {
   content: LineupSlideContent;
@@ -34,6 +35,12 @@ export function LineupSlide({ content, interactive = true, onChange, playbackTim
   const template = content.template ?? "broadcast";
   const clubName = content.clubName || content.title || "NOME DO CLUBE";
   const background = content.background ?? "#0a0d0f";
+  const panelOpacity = content.panelOpacity ?? .82;
+  const playerNumberSize = content.playerNumberSize ?? 18;
+  const playerNameSize = content.playerNameSize ?? 9;
+  const playerPhotoScale = content.playerPhotoScale ?? 1;
+  const playerCardScale = content.playerCardScale ?? 1;
+  const panelScale = content.panelScale ?? 1;
 
   const beginDrag = (event: React.PointerEvent<HTMLButtonElement>, playerId: string) => {
     if (!interactive || !onChange || !pitchRef.current) return;
@@ -59,32 +66,39 @@ export function LineupSlide({ content, interactive = true, onChange, playbackTim
   };
 
   return (
-    <article className={`probable-lineup-slide template-${template}`} data-slide-root style={{ "--team-color": content.teamColor, "--goalkeeper-color": content.goalkeeperColor } as React.CSSProperties}>
+    <article className={`probable-lineup-slide template-${template}`} data-slide-root style={{ "--team-color": content.teamColor, "--goalkeeper-color": content.goalkeeperColor, "--frame-color": content.frameColor ?? "#ffffff", "--pitch-color": content.pitchColor ?? "#07131a", "--player-number-size": `${playerNumberSize}px`, "--player-name-size": `${playerNameSize}px`, "--player-photo-scale": playerPhotoScale, "--player-card-scale": playerCardScale } as React.CSSProperties}>
       <SlideMediaBackground url={media.url} type={media.type} playbackTime={playbackTime} playing={playing} />
       <div className="slide-background-color" style={{ backgroundColor: background, opacity: content.backgroundOpacity ?? (media.url ? .3 : 1) }} />
       <div className="lineup-background-gradient" style={{ opacity: content.overlayOpacity ?? .62 }} />
 
-      <div className="probable-lineup-panel">
+      <div className="probable-lineup-panel" style={{ backgroundColor: hexToRgba(background, panelOpacity), transform: `scale(${panelScale})` }}>
         <header className="probable-lineup-header">
-          <div className="probable-club">
+          <div className="probable-club-identity">
             <div className="probable-club-crest">
               {content.clubCrest ? <img src={content.clubCrest} alt={`Emblema ${clubName}`} /> : <span>{initials(clubName)}</span>}
             </div>
-            <div><span>{content.title || "ONZE PROVÁVEL"}</span><h1>{clubName}</h1></div>
+            <span>{content.title || "ONZE PROVÁVEL"}</span>
           </div>
-          <div className="probable-formation"><span>FORMAÇÃO</span><strong>{content.formation}</strong></div>
+          <h1>{clubName}</h1>
+          <div className="probable-header-balance" aria-hidden="true" />
         </header>
 
         <div className="probable-lineup-body">
-          <aside className="probable-coach-card">
-            <div className="probable-coach-photo">
-              {content.coachPhoto ? <img src={content.coachPhoto} alt={content.coachName || "Treinador"} /> : <span><i /><b /></span>}
+          <aside className="probable-lineup-sidebar" style={{ backgroundColor: hexToRgba(content.pitchColor, Math.min(1, panelOpacity + .08)) }}>
+            <div className="probable-formations"><strong>1-{content.formation}</strong><strong>{content.formation === "4-3-3" ? "1-4-2-3-1" : "1-4-3-3"}</strong></div>
+            <div className="probable-mini-pitch">
+              <i className="mini-half" /><i className="mini-circle" /><i className="mini-box top" /><i className="mini-box bottom" />
+              {content.players.map((player) => <span key={`mini-${player.id}`} style={{ left: `${player.position.y * 84 + 8}%`, top: `${player.position.x * 82 + 9}%` }} />)}
             </div>
-            <small>TREINADOR</small>
-            <strong>{content.coachName || "Nome do treinador"}</strong>
+            <div className="probable-coach-card">
+              {content.coachPhoto && <div className="probable-coach-photo"><img src={content.coachPhoto} alt={content.coachName || "Treinador"} /></div>}
+              <strong>{content.coachName || "Nome do treinador"}</strong>
+              <small>TREINADOR</small>
+              <em>HEAD-COACH</em>
+            </div>
           </aside>
 
-          <div className="probable-pitch" ref={pitchRef}>
+          <div className="probable-pitch" ref={pitchRef} style={{ backgroundColor: hexToRgba(content.pitchColor, panelOpacity) }}>
             <div className="probable-pitch-outline" />
             <div className="probable-pitch-half" />
             <div className="probable-pitch-circle" />
@@ -105,6 +119,7 @@ export function LineupSlide({ content, interactive = true, onChange, playbackTim
                   <span className="probable-player-card" style={{ "--card-color": color } as React.CSSProperties}>
                     <PlayerPortrait player={player} color={color} />
                     <b>{player.number}</b>
+                    {player.preferredFoot === "left" && <em title="Pé esquerdo dominante">E</em>}
                   </span>
                   <strong>{player.name}</strong>
                 </button>

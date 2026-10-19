@@ -155,6 +155,35 @@ export function drawMovedPlayer(
   const sourceY = box.y * video.videoHeight;
   const sourceWidth = box.width * video.videoWidth;
   const sourceHeight = box.height * video.videoHeight;
+  const padding = Math.max(2, Math.ceil(bodyWidth * .07));
+  const cutout = document.createElement("canvas");
+  cutout.width = Math.max(1, Math.ceil(bodyWidth + padding * 2));
+  cutout.height = Math.max(1, Math.ceil(bodyHeight + padding * 2));
+  const cutoutContext = cutout.getContext("2d");
+  const mask = document.createElement("canvas");
+  mask.width = cutout.width;
+  mask.height = cutout.height;
+  const maskContext = mask.getContext("2d");
+  if (!cutoutContext || !maskContext) return;
+
+  cutoutContext.imageSmoothingEnabled = true;
+  cutoutContext.imageSmoothingQuality = "high";
+  cutoutContext.drawImage(video, sourceX, sourceY, sourceWidth, sourceHeight, padding, padding, bodyWidth, bodyHeight);
+  maskContext.filter = `blur(${Math.max(.65, bodyWidth * .018)}px)`;
+  addPlayerSilhouettePath(
+    maskContext,
+    padding,
+    padding,
+    bodyWidth,
+    bodyHeight,
+    padding + bodyWidth / 2,
+    padding + bodyHeight,
+  );
+  maskContext.fillStyle = "#ffffff";
+  maskContext.fill();
+  maskContext.filter = "none";
+  cutoutContext.globalCompositeOperation = "destination-in";
+  cutoutContext.drawImage(mask, 0, 0);
 
   context.save();
   context.translate(destinationX, destinationY);
@@ -167,9 +196,7 @@ export function drawMovedPlayer(
   context.ellipse(0, Math.max(1, bodyHeight * .018), bodyWidth * .43, Math.max(2, bodyHeight * .045), 0, 0, Math.PI * 2);
   context.fill();
   context.shadowBlur = 0;
-  addPlayerSilhouettePath(context, x, y, bodyWidth, bodyHeight, 0, 0);
-  context.clip();
-  context.drawImage(video, sourceX, sourceY, sourceWidth, sourceHeight, x, y, bodyWidth, bodyHeight);
+  context.drawImage(cutout, x - padding, y - padding);
   context.restore();
 }
 

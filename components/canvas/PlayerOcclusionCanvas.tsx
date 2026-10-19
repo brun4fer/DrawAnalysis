@@ -81,7 +81,7 @@ function drawGroundArrow(
     context.stroke();
   }
 
-  if (drawing.data.showOrigin !== false) {
+  if (drawing.data.showOrigin === true) {
     const radiusX = Math.max(10, drawing.data.radiusX * width * 1.45);
     const radiusY = Math.max(3.5, radiusX * .26);
     context.shadowColor = "rgba(0,0,0,.7)";
@@ -119,15 +119,19 @@ export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(functi
     context.clearRect(0, 0, canvas.width, canvas.height);
 
     const activeTargets = drawings.filter((drawing) => getObjectStateAtTime(drawing, currentTime).visible);
+    const spotlightTrackIds = new Set(activeTargets.flatMap((drawing) =>
+      drawing.data.kind === "spotlight" && drawing.target?.kind === "player" ? [drawing.target.trackId] : [],
+    ));
     const trackIds = [...new Set(activeTargets.flatMap((drawing) => {
       const ids: string[] = [];
       if (drawing.target?.kind === "player") ids.push(drawing.target.trackId);
       if (drawing.data.kind === "line") {
         if (drawing.data.startTarget?.trackId) ids.push(drawing.data.startTarget.trackId);
         if (drawing.data.endTarget?.trackId) ids.push(drawing.data.endTarget.trackId);
+        drawing.data.pointTargets?.forEach((target) => { if (target?.trackId) ids.push(target.trackId); });
       }
       return ids;
-    }))];
+    }))].filter((trackId) => !spotlightTrackIds.has(trackId));
     for (const trackId of trackIds) {
       const track = playerTracks?.find((item) => item.id === trackId);
       if (!track?.samples.length) continue;
@@ -150,9 +154,21 @@ export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(functi
       if (!track?.samples.length) continue;
       const sample = samplePlayerTrackAtTime(track, currentTime);
       const transform = transformOverrides?.[drawing.id] ?? state.transform;
-      const destination = {
+      const finalDestination = {
         x: drawing.data.destination.x + transform.x,
         y: drawing.data.destination.y + transform.y,
+      };
+      const objectDuration = Math.max(.04, drawing.endTime - drawing.startTime);
+      const travelDuration = Math.min(objectDuration / (drawing.data.returnToOrigin ? 2 : 1), Math.max(.12, drawing.data.travelDuration ?? .7));
+      const elapsed = Math.max(0, currentTime - drawing.startTime);
+      const ease = (value: number) => 1 - (1 - Math.max(0, Math.min(1, value))) ** 3;
+      let travelProgress = drawing.data.animateMovement === false ? 1 : ease(elapsed / travelDuration);
+      if (drawing.data.animateMovement !== false && drawing.data.returnToOrigin && currentTime > drawing.endTime - travelDuration) {
+        travelProgress = 1 - ease((currentTime - (drawing.endTime - travelDuration)) / travelDuration);
+      }
+      const destination = {
+        x: drawing.data.origin.x + (finalDestination.x - drawing.data.origin.x) * travelProgress,
+        y: drawing.data.origin.y + (finalDestination.y - drawing.data.origin.y) * travelProgress,
       };
       try {
         if (drawing.data.hideOriginal !== false) hidePlayerOriginal(context, video, sample.bbox, width, height);

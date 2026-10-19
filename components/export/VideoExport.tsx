@@ -6,8 +6,9 @@ import { DrawingPreviewCanvas } from "@/components/canvas/DrawingPreviewCanvas";
 import { APP_PRODUCT } from "@/lib/product";
 import { SlideRenderer } from "@/components/slides/SlideRenderer";
 import type { AnalysisSlide, VideoSlideContent } from "@/types/slide";
-import { orderedFreezeFrames, sourceTimeToTimeline, timelineTimeToSource } from "@/utils/videoTimeline";
+import { freezeFramesInsideClip, getSlidePresentationDuration, sourceTimeToTimeline, timelineTimeToSource } from "@/utils/videoTimeline";
 import { slideBackgroundVideoUrl } from "@/utils/slideMedia";
+import { hexToRgba } from "@/utils/color";
 
 interface Props {
   slides: AnalysisSlide[];
@@ -123,12 +124,7 @@ function drawVideoCover(context: CanvasRenderingContext2D, video: HTMLVideoEleme
 }
 
 function slideExportDuration(slide: AnalysisSlide) {
-  if (slide.content.kind !== "video") return Math.max(.25, slide.duration);
-  const content = slide.content;
-  const end = content.endTime ?? content.startTime + Math.max(.25, slide.duration);
-  const freezes = orderedFreezeFrames(content.freezeFrames).filter((freeze) => freeze.sourceTime >= content.startTime && freeze.sourceTime <= end);
-  const availableDuration = end - content.startTime + freezes.reduce((total, freeze) => total + freeze.duration, 0);
-  return Math.max(.25, Math.min(slide.duration, availableDuration));
+  return getSlidePresentationDuration(slide);
 }
 
 export function VideoExport({ slides, selectedSlideId, projectName, onClose }: Props) {
@@ -137,6 +133,7 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
   const [phase, setPhase] = useState<"config" | "working" | "done" | "error">("config");
   const [renderSlide, setRenderSlide] = useState<AnalysisSlide | null>(null);
   const [timelineTime, setTimelineTime] = useState(0);
+  const [renderPresentationTime, setRenderPresentationTime] = useState(0);
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState("Configure a exportação.");
   const [error, setError] = useState("");
@@ -200,6 +197,7 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
       if (disposed || cancelledRef.current) throw new DOMException("Exportação cancelada.", "AbortError");
     };
     const showSlide = async (slide: AnalysisSlide) => {
+      setRenderPresentationTime(0);
       setRenderSlide(slide);
       await nextPaint();
       await document.fonts.ready;
@@ -207,17 +205,44 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
       ensureActive();
     };
     const drawCaption = (context: CanvasRenderingContext2D, slide: AnalysisSlide) => {
+      const segments = (slide.captionSegments ?? []).filter((segment) => segment.text.trim());
       const caption = slide.caption.trim();
-      if (!caption) return;
-      const height = 54;
+      if (!caption && !segments.length) return;
+      const height = Math.round(EXPORT_HEIGHT * Math.max(.035, Math.min(.2, slide.captionHeight ?? .075)));
+      const centerY = EXPORT_HEIGHT * Math.max(height / EXPORT_HEIGHT / 2, Math.min(1 - height / EXPORT_HEIGHT / 2, slide.captionPositionY ?? 1 - height / EXPORT_HEIGHT / 2));
       context.save();
-      context.fillStyle = `rgba(255,255,255,${slide.captionOpacity ?? .74})`;
-      context.fillRect(0, EXPORT_HEIGHT - height, EXPORT_WIDTH, height);
-      context.fillStyle = "#101010";
-      context.font = "700 22px Inter, Arial, sans-serif";
-      context.textAlign = "center";
+      context.fillStyle = hexToRgba(slide.captionBackgroundColor, slide.captionOpacity ?? .74);
+      context.fillRect(0, centerY - height / 2, EXPORT_WIDTH, height);
       context.textBaseline = "middle";
-      context.fillText(caption, EXPORT_WIDTH / 2, EXPORT_HEIGHT - height / 2, EXPORT_WIDTH - 48);
+      if (segments.length) {
+        const gap = Math.max(8, (slide.captionFontSize ?? 22) * .34);
+        let fontSize = slide.captionFontSize ?? 22;
+        const measure = () => segments.map((segment) => {
+          context.font = `${segment.bold ? 900 : 500} ${fontSize}px Inter, Arial, sans-serif`;
+          return context.measureText(segment.text).width;
+        });
+        let widths = measure();
+        const availableWidth = EXPORT_WIDTH - 48;
+        const unscaledWidth = widths.reduce((total, width) => total + width, 0) + gap * Math.max(0, segments.length - 1);
+        if (unscaledWidth > availableWidth) {
+          fontSize *= availableWidth / unscaledWidth;
+          widths = measure();
+        }
+        const totalWidth = widths.reduce((total, width) => total + width, 0) + gap * Math.max(0, segments.length - 1);
+        let x = (EXPORT_WIDTH - totalWidth) / 2;
+        context.textAlign = "left";
+        segments.forEach((segment, index) => {
+          context.fillStyle = segment.color;
+          context.font = `${segment.bold ? 900 : 500} ${fontSize}px Inter, Arial, sans-serif`;
+          context.fillText(segment.text, x, centerY);
+          x += widths[index] + gap;
+        });
+      } else {
+        context.fillStyle = slide.captionTextColor ?? "#101010";
+        context.font = `700 ${slide.captionFontSize ?? 22}px Inter, Arial, sans-serif`;
+        context.textAlign = "center";
+        context.fillText(caption, EXPORT_WIDTH / 2, centerY, EXPORT_WIDTH - 48);
+      }
       context.restore();
     };
     const drawVideoFrame = (canvas: HTMLCanvasElement, video: HTMLVideoElement, slide: AnalysisSlide) => {
@@ -250,7 +275,7 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
       const { toCanvas } = await import("html-to-image");
       for (let index = 0; index < exportSlides.length; index += 1) {
         const slide = exportSlides[index];
-        if (slide.content.kind === "video") continue;
+        if (slide.content.kind === "video" || slide.content.kind === "tactical-board") continue;
         ensureActive();
         setMessage(`A preparar slide ${index + 1}/${exportSlides.length}…`);
         await showSlide(slide);
@@ -335,10 +360,10 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
             setMessage(`A carregar vídeo do slide ${index + 1}/${exportSlides.length}…`);
             await prepareVideoSource(video, content.sourceUrl, index + 1);
             const sourceEnd = Math.max(content.startTime, Math.min(content.endTime ?? video.duration, video.duration));
-            const freezes = orderedFreezeFrames(content.freezeFrames).filter((freeze) => freeze.sourceTime >= content.startTime && freeze.sourceTime <= sourceEnd);
+            const freezes = freezeFramesInsideClip(content, sourceEnd);
             const timelineStart = sourceTimeToTimeline(content.startTime, freezes);
             const timelineEnd = sourceTimeToTimeline(sourceEnd, freezes);
-            const duration = Math.max(.05, Math.min(slide.duration, timelineEnd - timelineStart));
+            const duration = Math.max(.05, timelineEnd - timelineStart);
             await seekVideo(video, content.startTime);
             setTimelineTime(timelineStart);
             await nextPaint();
@@ -369,6 +394,35 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
               await waitFrame();
             }
             video.pause();
+            completedDuration += duration;
+          } else if (slide.content.kind === "tactical-board") {
+            const duration = getSlidePresentationDuration(slide);
+            const root = captureRootRef.current?.querySelector<HTMLElement>(".slide-stage-shell");
+            if (!root) throw new Error(`O quadro tático do slide ${index + 1} não ficou preparado.`);
+            const startedAt = performance.now();
+            while (true) {
+              ensureRecording();
+              const elapsed = Math.min(duration, (performance.now() - startedAt) / 1000);
+              setRenderPresentationTime(elapsed);
+              await nextPaint();
+              const frame = await toCanvas(root, {
+                width: EXPORT_WIDTH,
+                height: EXPORT_HEIGHT,
+                canvasWidth: EXPORT_WIDTH,
+                canvasHeight: EXPORT_HEIGHT,
+                pixelRatio: 1,
+                cacheBust: false,
+                backgroundColor: "#080a0b",
+                filter: (node) => !(node instanceof HTMLVideoElement),
+              });
+              context.fillStyle = "#080a0b";
+              context.fillRect(0, 0, canvas.width, canvas.height);
+              context.drawImage(frame, 0, 0, canvas.width, canvas.height);
+              drawCaption(context, slide);
+              updateProgress(elapsed, `A animar quadro tático ${index + 1}/${exportSlides.length} · ${Math.round(elapsed / duration * 100)}%`);
+              if (elapsed >= duration) break;
+              await waitFrame();
+            }
             completedDuration += duration;
           } else if (slideBackgroundVideoUrl(slide)) {
             const source = slideBackgroundVideoUrl(slide)!;
@@ -517,7 +571,7 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
           <div className="powerpoint-export-drawing-layer">
             <DrawingPreviewCanvas drawings={activeVideo.drawings} playerTracks={activeVideo.playerTracks} currentTime={timelineTime} width={EXPORT_WIDTH} height={EXPORT_HEIGHT} getVideoElement={getVideoElement} registerCapture={registerOverlayCapture} />
           </div>
-        ) : renderSlide ? <SlideRenderer slide={renderSlide} interactive={false} /> : null}
+        ) : renderSlide ? <SlideRenderer slide={renderSlide} interactive={false} showCaption={false} presentationTime={renderSlide.content.kind === "tactical-board" ? renderPresentationTime : undefined} /> : null}
       </div>
     </>
   );

@@ -4,10 +4,41 @@ export interface TemporalObjectState {
   visible: boolean;
   transform: ObjectTransform;
   opacity: number;
+  entryProgress: number;
+  exitProgress: number;
   points?: number[];
 }
 
+const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+
+function easeOutCubic(value: number) {
+  return 1 - (1 - value) ** 3;
+}
+
+export function defaultDrawingAnimationFor(type: DrawingObject["type"]): NonNullable<DrawingObject["animation"]> {
+  if (["arrow", "longBallArrow", "line", "freeDraw"].includes(type)) {
+    return { configured: true, fadeIn: .55, fadeOut: .35, motion: "draw", pulseAmount: .05, pulseSpeed: 1.4 };
+  }
+  if (type === "text") return { configured: true, fadeIn: .65, fadeOut: .35, motion: "reveal", pulseAmount: .05, pulseSpeed: 1.4 };
+  if (type === "playerRing") return { configured: true, fadeIn: .34, fadeOut: .42, motion: "ringLock", pulseAmount: .05, pulseSpeed: 1.4 };
+  if (["spotlight", "zoom", "ellipse", "triangle", "polygon", "rectangle", "glimpse"].includes(type)) {
+    return { configured: true, fadeIn: .42, fadeOut: .45, motion: "scaleIn", pulseAmount: .05, pulseSpeed: 1.4 };
+  }
+  if (type === "ghost") return { configured: true, fadeIn: .24, fadeOut: .35, motion: "none", pulseAmount: .05, pulseSpeed: 1.4 };
+  return { configured: true, fadeIn: 0, fadeOut: 0, motion: "none", pulseAmount: .05, pulseSpeed: 1.4 };
+}
+
+export function resolvedDrawingAnimation(object: DrawingObject): NonNullable<DrawingObject["animation"]> {
+  const animation = object.animation;
+  const alreadyCustomized = animation?.configured === true
+    || (animation?.motion !== undefined && animation.motion !== "none")
+    || (animation?.fadeIn ?? 0) > 0
+    || (animation?.fadeOut ?? 0) > 0;
+  return alreadyCustomized ? { ...defaultDrawingAnimationFor(object.type), ...animation } : defaultDrawingAnimationFor(object.type);
+}
+
 export function getObjectStateAtTime(object: DrawingObject, currentTime: number): TemporalObjectState {
+  const animation = resolvedDrawingAnimation(object);
   const visible = currentTime >= object.startTime && currentTime <= object.endTime;
   const frames = [...object.keyframes].sort((a, b) => a.time - b.time);
   const bounds = surroundingFrames(frames, currentTime);
@@ -31,13 +62,16 @@ export function getObjectStateAtTime(object: DrawingObject, currentTime: number)
     return left + (right - left) * progress;
   };
   const points = interpolatePoints(bounds.left?.points, bounds.right?.points, progress);
-  const fadeIn = 0;
-  const fadeOut = 0;
-  const inFactor = fadeIn ? Math.min(1, Math.max(0, (currentTime - object.startTime) / fadeIn)) : 1;
-  const outFactor = fadeOut ? Math.min(1, Math.max(0, (object.endTime - currentTime) / fadeOut)) : 1;
-  const motion = object.animation?.motion === "pulse" ? "pulse" : "none";
-  const pulseAmount = Math.max(0, Math.min(.25, object.animation?.pulseAmount ?? .05));
-  const pulseSpeed = Math.max(.1, object.animation?.pulseSpeed ?? 1.4);
+  const objectDuration = Math.max(0, object.endTime - object.startTime);
+  const fadeIn = Math.min(objectDuration / 2, Math.max(0, animation.fadeIn ?? 0));
+  const fadeOut = Math.min(objectDuration / 2, Math.max(0, animation.fadeOut ?? 0));
+  const rawEntryProgress = fadeIn ? clamp01((currentTime - object.startTime) / fadeIn) : 1;
+  const rawExitProgress = fadeOut ? clamp01((object.endTime - currentTime) / fadeOut) : 1;
+  const entryProgress = easeOutCubic(rawEntryProgress);
+  const exitProgress = rawExitProgress * rawExitProgress * (3 - 2 * rawExitProgress);
+  const motion = animation.motion === "pulse" ? "pulse" : "none";
+  const pulseAmount = Math.max(0, Math.min(.25, animation.pulseAmount ?? .05));
+  const pulseSpeed = Math.max(.1, animation.pulseSpeed ?? 1.4);
   const pulseFactor = motion === "pulse"
     ? 1 + Math.sin(Math.max(0, currentTime - object.startTime) * Math.PI * 2 * pulseSpeed) * pulseAmount
     : 1;
@@ -45,7 +79,9 @@ export function getObjectStateAtTime(object: DrawingObject, currentTime: number)
   return {
     visible,
     transform: { x: value("x"), y: value("y"), rotation: value("rotation"), scaleX: value("scaleX") * animatedScale, scaleY: value("scaleY") * animatedScale },
-    opacity: object.style.opacity * Math.min(inFactor, outFactor),
+    opacity: object.style.opacity * Math.min(rawEntryProgress, exitProgress),
+    entryProgress,
+    exitProgress,
     points,
   };
 }

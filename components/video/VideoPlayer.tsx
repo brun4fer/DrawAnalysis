@@ -7,6 +7,7 @@ import { useEditorStore } from "@/store/useEditorStore";
 import type { FreezeFrame } from "@/types/slide";
 import { freezeRange, getTimelineDuration, orderedFreezeFrames, sourceTimeToTimeline, timelineTimeToSource } from "@/utils/videoTimeline";
 import { VideoControls } from "./VideoControls";
+import { hexToRgba } from "@/utils/color";
 
 const DrawingCanvas = dynamic(() => import("@/components/canvas/DrawingCanvas").then((mod) => mod.DrawingCanvas), { ssr: false });
 
@@ -24,11 +25,16 @@ interface Props {
   freezeFrames?: FreezeFrame[];
   caption?: string;
   captionOpacity?: number;
+  captionBackgroundColor?: string;
+  captionTextColor?: string;
+  captionFontSize?: number;
+  captionHeight?: number;
+  captionPositionY?: number;
   onChooseVideo: () => void;
   onDurationReady?: (duration: number) => void;
 }
 
-export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer({ source, clipStart = 0, clipEnd, freezeFrames, caption, captionOpacity = .74, onChooseVideo, onDurationReady }, ref) {
+export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer({ source, clipStart = 0, clipEnd, freezeFrames, caption, captionOpacity = .74, captionBackgroundColor = "#ffffff", captionTextColor = "#101010", captionFontSize = 22, captionHeight = .075, captionPositionY = .9625, onChooseVideo, onDurationReady }, ref) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const areaRef = useRef<HTMLDivElement>(null);
   const fullscreenRef = useRef<HTMLDivElement>(null);
@@ -286,7 +292,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
               onEnded={() => setIsPlaying(false)}
             />
             <div className="canvas-overlay"><DrawingCanvas width={size.width} height={size.height} registerCapture={registerCapture} getVideoElement={getVideoElement} /></div>
-            {caption && <div className="video-caption" style={{ backgroundColor: `rgba(255,255,255,${captionOpacity})` }}>{caption}</div>}
+            {caption && <div className="video-caption slide-caption" style={{ top: `${captionPositionY * 100}%`, minHeight: `${captionHeight * 100}%`, backgroundColor: hexToRgba(captionBackgroundColor, captionOpacity), color: captionTextColor, fontSize: `${captionFontSize}px` }}>{caption}</div>}
           </div>
         ) : (
           <button className="empty-video" onClick={onChooseVideo}>

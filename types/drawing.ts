@@ -107,13 +107,13 @@ export interface DrawingKeyframe {
 export type DrawingData =
   | { kind: "identifyPlayer"; center: Point; radiusX: number; radiusY: number }
   | { kind: "playerRing"; center: Point; radiusX: number; radiusY: number; occlusionWidth?: number; labelOffsetY?: number; label?: PlayerLabel; ringDesign?: PlayerRingDesign; spinEnabled?: boolean; spinSpeed?: number; showRing?: boolean; splashEnabled?: boolean; splashSpeed?: number }
-  | { kind: "ghost"; origin: Point; destination: Point; radiusX: number; radiusY: number; hideOriginal?: boolean; playerOpacity?: number; showArrow?: boolean; showOrigin?: boolean }
+  | { kind: "ghost"; origin: Point; destination: Point; radiusX: number; radiusY: number; hideOriginal?: boolean; playerOpacity?: number; showArrow?: boolean; showOrigin?: boolean; animateMovement?: boolean; returnToOrigin?: boolean; travelDuration?: number }
   | { kind: "spotlight"; target: Point; radiusX: number; radiusY: number; beamHeight: number; design?: "beam" | "isolation"; darkness?: number; feather?: number }
   | { kind: "zoom"; center: Point; radius: number; zoom: number }
   | { kind: "ellipse"; center: Point; radiusX: number; radiusY: number }
   | { kind: "rectangle"; origin: Point; width: number; height: number; fillDesign?: ZoneDesign; stripeColor?: string; stripeSpacing?: number; stripeAngle?: number; stripeOpacity?: number }
   | { kind: "longBallArrow"; start: Point; end: Point; curveHeight: number; showLandingZone?: boolean; landingZoneColor?: string; landingZoneSize?: number }
-  | { kind: "line"; points: Point[]; lineDesign?: LineDesign; secondaryColor?: string; startTarget?: DrawingTarget; endTarget?: DrawingTarget }
+  | { kind: "line"; points: Point[]; lineDesign?: LineDesign; secondaryColor?: string; startTarget?: DrawingTarget; endTarget?: DrawingTarget; pointTargets?: Array<DrawingTarget | null> }
   | { kind: "glimpse"; origin: Point; target: Point; spread: number }
   | { kind: "polygon"; points: Point[]; zoneDesign?: ZoneDesign; stripeColor?: string; stripeSpacing?: number; stripeAngle?: number; stripeOpacity?: number }
   | { kind: "triangle"; points: Point[]; fillDesign?: ZoneDesign; stripeColor?: string; stripeSpacing?: number; stripeAngle?: number; stripeOpacity?: number }
@@ -130,9 +130,10 @@ export interface DrawingObject {
   target?: DrawingTarget;
   keyframes: DrawingKeyframe[];
   animation?: {
+    configured?: boolean;
     fadeIn?: number;
     fadeOut?: number;
-    motion?: "none" | "scaleIn" | "ringLock" | "pulse";
+    motion?: "none" | "scaleIn" | "ringLock" | "pulse" | "draw" | "reveal";
     pulseAmount?: number;
     pulseSpeed?: number;
   };

@@ -132,6 +132,11 @@ export function Editor() {
     imageSlide.name = `Frame · ${selectedSlide.name}`;
     imageSlide.caption = selectedSlide.caption;
     imageSlide.captionOpacity = selectedSlide.captionOpacity;
+    imageSlide.captionBackgroundColor = selectedSlide.captionBackgroundColor;
+    imageSlide.captionTextColor = selectedSlide.captionTextColor;
+    imageSlide.captionFontSize = selectedSlide.captionFontSize;
+    imageSlide.captionHeight = selectedSlide.captionHeight;
+    imageSlide.captionPositionY = selectedSlide.captionPositionY;
     if (imageSlide.content.kind === "image") imageSlide.content.imageDataUrl = imageDataUrl;
     addSlide(imageSlide);
   };
@@ -193,6 +198,11 @@ export function Editor() {
                 freezeFrames={selectedSlide.content.freezeFrames}
                 caption={selectedSlide.caption}
                 captionOpacity={selectedSlide.captionOpacity}
+                captionBackgroundColor={selectedSlide.captionBackgroundColor}
+                captionTextColor={selectedSlide.captionTextColor}
+                captionFontSize={selectedSlide.captionFontSize}
+                captionHeight={selectedSlide.captionHeight}
+                captionPositionY={selectedSlide.captionPositionY}
                 onChooseVideo={() => inputRef.current?.click()}
                 onDurationReady={(videoDuration) => {
                   if (selectedSlide.content.kind === "video" && selectedSlide.content.endTime === undefined) updateSlide(selectedSlide.id, { content: { ...selectedSlide.content, endTime: videoDuration } });

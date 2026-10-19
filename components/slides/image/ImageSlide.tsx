@@ -3,7 +3,7 @@ import type { ImageSlideContent } from "@/types/slide";
 
 export function ImageSlide({ content }: { content: ImageSlideContent }) {
   return (
-    <div className="image-slide">
+    <div className="image-slide" data-slide-root>
       {content.imageDataUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={content.imageDataUrl} alt="Conteúdo do slide" style={{ objectFit: content.fit }} />

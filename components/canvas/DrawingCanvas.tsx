@@ -9,7 +9,7 @@ import type { DrawingData, DrawingObject, DrawingTarget, NormalizedBox, ObjectTr
 import { DEFAULT_STYLE, DEFAULT_TRANSFORM } from "@/types/drawing";
 import { flattenPoints, toNormalized } from "@/utils/coordinates";
 import { createId } from "@/utils/id";
-import { getObjectStateAtTime } from "@/utils/temporalRenderer";
+import { defaultDrawingAnimationFor, getObjectStateAtTime } from "@/utils/temporalRenderer";
 import { timelineTimeToSource } from "@/utils/videoTimeline";
 import { samplePlayerTrackAtTime, targetOffsetAtTime } from "@/utils/playerTracking";
 import { applyFavoriteData } from "@/utils/toolFavorites";
@@ -25,7 +25,7 @@ interface Props {
   getVideoElement?: () => HTMLVideoElement | null;
 }
 
-interface Draft { tool: Tool; start: Point; points: Point[]; current: Point; startTarget?: DrawingTarget }
+interface Draft { tool: Tool; start: Point; points: Point[]; current: Point; startTarget?: DrawingTarget; pointTargets?: Array<DrawingTarget | null> }
 interface DetectionEffect { phase: "scanning" | "locked" | "failed"; click: Point; box?: NormalizedBox; score?: number }
 interface IdentifiedPlayer { track: PlayerTrack; sample: PlayerTrack["samples"][number] }
 
@@ -266,7 +266,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       trackingEnabled: options?.trackingEnabled ?? false,
       target: options?.target,
       keyframes: [],
-      animation: favorite?.animation ? structuredClone(favorite.animation) : { fadeIn: 0, fadeOut: 0, motion: "none", pulseAmount: .05, pulseSpeed: 1.4 },
+      animation: favorite?.animation ? { ...structuredClone(favorite.animation), configured: true } : defaultDrawingAnimationFor(type),
       actionLabel: defaultActionLabel && favorite?.actionLabel
         ? { ...structuredClone(favorite.actionLabel), value: defaultActionLabel.value }
         : defaultActionLabel,
@@ -420,7 +420,10 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         hideOriginal: true,
         playerOpacity: .96,
         showArrow: true,
-        showOrigin: true,
+        showOrigin: false,
+        animateMovement: true,
+        returnToOrigin: false,
+        travelDuration: .7,
       }, { target: { kind: "player", trackId: track.id, anchor: "feet", referenceFoot: sample.foot } });
       setPendingGhost(null);
       return;
@@ -612,6 +615,35 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     Math.hypot((candidate.x - point.x) * width, (candidate.y - point.y) * height) <= 13,
   );
 
+  const finishLineDraft = useCallback((lineDraft: Draft) => {
+    if (lineDraft.tool !== "line" || lineDraft.points.length < 2) return;
+    makeDrawing("line", {
+      kind: "line",
+      points: lineDraft.points,
+      lineDesign: "single",
+      secondaryColor: "#ffffff",
+      startTarget: lineDraft.pointTargets?.[0] ?? lineDraft.startTarget,
+      endTarget: lineDraft.pointTargets?.at(-1) ?? undefined,
+      pointTargets: lineDraft.pointTargets,
+    });
+  }, [makeDrawing]);
+
+  useEffect(() => {
+    if (!draft) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setDraft(null);
+      }
+      if (event.key === "Enter" && draft.tool === "line" && draft.points.length >= 2) {
+        event.preventDefault();
+        finishLineDraft(draft);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [draft, finishLineDraft]);
+
   const onPointerDown = (event: Konva.KonvaEventObject<PointerEvent>) => {
     if (event.target !== event.target.getStage()) return;
     const point = pointFromStage(event.target.getStage()!);
@@ -661,7 +693,28 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       return;
     }
 
-    if (["ellipse", "rectangle", "arrow", "longBallArrow", "line", "glimpse"].includes(tool) && draft?.tool === tool) {
+    if (tool === "line") {
+      const anchor = lineAnchorAtPoint(point);
+      const nextPoint = anchor?.point ?? point;
+      if (draft?.tool === "line") {
+        const lastPoint = draft.points.at(-1)!;
+        const repeatsLastPoint = Math.hypot((lastPoint.x - nextPoint.x) * width, (lastPoint.y - nextPoint.y) * height) <= 8;
+        const points = repeatsLastPoint ? draft.points : [...draft.points, nextPoint];
+        const pointTargets = repeatsLastPoint
+          ? draft.pointTargets ?? []
+          : [...(draft.pointTargets ?? []), anchor?.target ?? null];
+        if ((event.evt.detail >= 2 || repeatsLastPoint) && points.length >= 2) {
+          finishLineDraft({ ...draft, points, pointTargets, current: nextPoint });
+        } else {
+          setDraft({ ...draft, points, pointTargets, current: nextPoint });
+        }
+        return;
+      }
+      setDraft({ tool, start: nextPoint, points: [nextPoint], current: nextPoint, startTarget: anchor?.target, pointTargets: [anchor?.target ?? null] });
+      return;
+    }
+
+    if (["ellipse", "rectangle", "arrow", "longBallArrow", "glimpse"].includes(tool) && draft?.tool === tool) {
       const dx = point.x - draft.start.x;
       const dy = point.y - draft.start.y;
       if (tool === "ellipse") makeDrawing("ellipse", {
@@ -682,24 +735,11 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         stripeOpacity: .72,
       });
       if (tool === "arrow") makeDrawing("arrow", { kind: "arrow", points: [draft.start, point] });
-      if (tool === "line") {
-        const endAnchor = lineAnchorAtPoint(point);
-        makeDrawing("line", {
-          kind: "line",
-          points: [draft.start, endAnchor?.point ?? point],
-          lineDesign: "single",
-          secondaryColor: "#ffffff",
-          startTarget: draft.startTarget,
-          endTarget: endAnchor?.target,
-        });
-      }
       if (tool === "longBallArrow") makeDrawing("longBallArrow", { kind: "longBallArrow", start: draft.start, end: point, curveHeight: .13, showLandingZone: true, landingZoneColor: "#65d9ff", landingZoneSize: 1 });
       if (tool === "glimpse") makeDrawing("glimpse", { kind: "glimpse", origin: draft.start, target: point, spread: 38 });
       return;
     }
-    const startAnchor = tool === "line" ? lineAnchorAtPoint(point) : null;
-    const start = startAnchor?.point ?? point;
-    setDraft({ tool, start, points: [start], current: start, startTarget: startAnchor?.target });
+    setDraft({ tool, start: point, points: [point], current: point });
   };
 
   const onPointerMove = (event: Konva.KonvaEventObject<PointerEvent>) => {
@@ -750,7 +790,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       }).flatMap(({ x, y }) => [x, y]);
       return <Arrow listening={false} stroke="#65d9ff" strokeWidth={6} fill="#65d9ff" dash={[7, 6]} opacity={.9} shadowColor="#000000" shadowBlur={9} shadowOpacity={.58} shadowOffsetX={4} shadowOffsetY={7} points={points} pointerLength={17} pointerWidth={18} lineCap="round" lineJoin="round" />;
     }
-    if (tool === "line") return <Line listening={false} stroke="#65d9ff" strokeWidth={6} dash={[7, 6]} opacity={.9} shadowColor="#000000" shadowBlur={9} shadowOpacity={.58} shadowOffsetX={4} shadowOffsetY={7} lineCap="round" lineJoin="round" points={flattenPoints([draft.start, draft.current], width, height)} />;
+    if (tool === "line") return <Line listening={false} stroke="#65d9ff" strokeWidth={6} dash={[7, 6]} opacity={.9} shadowColor="#000000" shadowBlur={9} shadowOpacity={.58} shadowOffsetX={4} shadowOffsetY={7} lineCap="round" lineJoin="round" points={flattenPoints([...draft.points, draft.current], width, height)} />;
     if (tool === "glimpse") {
       const originX = draft.start.x * width;
       const originY = draft.start.y * height;
@@ -828,6 +868,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
           />
         ))}
         {tool === "text" && <Text text="Clique para adicionar texto" x={16} y={16} fill="#fff" opacity={0.5} fontSize={13} />}
+        {tool === "line" && <Text text="Clique nos jogadores/pontos · duplo clique ou Enter para terminar" x={16} y={16} fill="#fff" opacity={0.68} fontSize={13} />}
       </Layer>
     </Stage>
     <PlayerOcclusionCanvas

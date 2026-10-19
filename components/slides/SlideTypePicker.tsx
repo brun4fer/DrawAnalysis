@@ -8,9 +8,9 @@ interface Props { onSelect: (type: SlideType) => void; onClose: () => void }
 
 const choices: Array<{ type: SlideType; label: string; description: string; icon: LucideIcon }> = [
   { type: "title", label: "Título / Momento", description: "Abertura de um momento com emblema e fundo audiovisual", icon: LayoutTemplate },
-  { type: "text", label: "Texto / Frase", description: "Conclusão, princípio ou mensagem-chave", icon: ClipboardType },
+  { type: "text", label: "Conclusão", description: "Conclusão, princípio ou mensagem-chave", icon: ClipboardType },
   { type: "lineup", label: "Onze provável", description: "Clube, treinador e jogadores em formato broadcast", icon: ShieldHalf },
-  { type: "written-report", label: "Relatório escrito", description: "Dados do jogo, esquema, momento, desenho e descrição", icon: ClipboardList },
+  { type: "written-report", label: "Esquema tático + descrição", description: "Campo tático com título, subtítulo e texto lateral", icon: ClipboardList },
   { type: "video", label: "Vídeo / Jogada", description: "Vídeo local, desenhos, timeline e tracking", icon: Film },
   { type: "kickoff", label: "Pontapé de saída", description: "Sequência inicial num campo tático", icon: Presentation },
   { type: "tactical-board", label: "Quadro tático", description: "Campo livre para construir uma situação", icon: AlignLeft },

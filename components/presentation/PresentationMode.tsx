@@ -3,16 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useEditorStore } from "@/store/useEditorStore";
 import { SlideRenderer } from "@/components/slides/SlideRenderer";
+import { getSlidePresentationDuration } from "@/utils/videoTimeline";
 
 interface Props { onClose: () => void }
 
-function slideDuration(value: number) {
-  return Math.max(.25, Number.isFinite(value) ? value : 4);
-}
-
 export function PresentationMode({ onClose }: Props) {
   const { slides, selectedSlideId } = useEditorStore();
-  const durations = slides.map((slide) => slideDuration(slide.duration));
+  const durations = slides.map(getSlidePresentationDuration);
   const totalDuration = durations.reduce((total, duration) => total + duration, 0);
   const initialIndex = Math.max(0, slides.findIndex((slide) => slide.id === selectedSlideId));
   const initialTime = durations.slice(0, initialIndex).reduce((total, duration) => total + duration, 0);
@@ -91,7 +88,6 @@ export function PresentationMode({ onClose }: Props) {
     <div className="presentation-mode presentation-builder-preview presentation-clean" aria-label="Pré-visualização em ecrã inteiro. Espaço pausa; setas avançam ou recuam cinco segundos.">
       <div className="presentation-content">
         <SlideRenderer slide={slide} interactive={false} presentationTime={active.elapsed} presentationPlaying={playing} />
-        {slide.caption && <div className="presentation-caption" style={{ backgroundColor: `rgba(255,255,255,${slide.captionOpacity ?? .74})` }}>{slide.caption}</div>}
       </div>
     </div>
   );
