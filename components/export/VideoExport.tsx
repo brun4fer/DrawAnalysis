@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, FileVideo2, LoaderCircle, X, XCircle } from "lucide-react";
 import { DrawingPreviewCanvas } from "@/components/canvas/DrawingPreviewCanvas";
 import { APP_PRODUCT } from "@/lib/product";
@@ -114,17 +114,29 @@ function seekVideo(video: HTMLVideoElement, time: number) {
   });
 }
 
-function drawVideoCover(context: CanvasRenderingContext2D, video: HTMLVideoElement, width: number, height: number) {
+function drawVideoBackground(context: CanvasRenderingContext2D, video: HTMLVideoElement, width: number, height: number, slide: AnalysisSlide) {
   const sourceWidth = video.videoWidth || width;
   const sourceHeight = video.videoHeight || height;
-  const scale = Math.max(width / sourceWidth, height / sourceHeight);
+  const fit = slide.content.kind === "kickoff" ? slide.content.backgroundFit ?? "cover" : "cover";
+  const positionX = slide.content.kind === "kickoff" ? slide.content.backgroundPositionX ?? .5 : .5;
+  const positionY = slide.content.kind === "kickoff" ? slide.content.backgroundPositionY ?? .5 : .5;
+  const scale = fit === "contain"
+    ? Math.min(width / sourceWidth, height / sourceHeight)
+    : Math.max(width / sourceWidth, height / sourceHeight);
   const drawWidth = sourceWidth * scale;
   const drawHeight = sourceHeight * scale;
-  context.drawImage(video, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
+  context.drawImage(video, (width - drawWidth) * positionX, (height - drawHeight) * positionY, drawWidth, drawHeight);
 }
 
 function slideExportDuration(slide: AnalysisSlide) {
   return getSlidePresentationDuration(slide);
+}
+
+function formatDuration(seconds: number) {
+  const rounded = Math.max(0, Math.round(seconds));
+  const minutes = Math.floor(rounded / 60);
+  const remainder = rounded % 60;
+  return `${minutes}:${remainder.toString().padStart(2, "0")}`;
 }
 
 export function VideoExport({ slides, selectedSlideId, projectName, onClose }: Props) {
@@ -146,6 +158,19 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
   const outputStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+  const configuredSlides = useMemo(() => scope === "current"
+    ? slides.filter((slide) => slide.id === selectedSlideId)
+    : slides, [scope, selectedSlideId, slides]);
+  const includedFreezeDuration = useMemo(() => configuredSlides.reduce((total, slide) => {
+    if (slide.content.kind !== "video") return total;
+    const content = slide.content;
+    const sourceEnd = content.endTime ?? Number.POSITIVE_INFINITY;
+    return total + (content.freezeFrames ?? [])
+      .filter((freeze) => freeze.sourceTime >= content.startTime && freeze.sourceTime < sourceEnd)
+      .reduce((freezeTotal, freeze) => freezeTotal + Math.max(0, freeze.duration), 0);
+  }, 0), [configuredSlides]);
+  const estimatedDuration = configuredSlides.reduce((total, slide) => total + slideExportDuration(slide), 0)
+    + Math.max(0, configuredSlides.length - 1) * gap;
 
   const registerOverlayCapture = useCallback((capture: (() => HTMLCanvasElement | null) | null) => {
     overlayCaptureRef.current = capture;
@@ -444,7 +469,7 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
               if (Math.abs(video.currentTime - backgroundTime) > .3) video.currentTime = backgroundTime;
               context.fillStyle = "#080a0b";
               context.fillRect(0, 0, canvas.width, canvas.height);
-              drawVideoCover(context, video, canvas.width, canvas.height);
+              drawVideoBackground(context, video, canvas.width, canvas.height, slide);
               context.drawImage(overlay, 0, 0, canvas.width, canvas.height);
               drawCaption(context, slide);
               updateProgress(elapsed, `A renderizar slide ${index + 1}/${exportSlides.length} · ${Math.round(elapsed / duration * 100)}%`);
@@ -546,7 +571,8 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
             <div className="video-export-config">
               <label><span>O que pretende exportar?</span><select value={scope} onChange={(event) => setScope(event.target.value as "all" | "current")}><option value="all">Apresentação completa</option><option value="current">Apenas o slide atual</option></select></label>
               <label><span>Intervalo entre slides</span><div><input type="number" min={0} max={10} step={.25} value={gap} onChange={(event) => setGap(Math.max(0, Math.min(10, Number(event.target.value))))} /><i>segundos</i></div></label>
-              <p>O vídeo final inclui cortes, pausas, desenhos, animações, legendas e áudio quando permitido pelo browser.</p>
+              <div className="video-export-summary"><span>Duração final estimada</span><strong>{formatDuration(estimatedDuration)}</strong><small>Inclui {includedFreezeDuration.toFixed(1)}s de “parar imagem” e os intervalos entre slides.</small></div>
+              <p>O vídeo final reúne os slides por ordem e inclui cortes, pausas, desenhos, animações, legendas e áudio quando permitido pelo browser.</p>
             </div>
           ) : (
             <div className="powerpoint-export-body">

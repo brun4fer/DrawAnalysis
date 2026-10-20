@@ -2,7 +2,7 @@
 
 import { Clock3, Film, ImagePlus, Layers3, Plus, Trash2, X } from "lucide-react";
 import { useEditorStore } from "@/store/useEditorStore";
-import type { AnalysisSlide, BoardSlideContent, ImageSlideContent, LineupSlideContent, SlideAlignment, SlideContent, TextSlideContent, TitleSlideContent, WrittenReportSlideContent } from "@/types/slide";
+import type { AnalysisSlide, BoardSlideContent, ImageSlideContent, LineupSlideContent, MatchPresentationSlideContent, SlideAlignment, SlideContent, TeamOverviewSlideContent, TextSlideContent, TitleSlideContent, WrittenReportSlideContent } from "@/types/slide";
 import { formationNames, playersForFormation } from "@/utils/slideFactory";
 import { createId } from "@/utils/id";
 import { CaptionControls } from "./CaptionControls";
@@ -13,7 +13,7 @@ export function SlidePropertiesPanel() {
   const slide = slides.find((item) => item.id === selectedSlideId);
   if (!slide) return <aside className="properties-panel"><div className="no-selection"><Layers3 size={26} /><strong>Adicione um slide</strong></div></aside>;
   const setContent = (content: SlideContent) => updateSlide(slide.id, { content });
-  const slideTypeLabel = slide.type === "text" ? "Conclusão" : slide.type === "written-report" ? "Esquema tático + descrição" : slide.type;
+  const slideTypeLabel = slide.type === "text" ? "Conclusão" : slide.type === "team-overview" ? "Dados gerais da equipa" : slide.type === "written-report" ? "Esquema tático + descrição" : slide.type === "kickoff" ? "Apresentação de jogo" : slide.type;
 
   return (
     <aside className="properties-panel slide-properties">
@@ -22,8 +22,10 @@ export function SlidePropertiesPanel() {
       {slide.content.kind === "title" && <TitleProperties content={slide.content} onChange={setContent} />}
       {slide.content.kind === "text" && <TextProperties content={slide.content} onChange={setContent} />}
       {slide.content.kind === "lineup" && <LineupProperties content={slide.content} onChange={setContent} />}
+      {slide.content.kind === "team-overview" && <TeamOverviewProperties content={slide.content} onChange={setContent} />}
       {slide.content.kind === "written-report" && <WrittenReportProperties content={slide.content} onChange={setContent} />}
-      {(slide.content.kind === "kickoff" || slide.content.kind === "tactical-board") && <BoardProperties content={slide.content} onChange={setContent} />}
+      {slide.content.kind === "kickoff" && <MatchPresentationProperties content={slide.content} onChange={setContent} />}
+      {slide.content.kind === "tactical-board" && <BoardProperties content={slide.content} onChange={setContent} />}
       {slide.content.kind === "image" && <ImageProperties content={slide.content} onChange={setContent} />}
       {slide.content.kind === "video" && <section className="property-section"><h3>VÍDEO / PLAY</h3><div className="video-slide-info"><span>{slide.content.fileName || "Nenhum vídeo carregado"}</span><small>As ferramentas de vídeo e as propriedades dos desenhos aparecem quando este slide está ativo.</small></div></section>}
       <section className="property-section">
@@ -65,10 +67,10 @@ function MediaUpload({ name, onLoad, onClear }: { name?: string; onLoad: (value:
   );
 }
 
-function ImageAssetUpload({ label, value, onLoad, onClear }: { label: string; value?: string; onLoad: (value: string) => void; onClear: () => void }) {
+function ImageAssetUpload({ label, value, onLoad, onClear, maxDimension = 640 }: { label: string; value?: string; onLoad: (value: string) => void; onClear: () => void; maxDimension?: number }) {
   return (
     <div className="slide-media-control compact">
-      <label className="upload-property"><ImagePlus size={13} /> {label}<input type="file" accept="image/*" onChange={(event) => readImage(event.target.files?.[0], onLoad, 640)} /></label>
+      <label className="upload-property"><ImagePlus size={13} /> {label}<input type="file" accept="image/*" onChange={(event) => readImage(event.target.files?.[0], onLoad, maxDimension)} /></label>
       {value && <button type="button" className="remove-media-button" onClick={onClear}><X size={12} /> Remover</button>}
     </div>
   );
@@ -140,6 +142,50 @@ function LineupProperties({ content, onChange }: { content: LineupSlideContent; 
   </>;
 }
 
+function TeamOverviewProperties({ content, onChange }: { content: TeamOverviewSlideContent; onChange: (value: TeamOverviewSlideContent) => void }) {
+  const systems = content.tacticalSystems ?? [];
+  const setTemplate = (template: NonNullable<TeamOverviewSlideContent["template"]>) => {
+    const palette = template === "light"
+      ? { panelColor: "#f2f3f1", textColor: "#151918", mutedTextColor: "#65706a", accentColor: "#467b2b" }
+      : template === "accent"
+        ? { panelColor: "#172620", textColor: "#ffffff", mutedTextColor: "#a4b3aa", accentColor: "#f0a227" }
+        : { panelColor: "#0d1312", textColor: "#f3f5f4", mutedTextColor: "#87918c", accentColor: "#a3ff12" };
+    onChange({ ...content, template, ...palette });
+  };
+  const updateSystem = (index: number, value: string) => onChange({ ...content, tacticalSystems: systems.map((system, systemIndex) => systemIndex === index ? value : system) });
+
+  return <>
+    <Section title="DADOS GERAIS DA EQUIPA">
+      <label className="slide-prop-field vertical"><span>Etiqueta</span><input value={content.eyebrow} onChange={(event) => onChange({ ...content, eyebrow: event.target.value })} /></label>
+      <label className="slide-prop-field vertical"><span>Nome da equipa</span><input value={content.team} onChange={(event) => onChange({ ...content, team: event.target.value })} /></label>
+      <label className="slide-prop-field vertical"><span>Estádio</span><input value={content.stadium} onChange={(event) => onChange({ ...content, stadium: event.target.value })} /></label>
+      <label className="slide-prop-field vertical"><span>Dimensões do campo</span><input placeholder="Ex.: 105 × 68 m" value={content.pitchDimensions} onChange={(event) => onChange({ ...content, pitchDimensions: event.target.value })} /></label>
+      <label className="slide-prop-field vertical"><span>Meteorologia</span><input value={content.weather} onChange={(event) => onChange({ ...content, weather: event.target.value })} /></label>
+      <label className="slide-prop-field vertical"><span>Treinador</span><input value={content.coach} onChange={(event) => onChange({ ...content, coach: event.target.value })} /></label>
+    </Section>
+    <Section title="ESQUEMAS TÁTICOS">
+      <div className="report-edit-list">{systems.map((system, index) => <div className="report-system-row" key={index}><input value={system} placeholder="Ex.: 4-3-3" onChange={(event) => updateSystem(index, event.target.value)} /><button type="button" onClick={() => onChange({ ...content, tacticalSystems: systems.filter((_, systemIndex) => systemIndex !== index) })} title="Remover esquema"><Trash2 size={11} /></button></div>)}</div>
+      <button type="button" className="report-add-property" onClick={() => onChange({ ...content, tacticalSystems: [...systems, "Novo esquema"] })}><Plus size={12} /> Adicionar esquema</button>
+    </Section>
+    <Section title="FOTOGRAFIA DO ESTÁDIO">
+      <ImageAssetUpload label="Escolher fotografia" value={content.stadiumImage} maxDimension={1800} onLoad={(stadiumImage) => onChange({ ...content, stadiumImage })} onClear={() => onChange({ ...content, stadiumImage: undefined })} />
+      <label className="slide-prop-field"><span>Ajuste</span><select value={content.imageFit} onChange={(event) => onChange({ ...content, imageFit: event.target.value as "cover" | "contain" })}><option value="cover">Preencher</option><option value="contain">Mostrar completa</option></select></label>
+      <label className="stacked-field"><span><span className="field-label">Posição horizontal</span><b>{Math.round((content.imagePositionX ?? .5) * 100)}%</b></span><input type="range" min={0} max={1} step={.01} value={content.imagePositionX ?? .5} onChange={(event) => onChange({ ...content, imagePositionX: Number(event.target.value) })} /></label>
+      <label className="stacked-field"><span><span className="field-label">Posição vertical</span><b>{Math.round((content.imagePositionY ?? .5) * 100)}%</b></span><input type="range" min={0} max={1} step={.01} value={content.imagePositionY ?? .5} onChange={(event) => onChange({ ...content, imagePositionY: Number(event.target.value) })} /></label>
+      <label className="stacked-field"><span><span className="field-label">Largura da fotografia</span><b>{Math.round((content.imageRatio ?? .58) * 100)}%</b></span><input type="range" min={.45} max={.7} step={.01} value={content.imageRatio ?? .58} onChange={(event) => onChange({ ...content, imageRatio: Number(event.target.value) })} /></label>
+    </Section>
+    <Section title="DESIGN">
+      <label className="slide-prop-field"><span>Modelo</span><select value={content.template ?? "reference"} onChange={(event) => setTemplate(event.target.value as NonNullable<TeamOverviewSlideContent["template"]>)}><option value="reference">Escuro · referência</option><option value="light">Claro</option><option value="accent">Cor do clube</option></select></label>
+      <ColorPaletteField label="Fundo dos dados" value={content.panelColor ?? "#0d1312"} onChange={(panelColor) => onChange({ ...content, panelColor })} />
+      <ColorPaletteField label="Texto principal" value={content.textColor ?? "#f3f5f4"} onChange={(textColor) => onChange({ ...content, textColor })} />
+      <ColorPaletteField label="Texto secundário" value={content.mutedTextColor ?? "#87918c"} onChange={(mutedTextColor) => onChange({ ...content, mutedTextColor })} />
+      <ColorPaletteField label="Destaque" value={content.accentColor ?? "#a3ff12"} onChange={(accentColor) => onChange({ ...content, accentColor })} />
+      <label className="stacked-field"><span><span className="field-label">Nome da equipa</span><b>{content.teamFontSize ?? 54}px</b></span><input type="range" min={30} max={76} step={1} value={content.teamFontSize ?? 54} onChange={(event) => onChange({ ...content, teamFontSize: Number(event.target.value) })} /></label>
+      <label className="stacked-field"><span><span className="field-label">Valores</span><b>{content.valueFontSize ?? 20}px</b></span><input type="range" min={13} max={30} step={1} value={content.valueFontSize ?? 20} onChange={(event) => onChange({ ...content, valueFontSize: Number(event.target.value) })} /></label>
+    </Section>
+  </>;
+}
+
 function WrittenReportProperties({ content, onChange }: { content: WrittenReportSlideContent; onChange: (value: WrittenReportSlideContent) => void }) {
   const selectedPlayer = content.players.find((player) => player.id === content.selectedPlayerId) ?? content.players[0];
   const updatePlayer = (patch: Partial<(typeof content.players)[number]>) => {
@@ -190,10 +236,54 @@ function WrittenReportProperties({ content, onChange }: { content: WrittenReport
   </>;
 }
 
+function MatchPresentationProperties({ content, onChange }: { content: MatchPresentationSlideContent; onChange: (value: MatchPresentationSlideContent) => void }) {
+  const setTemplate = (template: NonNullable<MatchPresentationSlideContent["template"]>) => {
+    const preset = template === "duel"
+      ? { panelOpacity: .68, overlayOpacity: .38, frameColor: "#ffffff", accentColor: "#ffffff" }
+      : template === "minimal"
+        ? { panelOpacity: .1, overlayOpacity: .4, frameColor: "#ffffff", accentColor: "#a3ff12" }
+        : { panelOpacity: .25, overlayOpacity: .24, frameColor: "#ffffff", accentColor: "#ffffff" };
+    onChange({ ...content, template, ...preset });
+  };
+
+  return <>
+    <Section title="CLUBES">
+      <label className="slide-prop-field vertical"><span>Clube da casa</span><input value={content.homeClubName} onChange={(event) => onChange({ ...content, homeClubName: event.target.value })} /></label>
+      <ImageAssetUpload label="Emblema do clube da casa" value={content.homeCrest} onLoad={(homeCrest) => onChange({ ...content, homeCrest })} onClear={() => onChange({ ...content, homeCrest: undefined })} />
+      <label className="slide-prop-field vertical"><span>Clube visitante</span><input value={content.awayClubName} onChange={(event) => onChange({ ...content, awayClubName: event.target.value })} /></label>
+      <ImageAssetUpload label="Emblema do clube visitante" value={content.awayCrest} onLoad={(awayCrest) => onChange({ ...content, awayCrest })} onClear={() => onChange({ ...content, awayCrest: undefined })} />
+    </Section>
+    <Section title="JOGO">
+      <label className="slide-prop-field vertical"><span>Competição</span><input value={content.competitionName} onChange={(event) => onChange({ ...content, competitionName: event.target.value })} /></label>
+      <ImageAssetUpload label="Logótipo da competição" value={content.competitionLogo} onLoad={(competitionLogo) => onChange({ ...content, competitionLogo })} onClear={() => onChange({ ...content, competitionLogo: undefined })} />
+      <label className="slide-prop-field vertical"><span>Jornada</span><input value={content.matchday} onChange={(event) => onChange({ ...content, matchday: event.target.value })} /></label>
+      <div className="report-property-pair"><label><span>Data</span><input value={content.matchDate} placeholder="09 AGOSTO" onChange={(event) => onChange({ ...content, matchDate: event.target.value })} /></label><label><span>Hora</span><input value={content.matchTime} placeholder="15:30" onChange={(event) => onChange({ ...content, matchTime: event.target.value })} /></label></div>
+    </Section>
+    <Section title="FOTO OU VÍDEO DE FUNDO">
+      <MediaUpload name={content.backgroundMediaName} onLoad={(media) => onChange({ ...content, backgroundMediaUrl: media.url, backgroundMediaType: media.type, backgroundMediaName: media.name })} onClear={() => onChange({ ...content, backgroundMediaUrl: undefined, backgroundMediaType: undefined, backgroundMediaName: undefined })} />
+      <label className="slide-prop-field"><span>Ajuste</span><select value={content.backgroundFit ?? "cover"} onChange={(event) => onChange({ ...content, backgroundFit: event.target.value as "cover" | "contain" })}><option value="cover">Preencher</option><option value="contain">Mostrar completo</option></select></label>
+      <label className="stacked-field"><span><span className="field-label">Posição horizontal</span><b>{Math.round((content.backgroundPositionX ?? .5) * 100)}%</b></span><input type="range" min={0} max={1} step={.01} value={content.backgroundPositionX ?? .5} onChange={(event) => onChange({ ...content, backgroundPositionX: Number(event.target.value) })} /></label>
+      <label className="stacked-field"><span><span className="field-label">Posição vertical</span><b>{Math.round((content.backgroundPositionY ?? .5) * 100)}%</b></span><input type="range" min={0} max={1} step={.01} value={content.backgroundPositionY ?? .5} onChange={(event) => onChange({ ...content, backgroundPositionY: Number(event.target.value) })} /></label>
+    </Section>
+    <Section title="DESIGN">
+      <label className="slide-prop-field"><span>Template</span><select value={content.template ?? "broadcast"} onChange={(event) => setTemplate(event.target.value as NonNullable<MatchPresentationSlideContent["template"]>)}><option value="broadcast">Broadcast · referência</option><option value="duel">Duelo · painéis fortes</option><option value="minimal">Minimal · emblemas livres</option></select></label>
+      <ColorPaletteField label="Painel do clube da casa" value={content.homePanelColor ?? "#245b9b"} onChange={(homePanelColor) => onChange({ ...content, homePanelColor })} />
+      <ColorPaletteField label="Nome do clube da casa" value={content.homeTextColor ?? "#ffffff"} onChange={(homeTextColor) => onChange({ ...content, homeTextColor })} />
+      <ColorPaletteField label="Painel do clube visitante" value={content.awayPanelColor ?? "#ef6c32"} onChange={(awayPanelColor) => onChange({ ...content, awayPanelColor })} />
+      <ColorPaletteField label="Nome do clube visitante" value={content.awayTextColor ?? "#ffffff"} onChange={(awayTextColor) => onChange({ ...content, awayTextColor })} />
+      <ColorPaletteField label="Informação do jogo" value={content.informationTextColor ?? "#ffffff"} onChange={(informationTextColor) => onChange({ ...content, informationTextColor })} />
+      <ColorPaletteField label="Fundo da competição" value={content.competitionPanelColor ?? "#ffffff"} onChange={(competitionPanelColor) => onChange({ ...content, competitionPanelColor })} />
+      <ColorPaletteField label="Texto da competição" value={content.competitionTextColor ?? "#203b2d"} onChange={(competitionTextColor) => onChange({ ...content, competitionTextColor })} />
+      <ColorPaletteField label="Destaques" value={content.accentColor ?? "#ffffff"} onChange={(accentColor) => onChange({ ...content, accentColor })} />
+      <ColorPaletteField label="Moldura" value={content.frameColor ?? "#ffffff"} onChange={(frameColor) => onChange({ ...content, frameColor })} />
+      <ColorPaletteField label="Escurecimento do fundo" value={content.overlayColor ?? "#071018"} onChange={(overlayColor) => onChange({ ...content, overlayColor })} opacity={content.overlayOpacity ?? .24} onOpacityChange={(overlayOpacity) => onChange({ ...content, overlayOpacity })} />
+      <label className="stacked-field"><span><span className="field-label">Opacidade dos painéis</span><b>{Math.round((content.panelOpacity ?? .25) * 100)}%</b></span><input type="range" min={0} max={1} step={.02} value={content.panelOpacity ?? .25} onChange={(event) => onChange({ ...content, panelOpacity: Number(event.target.value) })} /></label>
+      <label className="stacked-field"><span><span className="field-label">Tamanho dos emblemas</span><b>{Math.round((content.crestScale ?? 1) * 100)}%</b></span><input type="range" min={.55} max={1.45} step={.05} value={content.crestScale ?? 1} onChange={(event) => onChange({ ...content, crestScale: Number(event.target.value) })} /></label>
+    </Section>
+  </>;
+}
+
 function BoardProperties({ content, onChange }: { content: BoardSlideContent; onChange: (value: BoardSlideContent) => void }) {
-  if (content.kind === "kickoff") {
-    return <Section title="PONTAPÉ DE SAÍDA"><label className="slide-prop-field vertical"><span>Título</span><input value={content.title} onChange={(event) => onChange({ ...content, title: event.target.value })} /></label><ColorPaletteField label="Equipa A" value={content.homeColor} onChange={(homeColor) => onChange({ ...content, homeColor })} /><ColorPaletteField label="Equipa B" value={content.awayColor} onChange={(awayColor) => onChange({ ...content, awayColor })} /><label className="stacked-field"><span><span className="field-label">Tamanho dos jogadores</span><b>{Math.round((content.playerSize ?? 1) * 100)}%</b></span><input type="range" min={.55} max={1.5} step={.05} value={content.playerSize ?? 1} onChange={(event) => onChange({ ...content, playerSize: Number(event.target.value) })} /></label><p className="property-help">Arraste os jogadores diretamente no campo.</p></Section>;
-  }
 
   const movements = content.movements ?? [];
   const activeMovement = movements.find((movement) => movement.id === content.activeMovementId);

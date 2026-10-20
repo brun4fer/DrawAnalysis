@@ -1,6 +1,6 @@
 "use client";
 
-import { AlignLeft, ClipboardList, ClipboardType, Film, ImageIcon, LayoutTemplate, Presentation, ShieldHalf, X } from "lucide-react";
+import { AlignLeft, ClipboardList, ClipboardType, Film, ImageIcon, Landmark, LayoutTemplate, Presentation, ShieldHalf, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { SlideType } from "@/types/slide";
 
@@ -10,9 +10,10 @@ const choices: Array<{ type: SlideType; label: string; description: string; icon
   { type: "title", label: "Título / Momento", description: "Abertura de um momento com emblema e fundo audiovisual", icon: LayoutTemplate },
   { type: "text", label: "Conclusão", description: "Conclusão, princípio ou mensagem-chave", icon: ClipboardType },
   { type: "lineup", label: "Onze provável", description: "Clube, treinador e jogadores em formato broadcast", icon: ShieldHalf },
+  { type: "team-overview", label: "Dados gerais da equipa", description: "Informações da equipa com fotografia do estádio", icon: Landmark },
   { type: "written-report", label: "Esquema tático + descrição", description: "Campo tático com título, subtítulo e texto lateral", icon: ClipboardList },
   { type: "video", label: "Vídeo / Jogada", description: "Vídeo local, desenhos, timeline e tracking", icon: Film },
-  { type: "kickoff", label: "Pontapé de saída", description: "Sequência inicial num campo tático", icon: Presentation },
+  { type: "kickoff", label: "Apresentação de jogo", description: "Duelo entre clubes com emblemas, jornada e fundo audiovisual", icon: Presentation },
   { type: "tactical-board", label: "Quadro tático", description: "Campo livre para construir uma situação", icon: AlignLeft },
   { type: "image", label: "Imagem", description: "Fotografia ou frame externo para analisar", icon: ImageIcon },
 ];

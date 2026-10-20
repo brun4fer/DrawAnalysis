@@ -1,4 +1,4 @@
-import type { AnalysisSlide, LineupSlideContent, TitleSlideContent } from "@/types/slide";
+import type { AnalysisSlide, LineupSlideContent, MatchPresentationSlideContent, TitleSlideContent } from "@/types/slide";
 
 export function titleBackgroundMedia(content: TitleSlideContent) {
   const url = content.backgroundMediaUrl ?? content.backgroundImage;
@@ -9,6 +9,10 @@ export function lineupBackgroundMedia(content: LineupSlideContent) {
   return { url: content.backgroundMediaUrl, type: content.backgroundMediaType };
 }
 
+export function matchPresentationBackgroundMedia(content: MatchPresentationSlideContent) {
+  return { url: content.backgroundMediaUrl, type: content.backgroundMediaType };
+}
+
 export function slideBackgroundVideoUrl(slide: AnalysisSlide) {
   if (slide.content.kind === "title") {
     const media = titleBackgroundMedia(slide.content);
@@ -16,6 +20,10 @@ export function slideBackgroundVideoUrl(slide: AnalysisSlide) {
   }
   if (slide.content.kind === "lineup") {
     const media = lineupBackgroundMedia(slide.content);
+    return media.type === "video" ? media.url : undefined;
+  }
+  if (slide.content.kind === "kickoff") {
+    const media = matchPresentationBackgroundMedia(slide.content);
     return media.type === "video" ? media.url : undefined;
   }
   return undefined;

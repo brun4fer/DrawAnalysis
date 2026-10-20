@@ -26,6 +26,7 @@ import { APP_PRODUCT } from "@/lib/product";
 type Account = { user: { id: string; name: string; username: string }; workspace: { id: string; name: string } };
 
 const VideoExport = dynamic(() => import("@/components/export/VideoExport").then((module) => module.VideoExport), { ssr: false });
+const PdfExport = dynamic(() => import("@/components/export/PdfExport").then((module) => module.PdfExport), { ssr: false });
 
 export function Editor() {
   const router = useRouter();
@@ -38,6 +39,7 @@ export function Editor() {
   const [cloudOpen, setCloudOpen] = useState(false);
   const [projectsOpen, setProjectsOpen] = useState(false);
   const [videoExportOpen, setVideoExportOpen] = useState(false);
+  const [pdfExportOpen, setPdfExportOpen] = useState(false);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState(APP_PRODUCT.defaultProjectName);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -86,7 +88,7 @@ export function Editor() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
-      if (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || presenting || pickerOpen || cloudOpen || projectsOpen) return;
+      if (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || presenting || pickerOpen || cloudOpen || projectsOpen || videoExportOpen || pdfExportOpen) return;
       const modifier = event.ctrlKey || event.metaKey;
       if (modifier && event.key.toLowerCase() === "s") { event.preventDefault(); void saveProject(); return; }
       if (modifier && event.key.toLowerCase() === "z") { event.preventDefault(); event.shiftKey ? redo() : undo(); return; }
@@ -168,6 +170,11 @@ export function Editor() {
     setVideoExportOpen(true);
   }, [setIsPlaying]);
   const closeVideoExport = useCallback(() => setVideoExportOpen(false), []);
+  const openPdfExport = useCallback(() => {
+    setIsPlaying(false);
+    setPdfExportOpen(true);
+  }, [setIsPlaying]);
+  const closePdfExport = useCallback(() => setPdfExportOpen(false), []);
 
   const openPreview = useCallback(() => {
     setPresenting(true);
@@ -182,7 +189,7 @@ export function Editor() {
   return (
     <main className="app-shell presentation-builder">
       <input ref={inputRef} className="sr-only" type="file" accept="video/*" onChange={(event) => { openFile(event.target.files?.[0]); event.target.value = ""; }} />
-      <TopBar filename={filename} isVideoSlide={isVideoSlide} onOpen={() => inputRef.current?.click()} onPreview={openPreview} onCapture={captureAsImageSlide} onCloud={() => setCloudOpen(true)} onProjects={() => setProjectsOpen(true)} onSave={() => void saveProject()} onExport={openVideoExport} onLogout={() => void logout()} projectName={projectName} saveState={saveState} account={account} />
+      <TopBar filename={filename} isVideoSlide={isVideoSlide} onOpen={() => inputRef.current?.click()} onPreview={openPreview} onCapture={captureAsImageSlide} onCloud={() => setCloudOpen(true)} onProjects={() => setProjectsOpen(true)} onSave={() => void saveProject()} onExportVideo={openVideoExport} onExportPdf={openPdfExport} onLogout={() => void logout()} projectName={projectName} saveState={saveState} account={account} />
       {notice && <button className="editor-notice" onClick={() => setNotice("")}>{notice}<span>×</span></button>}
       <div className="presentation-workspace">
         <SlideList onAdd={() => setPickerOpen(true)} />
@@ -224,6 +231,7 @@ export function Editor() {
       {projectsOpen && <ProjectLibraryModal slides={slides} selectedSlideId={selectedSlideId} activeDrawings={drawings} onClose={() => setProjectsOpen(false)} onOpen={(project) => { setProjectId(project.id); setProjectName(project.name); replacePresentation(project.slides); setSaveState("idle"); }} />}
       {presenting && <PresentationMode onClose={closePreview} />}
       {videoExportOpen && <VideoExport slides={slides} selectedSlideId={selectedSlideId} projectName={projectName} onClose={closeVideoExport} />}
+      {pdfExportOpen && <PdfExport slides={slides} projectName={projectName} onClose={closePdfExport} />}
     </main>
   );
 }

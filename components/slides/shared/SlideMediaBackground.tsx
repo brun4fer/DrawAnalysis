@@ -6,22 +6,27 @@ import type { SlideBackgroundMediaType } from "@/types/slide";
 interface Props {
   url?: string;
   type?: SlideBackgroundMediaType;
+  fit?: "cover" | "contain";
+  positionX?: number;
+  positionY?: number;
   playbackTime?: number;
   playing?: boolean;
 }
 
-function drawCover(canvas: HTMLCanvasElement, video: HTMLVideoElement) {
+function drawMedia(canvas: HTMLCanvasElement, video: HTMLVideoElement, fit: "cover" | "contain", positionX: number, positionY: number) {
   if (!video.videoWidth || !video.videoHeight) return;
   const context = canvas.getContext("2d");
   if (!context) return;
-  const scale = Math.max(canvas.width / video.videoWidth, canvas.height / video.videoHeight);
+  const scale = fit === "contain"
+    ? Math.min(canvas.width / video.videoWidth, canvas.height / video.videoHeight)
+    : Math.max(canvas.width / video.videoWidth, canvas.height / video.videoHeight);
   const width = video.videoWidth * scale;
   const height = video.videoHeight * scale;
   context.clearRect(0, 0, canvas.width, canvas.height);
-  context.drawImage(video, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
+  context.drawImage(video, (canvas.width - width) * positionX, (canvas.height - height) * positionY, width, height);
 }
 
-export function SlideMediaBackground({ url, type, playbackTime, playing = true }: Props) {
+export function SlideMediaBackground({ url, type, fit = "cover", positionX = .5, positionY = .5, playbackTime, playing = true }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const frameRef = useRef<number | null>(null);
@@ -30,8 +35,8 @@ export function SlideMediaBackground({ url, type, playbackTime, playing = true }
   const drawFrame = useCallback(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    if (video && canvas) drawCover(canvas, video);
-  }, []);
+    if (video && canvas) drawMedia(canvas, video, fit, positionX, positionY);
+  }, [fit, positionX, positionY]);
 
   useEffect(() => {
     if (type !== "video") return;
@@ -60,7 +65,7 @@ export function SlideMediaBackground({ url, type, playbackTime, playing = true }
   if (!url) return null;
   if ((type ?? "image") === "image") {
     // eslint-disable-next-line @next/next/no-img-element
-    return <div className="slide-media-background" data-slide-background-media><img src={url} alt="" /></div>;
+    return <div className="slide-media-background" data-slide-background-media><img src={url} alt="" style={{ objectFit: fit, objectPosition: `${positionX * 100}% ${positionY * 100}%` }} /></div>;
   }
 
   return (

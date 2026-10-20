@@ -105,6 +105,30 @@ export function normalizePresentationSlides(slides: AnalysisSlide[]) {
         panelScale: normalized.content.panelScale ?? 1,
       };
     }
+    if (normalized.content.kind === "team-overview") {
+      const template = normalized.content.template ?? "reference";
+      const palette = template === "light"
+        ? { panelColor: "#f2f3f1", textColor: "#151918", mutedTextColor: "#65706a", accentColor: "#467b2b" }
+        : template === "accent"
+          ? { panelColor: "#172620", textColor: "#ffffff", mutedTextColor: "#a4b3aa", accentColor: "#f0a227" }
+          : { panelColor: "#0d1312", textColor: "#f3f5f4", mutedTextColor: "#87918c", accentColor: "#a3ff12" };
+      normalized.content = {
+        ...normalized.content,
+        eyebrow: normalized.content.eyebrow ?? "DADOS GERAIS DA EQUIPA",
+        tacticalSystems: normalized.content.tacticalSystems ?? [],
+        imageFit: normalized.content.imageFit ?? "cover",
+        imagePositionX: normalized.content.imagePositionX ?? .5,
+        imagePositionY: normalized.content.imagePositionY ?? .5,
+        template,
+        panelColor: normalized.content.panelColor ?? palette.panelColor,
+        textColor: normalized.content.textColor ?? palette.textColor,
+        mutedTextColor: normalized.content.mutedTextColor ?? palette.mutedTextColor,
+        accentColor: normalized.content.accentColor ?? palette.accentColor,
+        imageRatio: normalized.content.imageRatio ?? .58,
+        teamFontSize: normalized.content.teamFontSize ?? 54,
+        valueFontSize: normalized.content.valueFontSize ?? 20,
+      };
+    }
     if (normalized.content.kind === "written-report") {
       const reportDesign = normalized.content.layoutDesign ?? "light-right";
       normalized.content = {
@@ -130,6 +154,35 @@ export function normalizePresentationSlides(slides: AnalysisSlide[]) {
         ballPosition: normalized.content.ballPosition ?? { x: .5, y: .5 },
         showBall: normalized.content.showBall ?? true,
         diagramMarks: normalized.content.diagramMarks ?? [],
+      };
+    }
+    if (normalized.content.kind === "kickoff") {
+      const clearExample = (value: string | undefined, examples: string[]) => value && !examples.includes(value) ? value : "";
+      normalized.content = {
+        ...normalized.content,
+        homeClubName: clearExample(normalized.content.homeClubName, ["FEIRENSE", "EQUIPA DA CASA"]),
+        awayClubName: clearExample(normalized.content.awayClubName, ["FIGUEIRAS", "EQUIPA VISITANTE"]),
+        competitionName: clearExample(normalized.content.competitionName, ["LIGA PORTUGAL 2", "COMPETIÇÃO"]),
+        matchday: clearExample(normalized.content.matchday, ["JORNADA 1", "JORNADA"]),
+        matchDate: clearExample(normalized.content.matchDate, ["09 AGOSTO", "DATA"]),
+        matchTime: clearExample(normalized.content.matchTime, ["15:30", "HORA"]),
+        backgroundFit: normalized.content.backgroundFit ?? "cover",
+        backgroundPositionX: normalized.content.backgroundPositionX ?? .5,
+        backgroundPositionY: normalized.content.backgroundPositionY ?? .5,
+        template: normalized.content.template ?? "broadcast",
+        homePanelColor: normalized.content.homePanelColor ?? "#245b9b",
+        awayPanelColor: normalized.content.awayPanelColor ?? "#ef6c32",
+        homeTextColor: normalized.content.homeTextColor ?? "#ffffff",
+        awayTextColor: normalized.content.awayTextColor ?? "#ffffff",
+        informationTextColor: normalized.content.informationTextColor ?? "#ffffff",
+        competitionPanelColor: normalized.content.competitionPanelColor ?? "#ffffff",
+        competitionTextColor: normalized.content.competitionTextColor ?? "#203b2d",
+        accentColor: normalized.content.accentColor ?? "#ffffff",
+        frameColor: normalized.content.frameColor ?? "#ffffff",
+        overlayColor: normalized.content.overlayColor ?? "#071018",
+        overlayOpacity: normalized.content.overlayOpacity ?? .24,
+        panelOpacity: normalized.content.panelOpacity ?? .25,
+        crestScale: normalized.content.crestScale ?? 1,
       };
     }
     if (normalized.content.kind === "tactical-board") {
@@ -182,6 +235,8 @@ export function prepareSlidesForStorage(
       copy.content.backgroundImage = withoutEmbeddedData(copy.content.backgroundImage);
       if (copy.content.backgroundMediaType === "video") copy.content.backgroundMediaUrl = withoutEmbeddedData(copy.content.backgroundMediaUrl);
     } else if (copy.content.kind === "lineup") {
+      if (copy.content.backgroundMediaType === "video") copy.content.backgroundMediaUrl = withoutEmbeddedData(copy.content.backgroundMediaUrl);
+    } else if (copy.content.kind === "kickoff") {
       if (copy.content.backgroundMediaType === "video") copy.content.backgroundMediaUrl = withoutEmbeddedData(copy.content.backgroundMediaUrl);
     } else if (copy.content.kind === "text") {
       copy.content.backgroundImage = withoutEmbeddedData(copy.content.backgroundImage);

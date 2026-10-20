@@ -1,11 +1,13 @@
 import type { DrawingObject, PlayerTrack, Point } from "./drawing";
 
-export type SlideType = "title" | "text" | "lineup" | "written-report" | "video" | "kickoff" | "tactical-board" | "image";
+export type SlideType = "title" | "text" | "lineup" | "team-overview" | "written-report" | "video" | "kickoff" | "tactical-board" | "image";
 export type SlideAlignment = "left" | "center" | "right";
 export type SlideBackgroundMediaType = "image" | "video";
 export type CrestCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 export type LineupTemplate = "broadcast" | "glass" | "tactical";
 export type WrittenReportLayout = "light-right" | "dark-right" | "accent-right" | "light-left";
+export type TeamOverviewTemplate = "reference" | "light" | "accent";
+export type MatchPresentationTemplate = "broadcast" | "duel" | "minimal";
 
 export interface SlidePlayer {
   id: string;
@@ -165,6 +167,29 @@ export interface WrittenReportSlideContent {
   selectedPlayerId?: string;
 }
 
+export interface TeamOverviewSlideContent {
+  kind: "team-overview";
+  eyebrow: string;
+  team: string;
+  stadium: string;
+  pitchDimensions: string;
+  weather: string;
+  coach: string;
+  tacticalSystems: string[];
+  stadiumImage?: string;
+  imageFit: "cover" | "contain";
+  imagePositionX?: number;
+  imagePositionY?: number;
+  template?: TeamOverviewTemplate;
+  panelColor?: string;
+  textColor?: string;
+  mutedTextColor?: string;
+  accentColor?: string;
+  imageRatio?: number;
+  teamFontSize?: number;
+  valueFontSize?: number;
+}
+
 export interface VideoSlideContent {
   kind: "video";
   fileName: string;
@@ -184,8 +209,41 @@ export interface FreezeFrame {
   duration: number;
 }
 
+export interface MatchPresentationSlideContent {
+  kind: "kickoff";
+  homeClubName: string;
+  awayClubName: string;
+  homeCrest?: string;
+  awayCrest?: string;
+  competitionName: string;
+  competitionLogo?: string;
+  matchday: string;
+  matchDate: string;
+  matchTime: string;
+  backgroundMediaUrl?: string;
+  backgroundMediaType?: SlideBackgroundMediaType;
+  backgroundMediaName?: string;
+  backgroundFit?: "cover" | "contain";
+  backgroundPositionX?: number;
+  backgroundPositionY?: number;
+  template?: MatchPresentationTemplate;
+  homePanelColor?: string;
+  awayPanelColor?: string;
+  homeTextColor?: string;
+  awayTextColor?: string;
+  informationTextColor?: string;
+  competitionPanelColor?: string;
+  competitionTextColor?: string;
+  accentColor?: string;
+  frameColor?: string;
+  overlayColor?: string;
+  overlayOpacity?: number;
+  panelOpacity?: number;
+  crestScale?: number;
+}
+
 export interface BoardSlideContent {
-  kind: "kickoff" | "tactical-board";
+  kind: "tactical-board";
   players: SlidePlayer[];
   homeColor: string;
   awayColor: string;
@@ -223,7 +281,7 @@ export interface ImageSlideContent {
   drawings: DrawingObject[];
 }
 
-export type SlideContent = TitleSlideContent | TextSlideContent | LineupSlideContent | WrittenReportSlideContent | VideoSlideContent | BoardSlideContent | ImageSlideContent;
+export type SlideContent = TitleSlideContent | TextSlideContent | LineupSlideContent | TeamOverviewSlideContent | WrittenReportSlideContent | VideoSlideContent | MatchPresentationSlideContent | BoardSlideContent | ImageSlideContent;
 
 export interface AnalysisSlide {
   id: string;

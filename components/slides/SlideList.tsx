@@ -8,7 +8,7 @@ import type { AnalysisSlide } from "@/types/slide";
 interface Props { onAdd: () => void }
 
 const typeLabels: Record<AnalysisSlide["type"], string> = {
-  title: "MOMENTO", text: "CONCLUSÃO", lineup: "XI", "written-report": "ESQUEMA + TEXTO", video: "VÍDEO", kickoff: "INÍCIO", "tactical-board": "TÁTICO", image: "IMAGEM",
+  title: "MOMENTO", text: "CONCLUSÃO", lineup: "XI", "team-overview": "DADOS GERAIS", "written-report": "ESQUEMA + TEXTO", video: "VÍDEO", kickoff: "JOGO", "tactical-board": "TÁTICO", image: "IMAGEM",
 };
 
 export function SlideList({ onAdd }: Props) {
@@ -45,9 +45,11 @@ export function SlideList({ onAdd }: Props) {
 
 function SlideMiniature({ slide }: { slide: AnalysisSlide }) {
   const content = slide.content;
+  if (content.kind === "team-overview") return <span className="slide-mini team-overview" style={content.stadiumImage ? { backgroundImage: `url(${content.stadiumImage})` } : undefined}><i /><b /></span>;
+  if (content.kind === "kickoff") return <span className="slide-mini match-presentation" style={content.backgroundMediaType !== "video" && content.backgroundMediaUrl ? { backgroundImage: `url(${content.backgroundMediaUrl})` } : undefined}><i /><b /><em /></span>;
   if (content.kind === "image" && content.imageDataUrl) return <span className="slide-mini image" style={{ backgroundImage: `url(${content.imageDataUrl})` }} />;
   if (content.kind === "video") return <span className="slide-mini video" style={content.thumbnail ? { backgroundImage: `url(${content.thumbnail})` } : undefined}><Film size={14} /></span>;
-  if (content.kind === "lineup" || content.kind === "kickoff" || content.kind === "tactical-board" || content.kind === "written-report") return <span className={`slide-mini field${content.kind === "written-report" ? " report" : ""}`}><i /><b /><em /></span>;
+  if (content.kind === "lineup" || content.kind === "tactical-board" || content.kind === "written-report") return <span className={`slide-mini field${content.kind === "written-report" ? " report" : ""}`}><i /><b /><em /></span>;
   if (content.kind === "title") return <span className="slide-mini title" style={{ background: content.background }}><b>{content.text.slice(0, 2)}</b></span>;
   if (content.kind === "text") return <span className="slide-mini text" style={{ background: content.background }}><i /><i /><i /></span>;
   return <span className="slide-mini"><ImageIcon size={14} /></span>;

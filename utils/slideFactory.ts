@@ -19,18 +19,6 @@ export function playersForFormation(formation: string): SlidePlayer[] {
   }));
 }
 
-function kickoffPlayers(): SlidePlayer[] {
-  return Array.from({ length: 12 }, (_, index) => ({
-    id: createId(),
-    number: index % 6 + 1,
-    name: `J${index % 6 + 1}`,
-    team: index < 6 ? "home" as const : "away" as const,
-    position: index < 6
-      ? { x: .12 + (index % 3) * .15, y: .2 + Math.floor(index / 3) * .6 }
-      : { x: .58 + (index % 3) * .15, y: .2 + Math.floor((index - 6) / 3) * .6 },
-  }));
-}
-
 export function playersForTacticalBoard(): SlidePlayer[] {
   const players: Array<[string, "home" | "away", number, number]> = [
     ["GR", "home", .08, .50], ["DE", "home", .24, .12], ["DC", "home", .22, .37],
@@ -52,6 +40,32 @@ export function createSlide(type: SlideType, index: number): AnalysisSlide {
     case "title": return { ...base, name: "Novo momento", content: { kind: "title", text: "ORGANIZAÇÃO OFENSIVA", subtitle: "MOMENTO DO JOGO", body: "", background: "#101914", backgroundOpacity: 1, overlayOpacity: .12, accentColor: "#a3ff12", crestCorner: "top-right", alignment: "left", fontSize: 64, subtitleFontSize: 16 } };
     case "text": return { ...base, name: "Conclusão", content: { kind: "text", title: "PRINCÍPIO", text: "Forçar o adversário a jogar por fora.", background: "#111518", alignment: "center", fontSize: 44, position: { x: .5, y: .5 } } };
     case "lineup": return { ...base, name: "Onze provável", content: { kind: "lineup", formation: "4-3-3", players: playersForFormation("4-3-3"), teamColor: "#f28c28", goalkeeperColor: "#ffcc00", title: "ONZE PROVÁVEL", subtitle: "4-3-3", clubName: "NOME DO CLUBE", coachName: "Nome do treinador", template: "broadcast", background: "#0a0d0f", backgroundOpacity: .08, overlayOpacity: .18, panelOpacity: .82, frameColor: "#ffffff", pitchColor: "#07131a", playerNumberSize: 18, playerNameSize: 9, playerPhotoScale: 1, playerCardScale: 1, panelScale: 1 } };
+    case "team-overview": return {
+      ...base,
+      name: "Dados gerais da equipa",
+      duration: 6,
+      content: {
+        kind: "team-overview",
+        eyebrow: "DADOS GERAIS DA EQUIPA",
+        team: "Equipa adversária",
+        stadium: "Estádio",
+        pitchDimensions: "105 × 68 m",
+        weather: "A definir",
+        coach: "Nome do treinador",
+        tacticalSystems: ["4-3-3"],
+        imageFit: "cover",
+        imagePositionX: .5,
+        imagePositionY: .5,
+        template: "reference",
+        panelColor: "#0d1312",
+        textColor: "#f3f5f4",
+        mutedTextColor: "#87918c",
+        accentColor: "#a3ff12",
+        imageRatio: .58,
+        teamFontSize: 54,
+        valueFontSize: 20,
+      },
+    };
     case "written-report": return {
       ...base,
       name: "Esquema tático + descrição",
@@ -97,7 +111,37 @@ export function createSlide(type: SlideType, index: number): AnalysisSlide {
       },
     };
     case "video": return { ...base, name: "Vídeo / Jogada", duration: 8, content: { kind: "video", fileName: "", startTime: 0, drawings: [], playerTracks: [] } };
-    case "kickoff": return { ...base, name: "Pontapé de saída", content: { kind: "kickoff", players: kickoffPlayers(), homeColor: "#a3ff12", awayColor: "#ef5b67", title: "PONTAPÉ DE SAÍDA", boardObjects: [] } };
+    case "kickoff": return {
+      ...base,
+      name: "Apresentação de jogo",
+      duration: 6,
+      content: {
+        kind: "kickoff",
+        homeClubName: "",
+        awayClubName: "",
+        competitionName: "",
+        matchday: "",
+        matchDate: "",
+        matchTime: "",
+        backgroundFit: "cover",
+        backgroundPositionX: .5,
+        backgroundPositionY: .5,
+        template: "broadcast",
+        homePanelColor: "#245b9b",
+        awayPanelColor: "#ef6c32",
+        homeTextColor: "#ffffff",
+        awayTextColor: "#ffffff",
+        informationTextColor: "#ffffff",
+        competitionPanelColor: "#ffffff",
+        competitionTextColor: "#203b2d",
+        accentColor: "#ffffff",
+        frameColor: "#ffffff",
+        overlayColor: "#071018",
+        overlayOpacity: .24,
+        panelOpacity: .25,
+        crestScale: 1,
+      },
+    };
     case "tactical-board": return {
       ...base,
       name: "Quadro tático",
