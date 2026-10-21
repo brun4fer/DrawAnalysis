@@ -5,6 +5,7 @@ export type SlideAlignment = "left" | "center" | "right";
 export type SlideBackgroundMediaType = "image" | "video";
 export type CrestCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 export type LineupTemplate = "broadcast" | "glass" | "tactical";
+export type LeftFootMarker = "letter" | "foot" | "both";
 export type WrittenReportLayout = "light-right" | "dark-right" | "accent-right" | "light-left";
 export type TeamOverviewTemplate = "reference" | "light" | "accent";
 export type MatchPresentationTemplate = "broadcast" | "duel" | "minimal";
@@ -87,6 +88,7 @@ export interface TextSlideContent {
 export interface LineupSlideContent {
   kind: "lineup";
   formation: string;
+  tacticalSystems?: string[];
   players: SlidePlayer[];
   teamColor: string;
   goalkeeperColor: string;
@@ -111,6 +113,13 @@ export interface LineupSlideContent {
   playerPhotoScale?: number;
   playerCardScale?: number;
   panelScale?: number;
+  miniPlayerColor?: string;
+  miniPlayerScale?: number;
+  lineupLabelFontSize?: number;
+  headerBackgroundColor?: string;
+  headerTextColor?: string;
+  leftFootMarker?: LeftFootMarker;
+  leftFootMarkerColor?: string;
 }
 
 export interface ReportCustomField {

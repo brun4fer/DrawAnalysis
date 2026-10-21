@@ -91,6 +91,7 @@ export function normalizePresentationSlides(slides: AnalysisSlide[]) {
         ...normalized.content,
         clubName: normalized.content.clubName ?? normalized.content.title,
         coachName: normalized.content.coachName ?? "",
+        tacticalSystems: normalized.content.tacticalSystems ?? [],
         template: normalized.content.template ?? "broadcast",
         background: normalized.content.background ?? "#0a0d0f",
         backgroundOpacity: legacyAppearance ? .08 : normalized.content.backgroundOpacity ?? (normalized.content.backgroundMediaUrl ? .08 : 1),
@@ -103,6 +104,13 @@ export function normalizePresentationSlides(slides: AnalysisSlide[]) {
         playerPhotoScale: normalized.content.playerPhotoScale ?? 1,
         playerCardScale: normalized.content.playerCardScale ?? 1,
         panelScale: normalized.content.panelScale ?? 1,
+        miniPlayerColor: normalized.content.miniPlayerColor ?? "#92969a",
+        miniPlayerScale: normalized.content.miniPlayerScale ?? 1,
+        lineupLabelFontSize: normalized.content.lineupLabelFontSize ?? 7,
+        headerBackgroundColor: normalized.content.headerBackgroundColor ?? "#ffffff",
+        headerTextColor: normalized.content.headerTextColor ?? "#050505",
+        leftFootMarker: normalized.content.leftFootMarker ?? "both",
+        leftFootMarkerColor: normalized.content.leftFootMarkerColor ?? "#efff29",
       };
     }
     if (normalized.content.kind === "team-overview") {

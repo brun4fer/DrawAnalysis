@@ -105,16 +105,26 @@ function TextProperties({ content, onChange }: { content: TextSlideContent; onCh
 }
 
 function LineupProperties({ content, onChange }: { content: LineupSlideContent; onChange: (value: LineupSlideContent) => void }) {
+  const systems = content.tacticalSystems ?? [];
   const updatePlayer = (playerId: string, patch: Partial<LineupSlideContent["players"][number]>) => onChange({ ...content, players: content.players.map((player) => player.id === playerId ? { ...player, ...patch } : player) });
+  const updateSystem = (index: number, value: string) => onChange({ ...content, tacticalSystems: systems.map((system, systemIndex) => systemIndex === index ? value : system) });
   return <>
     <Section title="ONZE PROVÁVEL">
       <label className="slide-prop-field vertical"><span>Nome do clube</span><input value={content.clubName ?? content.title} onChange={(event) => onChange({ ...content, clubName: event.target.value })} /></label>
-      <label className="slide-prop-field vertical"><span>Etiqueta</span><input value={content.title} onChange={(event) => onChange({ ...content, title: event.target.value })} /></label>
-      <label className="slide-prop-field"><span>Sistema</span><select value={content.formation} onChange={(event) => { const formation = event.target.value; onChange({ ...content, formation, subtitle: formation, players: playersForFormation(formation) }); }}>{formationNames.map((name) => <option key={name}>{name}</option>)}</select></label>
+      <label className="slide-prop-field vertical"><span>Texto “Onze provável”</span><input placeholder="Deixe vazio para ocultar" value={content.title} onChange={(event) => onChange({ ...content, title: event.target.value })} /></label>
+      <label className="stacked-field"><span><span className="field-label">Tamanho de “Onze provável”</span><b>{content.lineupLabelFontSize ?? 7}px</b></span><input type="range" min={5} max={18} step={1} value={content.lineupLabelFontSize ?? 7} onChange={(event) => onChange({ ...content, lineupLabelFontSize: Number(event.target.value) })} /></label>
+      <label className="slide-prop-field"><span>Formação dos jogadores</span><select value={content.formation} onChange={(event) => { const formation = event.target.value; onChange({ ...content, formation, subtitle: formation, players: playersForFormation(formation) }); }}>{formationNames.map((name) => <option key={name}>{name}</option>)}</select></label>
       <label className="slide-prop-field"><span>Template</span><select value={content.template ?? "broadcast"} onChange={(event) => onChange({ ...content, template: event.target.value as NonNullable<LineupSlideContent["template"]> })}><option value="broadcast">Broadcast · referência</option><option value="glass">Painel de vidro</option><option value="tactical">Tático</option></select></label>
       <ImageAssetUpload label="Emblema do clube" value={content.clubCrest} onLoad={(clubCrest) => onChange({ ...content, clubCrest })} onClear={() => onChange({ ...content, clubCrest: undefined })} />
       <ColorPaletteField label="Cor dos jogadores" value={content.teamColor} onChange={(teamColor) => onChange({ ...content, teamColor })} />
       <ColorPaletteField label="Cor do guarda-redes" value={content.goalkeeperColor} onChange={(goalkeeperColor) => onChange({ ...content, goalkeeperColor })} />
+    </Section>
+    <Section title="ESQUEMAS DA ESQUERDA">
+      <p className="property-help">Esta lista é independente da formação dos jogadores. Pode deixá-la vazia ou adicionar os esquemas que quiser.</p>
+      <div className="report-edit-list">{systems.map((system, index) => <div className="report-system-row" key={index}><input value={system} placeholder="Ex.: 1-4-3-3" onChange={(event) => updateSystem(index, event.target.value)} /><button type="button" onClick={() => onChange({ ...content, tacticalSystems: systems.filter((_, systemIndex) => systemIndex !== index) })} title="Remover esquema"><Trash2 size={11} /></button></div>)}</div>
+      <button type="button" className="report-add-property" onClick={() => onChange({ ...content, tacticalSystems: [...systems, `1-${content.formation}`] })}><Plus size={12} /> Adicionar esquema</button>
+      <ColorPaletteField label="Cor dos pontos dos jogadores" value={content.miniPlayerColor ?? "#92969a"} onChange={(miniPlayerColor) => onChange({ ...content, miniPlayerColor })} />
+      <label className="stacked-field"><span><span className="field-label">Tamanho dos pontos dos jogadores</span><b>{Math.round((content.miniPlayerScale ?? 1) * 100)}%</b></span><input type="range" min={.5} max={2} step={.05} value={content.miniPlayerScale ?? 1} onChange={(event) => onChange({ ...content, miniPlayerScale: Number(event.target.value) })} /></label>
     </Section>
     <Section title="TREINADOR">
       <label className="slide-prop-field vertical"><span>Nome</span><input value={content.coachName ?? ""} onChange={(event) => onChange({ ...content, coachName: event.target.value })} /></label>
@@ -123,6 +133,8 @@ function LineupProperties({ content, onChange }: { content: LineupSlideContent; 
     <Section title="DESIGN DO ONZE">
       <ColorPaletteField label="Cor da moldura" value={content.frameColor ?? "#ffffff"} onChange={(frameColor) => onChange({ ...content, frameColor })} />
       <ColorPaletteField label="Cor do campo" value={content.pitchColor ?? "#07131a"} onChange={(pitchColor) => onChange({ ...content, pitchColor })} />
+      <ColorPaletteField label="Fundo do nome do clube" value={content.headerBackgroundColor ?? "#ffffff"} onChange={(headerBackgroundColor) => onChange({ ...content, headerBackgroundColor })} />
+      <ColorPaletteField label="Texto do cabeçalho" value={content.headerTextColor ?? "#050505"} onChange={(headerTextColor) => onChange({ ...content, headerTextColor })} />
       <label className="stacked-field"><span><span className="field-label">Opacidade do painel</span><b>{Math.round((content.panelOpacity ?? .82) * 100)}%</b></span><input type="range" min={0} max={1} step={.02} value={content.panelOpacity ?? .82} onChange={(event) => onChange({ ...content, panelOpacity: Number(event.target.value) })} /></label>
       <label className="stacked-field"><span><span className="field-label">Tamanho do painel</span><b>{Math.round((content.panelScale ?? 1) * 100)}%</b></span><input type="range" min={.72} max={1.08} step={.01} value={content.panelScale ?? 1} onChange={(event) => onChange({ ...content, panelScale: Number(event.target.value) })} /></label>
       <label className="stacked-field"><span><span className="field-label">Moldura dos jogadores</span><b>{Math.round((content.playerCardScale ?? 1) * 100)}%</b></span><input type="range" min={.65} max={1.65} step={.05} value={content.playerCardScale ?? 1} onChange={(event) => onChange({ ...content, playerCardScale: Number(event.target.value) })} /></label>
@@ -137,6 +149,8 @@ function LineupProperties({ content, onChange }: { content: LineupSlideContent; 
     </Section>
     <Section title="JOGADORES">
       <p className="property-help">Pode arrastar os jogadores diretamente no campo. Carregue uma fotografia para substituir a silhueta.</p>
+      <label className="slide-prop-field"><span>Marca dos esquerdinos</span><select value={content.leftFootMarker ?? "both"} onChange={(event) => onChange({ ...content, leftFootMarker: event.target.value as NonNullable<LineupSlideContent["leftFootMarker"]> })}><option value="foot">Pé esquerdo</option><option value="letter">Letra E</option><option value="both">Pé + letra E</option></select></label>
+      <ColorPaletteField label="Cor do pé esquerdo" value={content.leftFootMarkerColor ?? "#efff29"} onChange={(leftFootMarkerColor) => onChange({ ...content, leftFootMarkerColor })} />
       <div className="probable-player-properties">{content.players.map((player) => <div key={player.id}><input aria-label="Número" type="number" min={0} max={999} value={player.number} onChange={(event) => updatePlayer(player.id, { number: Number(event.target.value) })} /><input aria-label="Nome" value={player.name} onChange={(event) => updatePlayer(player.id, { name: event.target.value })} /><label className={`preferred-foot-toggle${player.preferredFoot === "left" ? " active" : ""}`} title="Marcar como esquerdino"><input type="checkbox" checked={player.preferredFoot === "left"} onChange={(event) => updatePlayer(player.id, { preferredFoot: event.target.checked ? "left" : "right" })} /><b>E</b></label><label className={player.photoUrl ? "has-photo" : ""} title="Fotografia do jogador"><ImagePlus size={12} /><input type="file" accept="image/*" onChange={(event) => readImage(event.target.files?.[0], (photoUrl) => updatePlayer(player.id, { photoUrl }), 640)} /></label>{player.photoUrl ? <button type="button" title="Remover fotografia" onClick={() => updatePlayer(player.id, { photoUrl: undefined })}><X size={11} /></button> : <span />}</div>)}</div>
     </Section>
   </>;
