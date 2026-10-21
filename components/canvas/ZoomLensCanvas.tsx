@@ -10,9 +10,10 @@ interface Props {
   width: number;
   height: number;
   getVideoElement?: () => HTMLVideoElement | null;
+  editingPreview?: boolean;
 }
 
-export const ZoomLensCanvas = forwardRef<HTMLCanvasElement, Props>(function ZoomLensCanvas({ drawings, currentTime, width, height, getVideoElement }, ref) {
+export const ZoomLensCanvas = forwardRef<HTMLCanvasElement, Props>(function ZoomLensCanvas({ drawings, currentTime, width, height, getVideoElement, editingPreview = false }, ref) {
   useEffect(() => {
     const canvas = typeof ref === "object" ? ref?.current : null;
     const context = canvas?.getContext("2d");
@@ -27,7 +28,7 @@ export const ZoomLensCanvas = forwardRef<HTMLCanvasElement, Props>(function Zoom
       const temporalState = getObjectStateAtTime(drawing, currentTime);
       if (!temporalState.visible) continue;
 
-      const entranceScale = resolvedDrawingAnimation(drawing).motion === "scaleIn" ? .68 + temporalState.entryProgress * .32 : 1;
+      const entranceScale = editingPreview ? 1 : resolvedDrawingAnimation(drawing).motion === "scaleIn" ? .68 + temporalState.entryProgress * .32 : 1;
       const scale = (Math.abs(temporalState.transform.scaleX) + Math.abs(temporalState.transform.scaleY)) / 2 * entranceScale;
       const radius = Math.max(18, drawing.data.radius * Math.min(width, height) * scale);
       const centerX = (drawing.data.center.x + temporalState.transform.x) * width;
@@ -41,7 +42,7 @@ export const ZoomLensCanvas = forwardRef<HTMLCanvasElement, Props>(function Zoom
       const sourceY = Math.max(0, Math.min(video.videoHeight - sourceRadiusY * 2, sourceCenterY - sourceRadiusY));
 
       context.save();
-      context.globalAlpha = temporalState.opacity;
+      context.globalAlpha = editingPreview ? drawing.style.opacity : temporalState.opacity;
       context.beginPath();
       context.arc(centerX, centerY, radius, 0, Math.PI * 2);
       context.clip();
@@ -70,7 +71,7 @@ export const ZoomLensCanvas = forwardRef<HTMLCanvasElement, Props>(function Zoom
       context.restore();
 
       context.save();
-      context.globalAlpha = temporalState.opacity;
+      context.globalAlpha = editingPreview ? drawing.style.opacity : temporalState.opacity;
       context.beginPath();
       context.arc(centerX, centerY, radius, 0, Math.PI * 2);
       context.strokeStyle = drawing.style.stroke;
@@ -88,7 +89,7 @@ export const ZoomLensCanvas = forwardRef<HTMLCanvasElement, Props>(function Zoom
       context.stroke();
       context.restore();
     }
-  }, [currentTime, drawings, getVideoElement, height, ref, width]);
+  }, [currentTime, drawings, editingPreview, getVideoElement, height, ref, width]);
 
   return <canvas ref={ref} className="zoom-lens-canvas" width={width} height={height} />;
 });

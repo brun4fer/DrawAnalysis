@@ -30,7 +30,7 @@ interface DetectionEffect { phase: "scanning" | "locked" | "failed"; click: Poin
 interface IdentifiedPlayer { track: PlayerTrack; sample: PlayerTrack["samples"][number] }
 
 const labelFor = (kind: DrawingObject["type"]) => ({
-  identifyPlayer: "Jogador", playerRing: "Ring", ghost: "Ghost", spotlight: "Spotlight", zoom: "Zoom", ellipse: "Marcador", arrow: "Seta", longBallArrow: "Bola longa", line: "Linha", glimpse: "Visão", triangle: "Triângulo",
+  identifyPlayer: "Jogador", playerLabel: "Etiqueta", playerRing: "Ring", ghost: "Ghost", spotlight: "Spotlight", zoom: "Zoom", ellipse: "Círculo", arrow: "Seta", longBallArrow: "Bola longa", line: "Linha", glimpse: "Visão", triangle: "Triângulo",
   polygon: "Zona", rectangle: "Retângulo", text: "Texto", freeDraw: "Traço",
 })[kind];
 
@@ -225,6 +225,8 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     const actionCount = drawings.filter((item) => ["line", "arrow", "longBallArrow"].includes(item.type)).length + 1;
     const effectStyle = type === "identifyPlayer"
       ? { stroke: "#a3ff12", fill: "#a3ff1210", strokeWidth: 2, shadowColor: "#a3ff12", shadowBlur: 9, shadowOpacity: .5 }
+      : type === "playerLabel"
+      ? { stroke: "#ffffff", fill: "#ffffff", strokeWidth: 2, shadowColor: "#000000", shadowBlur: 6, shadowOpacity: .65 }
       : type === "playerRing"
       ? { stroke: "#f7f8f2", fill: "#1454c4", strokeWidth: 3, shadowColor: "#f1e72b", shadowBlur: 22, shadowOpacity: .82 }
       : type === "ghost"
@@ -236,7 +238,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
           : type === "glimpse"
             ? { stroke: "#ffffff", fill: "#ffffff38", strokeWidth: 2, shadowColor: "#ffffff", shadowBlur: 18, shadowOpacity: .6 }
           : type === "ellipse"
-            ? { stroke: "#a3ff12", fill: "#a3ff126b", strokeWidth: 4, shadowColor: "#000000", shadowBlur: 11, shadowOpacity: .58, shadowOffsetX: 4, shadowOffsetY: 6 }
+            ? { stroke: "#65d9ff", fill: "#65d9ff47", strokeWidth: 0, shadowColor: "#65d9ff", shadowBlur: 12, shadowOpacity: .48, shadowOffsetX: 0, shadowOffsetY: 2 }
           : type === "line"
             ? { stroke: "#65d9ff", strokeWidth: 6, shadowColor: "#000000", shadowBlur: 9, shadowOpacity: .58, shadowOffsetX: 4, shadowOffsetY: 7 }
         : type === "arrow"
@@ -422,7 +424,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         showArrow: true,
         showOrigin: false,
         animateMovement: true,
-        returnToOrigin: false,
+        returnToOrigin: true,
         travelDuration: .7,
       }, { target: { kind: "player", trackId: track.id, anchor: "feet", referenceFoot: sample.foot } });
       setPendingGhost(null);
@@ -669,6 +671,15 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       makeDrawing("zoom", { kind: "zoom", center: point, radius: .14, zoom: 2 });
       return;
     }
+    if (tool === "playerLabel") {
+      makeDrawing("playerLabel", {
+        kind: "playerLabel",
+        anchor: point,
+        labelOffsetY: .12,
+        label: { visible: true, number: "", position: "", name: "JOGADOR", color: "#ffffff", fontSize: .032 },
+      });
+      return;
+    }
     if (tool === "text") {
       makeDrawing("text", { kind: "text", origin: point, text: "TEXTO", fontSize: 0.055, textDesign: "flat", groundTilt: -12, groundDepth: 7 });
       return;
@@ -763,7 +774,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
   const preview = (() => {
     if (!draft || draft.tool !== tool) return null;
     const style = { stroke: DEFAULT_STYLE.stroke, strokeWidth: DEFAULT_STYLE.strokeWidth, dash: [7, 6], opacity: 0.9 };
-    if (tool === "ellipse") return <Ellipse listening={false} {...style} x={(draft.start.x + draft.current.x) / 2 * width} y={(draft.start.y + draft.current.y) / 2 * height} radiusX={Math.abs(draft.current.x - draft.start.x) / 2 * width} radiusY={Math.abs(draft.current.y - draft.start.y) / 2 * height} />;
+    if (tool === "ellipse") return <Ellipse listening={false} {...style} stroke="#65d9ff" fill="#65d9ff47" strokeWidth={0} shadowColor="#65d9ff" shadowBlur={12} shadowOpacity={.48} x={(draft.start.x + draft.current.x) / 2 * width} y={(draft.start.y + draft.current.y) / 2 * height} radiusX={Math.abs(draft.current.x - draft.start.x) / 2 * width} radiusY={Math.abs(draft.current.y - draft.start.y) / 2 * height} />;
     if (tool === "rectangle") return <Rect listening={false} {...style} x={Math.min(draft.start.x, draft.current.x) * width} y={Math.min(draft.start.y, draft.current.y) * height} width={Math.abs(draft.current.x - draft.start.x) * width} height={Math.abs(draft.current.y - draft.start.y) * height} />;
     if (tool === "arrow") return <Arrow listening={false} {...style} fill={DEFAULT_STYLE.stroke} points={flattenPoints([draft.start, draft.current], width, height)} pointerLength={12} pointerWidth={12} />;
     if (tool === "longBallArrow") {
@@ -788,9 +799,9 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         const inverse = 1 - t;
         return { x: inverse * inverse * start.x + 2 * inverse * t * control.x + t * t * end.x, y: inverse * inverse * start.y + 2 * inverse * t * control.y + t * t * end.y };
       }).flatMap(({ x, y }) => [x, y]);
-      return <Arrow listening={false} stroke="#65d9ff" strokeWidth={6} fill="#65d9ff" dash={[7, 6]} opacity={.9} shadowColor="#000000" shadowBlur={9} shadowOpacity={.58} shadowOffsetX={4} shadowOffsetY={7} points={points} pointerLength={17} pointerWidth={18} lineCap="round" lineJoin="round" />;
+      return <Arrow listening={false} stroke="#65d9ff" strokeWidth={6} fill="#65d9ff" dash={[7, 6]} opacity={.9} shadowColor="#000000" shadowBlur={2} shadowOpacity={.12} shadowOffsetX={0} shadowOffsetY={1} points={points} pointerLength={17} pointerWidth={18} lineCap="round" lineJoin="round" />;
     }
-    if (tool === "line") return <Line listening={false} stroke="#65d9ff" strokeWidth={6} dash={[7, 6]} opacity={.9} shadowColor="#000000" shadowBlur={9} shadowOpacity={.58} shadowOffsetX={4} shadowOffsetY={7} lineCap="round" lineJoin="round" points={flattenPoints([...draft.points, draft.current], width, height)} />;
+    if (tool === "line") return <Line listening={false} stroke="#65d9ff" strokeWidth={6} dash={[7, 6]} opacity={.9} shadowColor="#000000" shadowBlur={2} shadowOpacity={.12} shadowOffsetX={0} shadowOffsetY={1} lineCap="round" lineJoin="round" points={flattenPoints([...draft.points, draft.current], width, height)} />;
     if (tool === "glimpse") {
       const originX = draft.start.x * width;
       const originY = draft.start.y * height;
@@ -845,8 +856,10 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
             onSelect={() => { setSelectedId(object.id); setTool("select"); }}
             onChange={(patch) => updateDrawing(object.id, patch)}
             renderMode="base"
+            editingPreview={!isPlaying}
             targetOffset={targetOffsetAtTime(object, activeVideoContent?.playerTracks, currentTime)}
             playerTracks={activeVideoContent?.playerTracks}
+            allDrawings={drawings}
             onTransformPreview={object.data.kind === "ghost" ? (transform) => setGhostTransformPreview((current) => {
               if (transform) return { ...current, [object.id]: transform };
               const next = { ...current };
@@ -880,9 +893,10 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       height={height}
       getVideoElement={getVideoElement}
       transformOverrides={ghostTransformPreview}
+      editingPreview={!isPlaying}
     />
-    <ZoomLensCanvas ref={zoomCanvasRef} drawings={drawings} currentTime={currentTime} width={width} height={height} getVideoElement={getVideoElement} />
-    <PlayerLabelOverlay drawings={drawings} playerTracks={activeVideoContent?.playerTracks} currentTime={currentTime} width={width} height={height} />
+    <ZoomLensCanvas ref={zoomCanvasRef} drawings={drawings} currentTime={currentTime} width={width} height={height} getVideoElement={getVideoElement} editingPreview={!isPlaying} />
+    <PlayerLabelOverlay drawings={drawings} playerTracks={activeVideoContent?.playerTracks} currentTime={currentTime} width={width} height={height} editingPreview={!isPlaying} />
     {detectionEffect && (
       <div className={`player-identification-effect phase-${detectionEffect.phase}`} aria-hidden="true">
         {detectionEffect.phase !== "locked" && (

@@ -19,8 +19,10 @@ interface Props {
   onSelect: () => void;
   onChange: (patch: Partial<DrawingObject>) => void;
   renderMode?: "all" | "base" | "playerLabel";
+  editingPreview?: boolean;
   targetOffset?: Point;
   playerTracks?: PlayerTrack[];
+  allDrawings?: DrawingObject[];
   onTransformPreview?: (transform?: ObjectTransform) => void;
 }
 
@@ -143,10 +145,87 @@ function anchoredLinePoints(data: Extract<DrawingData, { kind: "line" }>, player
   return points;
 }
 
-export function DrawingShape({ object, width, height, currentTime, selected, canEdit, onSelect, onChange, renderMode = "all", targetOffset = { x: 0, y: 0 }, playerTracks, onTransformPreview }: Props) {
+function anchoredLineSegments(
+  data: Extract<DrawingData, { kind: "line" }>,
+  playerTracks: PlayerTrack[] | undefined,
+  allDrawings: DrawingObject[] | undefined,
+  currentTime: number,
+  width: number,
+  height: number,
+  strokeWidth: number,
+) {
+  const centers = anchoredLinePoints(data, playerTracks, currentTime).map((point) => ({ x: point.x * width, y: point.y * height }));
+  const targets = data.pointTargets?.length
+    ? data.pointTargets
+    : centers.map((_, index) => index === 0 ? data.startTarget ?? null : index === centers.length - 1 ? data.endTarget ?? null : null);
+  const boundary = (index: number, unitX: number, unitY: number) => {
+    const target = targets[index];
+    if (!target) return 0;
+    const ring = [...(allDrawings ?? [])].reverse().find((drawing) =>
+      drawing.data.kind === "playerRing"
+      && drawing.data.showRing !== false
+      && drawing.target?.kind === "player"
+      && drawing.target.trackId === target.trackId
+      && getObjectStateAtTime(drawing, currentTime).visible,
+    );
+    if (!ring || ring.data.kind !== "playerRing") return 0;
+    const ringState = getObjectStateAtTime(ring, currentTime);
+    const radiusX = Math.max(1, ring.data.radiusX * width * Math.abs(ringState.transform.scaleX));
+    const radiusY = Math.max(1, ring.data.radiusY * height * Math.abs(ringState.transform.scaleY));
+    const denominator = Math.sqrt((unitX * unitX) / (radiusX * radiusX) + (unitY * unitY) / (radiusY * radiusY));
+    return (denominator ? 1 / denominator : 0) + strokeWidth * .6;
+  };
+  return centers.slice(0, -1).flatMap((start, index) => {
+    const end = centers[index + 1];
+    const deltaX = end.x - start.x;
+    const deltaY = end.y - start.y;
+    const length = Math.hypot(deltaX, deltaY);
+    if (length < 1) return [];
+    const unitX = deltaX / length;
+    const unitY = deltaY / length;
+    const startInset = boundary(index, unitX, unitY);
+    const endInset = boundary(index + 1, -unitX, -unitY);
+    if (startInset + endInset >= length - 1) return [];
+    return [[
+      start.x + unitX * startInset,
+      start.y + unitY * startInset,
+      end.x - unitX * endInset,
+      end.y - unitY * endInset,
+    ]];
+  });
+}
+
+function partialLineSegments(segments: number[][], progress: number) {
+  if (progress >= .999) return segments;
+  const lengths = segments.map((segment) => Math.hypot(segment[2] - segment[0], segment[3] - segment[1]));
+  let remaining = lengths.reduce((sum, length) => sum + length, 0) * Math.max(0, Math.min(1, progress));
+  const visible: number[][] = [];
+  segments.forEach((segment, index) => {
+    if (remaining <= 0) return;
+    const length = lengths[index];
+    if (remaining >= length) {
+      visible.push(segment);
+      remaining -= length;
+      return;
+    }
+    const ratio = length ? remaining / length : 0;
+    visible.push([
+      segment[0], segment[1],
+      segment[0] + (segment[2] - segment[0]) * ratio,
+      segment[1] + (segment[3] - segment[1]) * ratio,
+    ]);
+    remaining = 0;
+  });
+  return visible;
+}
+
+export function DrawingShape({ object, width, height, currentTime, selected, canEdit, onSelect, onChange, renderMode = "all", editingPreview = false, targetOffset = { x: 0, y: 0 }, playerTracks, allDrawings, onTransformPreview }: Props) {
   const nodeRef = useRef<Konva.Group>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
-  const temporalState = getObjectStateAtTime(object, currentTime);
+  const calculatedTemporalState = getObjectStateAtTime(object, currentTime);
+  const temporalState = editingPreview
+    ? { ...calculatedTemporalState, opacity: object.style.opacity, entryProgress: 1, exitProgress: 1 }
+    : calculatedTemporalState;
   const animation = resolvedDrawingAnimation(object);
   const transform = temporalState.transform;
   const drawProgress = animation.motion === "draw" ? temporalState.entryProgress : 1;
@@ -159,6 +238,15 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
     }
   }, [selected]);
 
+  const sitsOnGround = ["ellipse", "rectangle", "arrow", "longBallArrow", "line", "triangle", "polygon", "freeDraw"].includes(object.type);
+  const groundHeight = Math.max(0, Math.min(1, object.style.groundHeight ?? .08));
+  const groundShadowFactor = sitsOnGround ? .04 + groundHeight * .96 : 1;
+  const effectiveShadow = {
+    offsetX: (object.style.shadowOffsetX ?? 0) * groundShadowFactor,
+    offsetY: (object.style.shadowOffsetY ?? 0) * groundShadowFactor,
+    blur: (object.style.shadowBlur ?? 0) * (.12 + groundHeight * .88),
+    opacity: (object.style.shadowOpacity ?? 0) * groundShadowFactor,
+  };
   const common = {
     stroke: object.style.stroke,
     strokeWidth: object.style.strokeWidth,
@@ -167,10 +255,10 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
     lineCap: "round" as const,
     lineJoin: "round" as const,
     shadowColor: object.style.shadowColor ?? "#000000",
-    shadowBlur: object.style.shadowBlur ?? 0,
-    shadowOpacity: object.style.shadowOpacity ?? 0,
-    shadowOffsetX: object.style.shadowOffsetX ?? 0,
-    shadowOffsetY: object.style.shadowOffsetY ?? 0,
+    shadowBlur: effectiveShadow.blur,
+    shadowOpacity: effectiveShadow.opacity,
+    shadowOffsetX: effectiveShadow.offsetX,
+    shadowOffsetY: effectiveShadow.offsetY,
   };
 
   const renderPatternShape = (
@@ -232,7 +320,7 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
 
   const content = (() => {
     const data = object.data;
-    if (renderMode === "playerLabel" && data.kind !== "playerRing") return null;
+    if (renderMode === "playerLabel" && data.kind !== "playerRing" && data.kind !== "playerLabel") return null;
     switch (data.kind) {
       case "identifyPlayer": {
         if (!canEdit || !selected) return null;
@@ -252,6 +340,59 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
               points={[data.center.x * width - 7, data.center.y * height, data.center.x * width + 7, data.center.y * height]}
               stroke="#a3ff12"
               strokeWidth={1}
+            />
+          </Group>
+        );
+      }
+      case "playerLabel": {
+        const x = data.anchor.x * width;
+        const y = data.anchor.y * height;
+        const labelText = [data.label.number.trim(), data.label.position.trim(), data.label.name.trim()]
+          .filter(Boolean)
+          .join("/")
+          .toUpperCase();
+        const fontSize = data.label.fontSize * height;
+        const labelY = Math.max(5, y - (data.labelOffsetY ?? .12) * height);
+        const labelWidth = Math.max(110, Math.min(420, labelText.length * fontSize * .72));
+        if (renderMode === "base") {
+          return (
+            <Group opacity={temporalState.opacity}>
+              <Rect x={x - labelWidth / 2} y={labelY - 4} width={labelWidth} height={fontSize * 1.9} fill="#ffffff01" />
+              <Ellipse x={x} y={y} radiusX={8} radiusY={5} fill="#ffffff01" stroke={selected ? "#a3ff12" : "#ffffff01"} strokeWidth={selected ? 1.5 : 1} dash={selected ? [4, 3] : []} />
+            </Group>
+          );
+        }
+        if (!data.label.visible || !labelText) return null;
+        return (
+          <Group opacity={temporalState.opacity} listening={false}>
+            <Text
+              x={x - labelWidth / 2}
+              y={labelY}
+              width={labelWidth}
+              align="center"
+              text={labelText}
+              fontSize={fontSize}
+              fontStyle="bold"
+              fontFamily="Inter, Arial, sans-serif"
+              letterSpacing={.45}
+              fill={data.label.color}
+              shadowColor="#000000"
+              shadowBlur={Math.max(3, fontSize * .2)}
+              shadowOffsetY={Math.max(1, fontSize * .08)}
+              shadowOpacity={.68}
+            />
+            <Line
+              points={[
+                x - Math.max(5, fontSize * .24), labelY + fontSize + 4,
+                x + Math.max(5, fontSize * .24), labelY + fontSize + 4,
+                x, labelY + fontSize + Math.max(11, fontSize * .58),
+              ]}
+              closed
+              fill={data.label.color}
+              shadowColor="#000000"
+              shadowBlur={Math.max(3, fontSize * .18)}
+              shadowOffsetY={Math.max(1, fontSize * .08)}
+              shadowOpacity={.62}
             />
           </Group>
         );
@@ -700,22 +841,6 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
                 globalCompositeOperation="destination-out"
                 listening={false}
               />
-              <Ellipse
-                x={x}
-                y={y}
-                radiusX={radiusX * 1.12}
-                radiusY={radiusY * 1.25}
-                fillRadialGradientStartPoint={{ x: 0, y: 0 }}
-                fillRadialGradientEndPoint={{ x: 0, y: 0 }}
-                fillRadialGradientStartRadius={0}
-                fillRadialGradientEndRadius={radiusX * 1.12}
-                fillRadialGradientColorStops={[0, withAlpha(lightColor, .42), .55, withAlpha(lightColor, .16), 1, withAlpha(lightColor, 0)]}
-                shadowColor={lightColor}
-                shadowBlur={Math.max(18, object.style.shadowBlur)}
-                shadowOpacity={.65}
-                listening={false}
-              />
-              {base3d}
             </Group>
           );
         }
@@ -771,41 +896,23 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         const radiusX = data.radiusX * width;
         const radiusY = data.radiusY * height;
         const faceColor = solidColor(object.style.stroke, "#a3ff12");
-        const depth = Math.max(1.5, Math.min(radiusY * .24, 2 + object.style.strokeWidth * .6));
         const appearanceScale = animation.motion === "scaleIn" ? .35 + temporalState.entryProgress * .65 : 1;
         return (
           <Group x={x} y={y} offsetX={x} offsetY={y} scaleX={appearanceScale} scaleY={appearanceScale} opacity={temporalState.opacity}>
             <Ellipse
-              x={x + object.style.shadowOffsetX}
-              y={y + depth + object.style.shadowOffsetY}
-              radiusX={radiusX * 1.04}
-              radiusY={radiusY * .9}
-              fill="#000000"
-              opacity={Math.max(.12, object.style.shadowOpacity * .42)}
-              shadowColor={object.style.shadowColor}
-              shadowBlur={Math.max(8, object.style.shadowBlur)}
-              shadowOpacity={Math.max(.45, object.style.shadowOpacity)}
-              listening={false}
-            />
-            <Ellipse
-              x={x}
-              y={y + depth}
-              radiusX={radiusX}
-              radiusY={radiusY}
-              fill={shadeColor(faceColor, -90)}
-              stroke={shadeColor(faceColor, -110)}
-              strokeWidth={object.style.strokeWidth * .55}
-              listening={false}
-            />
-            <Ellipse
-              {...common}
-              opacity={1}
               x={x}
               y={y}
               radiusX={radiusX}
               radiusY={radiusY}
               fill={object.style.fill}
+              stroke={faceColor}
+              strokeWidth={object.style.strokeWidth}
+              dash={object.style.dash}
               shadowColor={object.style.shadowColor}
+              shadowBlur={effectiveShadow.blur}
+              shadowOpacity={effectiveShadow.opacity}
+              shadowOffsetX={effectiveShadow.offsetX}
+              shadowOffsetY={effectiveShadow.offsetY}
             />
           </Group>
         );
@@ -841,24 +948,24 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         const pointerLength = Math.max(24, Math.min(52, travelLength * .12, object.style.strokeWidth * 5.2));
         const pointerWidth = Math.max(25, Math.min(58, travelLength * .135, object.style.strokeWidth * 5.6));
         const headPoints = arrowHeadPoints(points, pointerLength, pointerWidth);
-        const shadowHeadPoints = offsetPoints(headPoints, object.style.shadowOffsetX, object.style.shadowOffsetY);
-        const headDepth = Math.max(1.4, object.style.strokeWidth * .32);
+        const shadowHeadPoints = offsetPoints(headPoints, effectiveShadow.offsetX, effectiveShadow.offsetY);
+        const headDepth = Math.max(.35, object.style.strokeWidth * (.05 + groundHeight * .27));
         return (
           <Group opacity={temporalState.opacity}>
             <Line
-              points={offsetPoints(points, object.style.shadowOffsetX, object.style.shadowOffsetY)}
+              points={offsetPoints(points, effectiveShadow.offsetX, effectiveShadow.offsetY)}
               stroke={shadowColor}
               strokeWidth={object.style.strokeWidth + 2.2}
               dash={object.style.dash}
-              opacity={object.style.shadowOpacity * .62}
+              opacity={effectiveShadow.opacity * .62}
               shadowColor={shadowColor}
-              shadowBlur={Math.max(8, object.style.shadowBlur)}
-              shadowOpacity={object.style.shadowOpacity}
+              shadowBlur={Math.max(.5, effectiveShadow.blur)}
+              shadowOpacity={effectiveShadow.opacity}
               lineCap="round"
               lineJoin="round"
               listening={false}
             />
-            <Line points={shadowHeadPoints} closed fill={shadowColor} opacity={object.style.shadowOpacity * .62} shadowColor={shadowColor} shadowBlur={Math.max(8, object.style.shadowBlur)} shadowOpacity={object.style.shadowOpacity} listening={false} />
+            <Line points={shadowHeadPoints} closed fill={shadowColor} opacity={effectiveShadow.opacity * .62} shadowColor={shadowColor} shadowBlur={Math.max(.5, effectiveShadow.blur)} shadowOpacity={effectiveShadow.opacity} listening={false} />
             <Line
               points={offsetPoints(headPoints, 0, headDepth)}
               closed
@@ -912,15 +1019,15 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         const travelLength = Math.hypot(end.x - start.x, end.y - start.y);
         const pointerLength = Math.max(26, Math.min(58, travelLength * .105, object.style.strokeWidth * 5.4));
         const pointerWidth = Math.max(28, Math.min(64, travelLength * .12, object.style.strokeWidth * 5.9));
-        const groundOffsetX = object.style.shadowOffsetX * .45;
-        const groundOffsetY = Math.max(2, object.style.shadowOffsetY * .55);
+        const groundOffsetX = effectiveShadow.offsetX * .45;
+        const groundOffsetY = Math.max(.35, effectiveShadow.offsetY * .55);
         const landingSize = data.landingZoneSize ?? 1;
         const landingColor = solidColor(data.landingZoneColor ?? faceColor, faceColor);
         const landingRadiusX = Math.max(34, Math.min(180, travelLength * .2)) * landingSize;
         const landingRadiusY = landingRadiusX * .28;
         const headPoints = arrowHeadPoints(points, pointerLength, pointerWidth);
         const groundHeadPoints = arrowHeadPoints(groundShadowPoints, pointerLength + 3, pointerWidth + 4);
-        const headDepth = Math.max(1.6, object.style.strokeWidth * .36);
+        const headDepth = Math.max(.4, object.style.strokeWidth * (.06 + groundHeight * .3));
         const landingOpacity = Math.max(0, Math.min(1, (drawProgress - .78) / .22));
         return (
           <Group opacity={temporalState.opacity}>
@@ -942,10 +1049,10 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
               stroke={shadowColor}
               strokeWidth={object.style.strokeWidth + 2.5}
               dash={object.style.dash}
-              opacity={object.style.shadowOpacity * .52}
+              opacity={effectiveShadow.opacity * .52}
               shadowColor={shadowColor}
-              shadowBlur={Math.max(10, object.style.shadowBlur * 1.15)}
-              shadowOpacity={.72}
+              shadowBlur={Math.max(.5, effectiveShadow.blur * 1.15)}
+              shadowOpacity={effectiveShadow.opacity}
               lineCap="round"
               lineJoin="round"
               listening={false}
@@ -954,10 +1061,10 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
               points={offsetPoints(groundHeadPoints, groundOffsetX, groundOffsetY)}
               closed
               fill={shadowColor}
-              opacity={object.style.shadowOpacity * .52}
+              opacity={effectiveShadow.opacity * .52}
               shadowColor={shadowColor}
-              shadowBlur={Math.max(10, object.style.shadowBlur * 1.15)}
-              shadowOpacity={.72}
+              shadowBlur={Math.max(.5, effectiveShadow.blur * 1.15)}
+              shadowOpacity={effectiveShadow.opacity}
               listening={false}
             />
             <Ellipse
@@ -966,10 +1073,10 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
               radiusX={Math.max(7, object.style.strokeWidth * 1.8)}
               radiusY={Math.max(2, object.style.strokeWidth * .48)}
               fill={shadowColor}
-              opacity={object.style.shadowOpacity * .34}
+              opacity={effectiveShadow.opacity * .34}
               shadowColor={shadowColor}
-              shadowBlur={Math.max(7, object.style.shadowBlur * .8)}
-              shadowOpacity={.7}
+              shadowBlur={Math.max(.5, effectiveShadow.blur * .8)}
+              shadowOpacity={effectiveShadow.opacity}
               listening={false}
             />
             <Line
@@ -1015,152 +1122,56 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         );
       }
       case "line": {
-        const fullPoints = flattenPoints(anchoredLinePoints(data, playerTracks, currentTime), width, height);
-        if (fullPoints.length < 4 || object.style.strokeWidth <= 0) return null;
-        const points = partialPolylinePoints(fullPoints, drawProgress);
+        const fullSegments = anchoredLineSegments(data, playerTracks, allDrawings, currentTime, width, height, object.style.strokeWidth);
+        if (!fullSegments.length || object.style.strokeWidth <= 0) return null;
+        const segments = partialLineSegments(fullSegments, drawProgress);
         const design = data.lineDesign ?? "single";
         const primaryColor = solidColor(object.style.stroke, "#65d9ff");
         const shadowColor = solidColor(object.style.shadowColor, "#000000");
         const secondaryColor = solidColor(data.secondaryColor ?? "#ffffff", "#ffffff");
-        const startX = points[0];
-        const startY = points[1];
-        const endX = points[points.length - 2];
-        const endY = points[points.length - 1];
-        const shadowX = object.style.shadowOffsetX || 4;
-        const shadowY = object.style.shadowOffsetY || 7;
-
-        if (design === "single") {
-          return (
-            <Group opacity={temporalState.opacity}>
-              <Line
-                points={offsetPoints(points, shadowX, shadowY)}
-                stroke={shadowColor}
-                strokeWidth={object.style.strokeWidth + 2.2}
-                dash={object.style.dash}
-                lineCap="round"
-                lineJoin="round"
-                opacity={object.style.shadowOpacity * .62}
-                shadowColor={shadowColor}
-                shadowBlur={Math.max(8, object.style.shadowBlur)}
-                shadowOpacity={object.style.shadowOpacity}
-                listening={false}
-              />
-              <Line
-                points={points}
-                stroke={primaryColor}
-                strokeWidth={object.style.strokeWidth}
-                dash={object.style.dash}
-                lineCap="round"
-                lineJoin="round"
-              />
-              <Line
-                points={offsetPoints(points, 0, -Math.max(.6, object.style.strokeWidth * .13))}
-                stroke={withAlpha("#ffffff", .7)}
-                strokeWidth={Math.max(.7, object.style.strokeWidth * .18)}
-                dash={object.style.dash}
-                lineCap="round"
-                lineJoin="round"
-                listening={false}
-              />
-            </Group>
-          );
-        }
-
-        if (design === "dual") {
-          const deltaX = endX - startX;
-          const deltaY = endY - startY;
-          const lineLength = Math.max(1, Math.hypot(deltaX, deltaY));
-          let normalX = -deltaY / lineLength;
-          let normalY = deltaX / lineLength;
-          if (normalY < 0 || (Math.abs(normalY) < .001 && normalX < 0)) {
-            normalX *= -1;
-            normalY *= -1;
-          }
-          const mainWidth = Math.max(object.style.strokeWidth + 3, object.style.strokeWidth * 1.65);
-          const accentWidth = Math.max(1.15, object.style.strokeWidth * .32);
-          const accentOffset = mainWidth / 2 - accentWidth * .15;
-          const accentPoints = offsetPoints(points, normalX * accentOffset, normalY * accentOffset);
-          return (
-            <Group opacity={temporalState.opacity}>
-              <Line
-                points={offsetPoints(points, shadowX, shadowY)}
-                stroke={shadowColor}
-                strokeWidth={mainWidth + 2.2}
-                dash={object.style.dash}
-                lineCap="round"
-                lineJoin="round"
-                opacity={object.style.shadowOpacity * .62}
-                shadowColor={shadowColor}
-                shadowBlur={Math.max(8, object.style.shadowBlur)}
-                shadowOpacity={object.style.shadowOpacity}
-                listening={false}
-              />
-              <Line
-                points={points}
-                stroke={primaryColor}
-                strokeWidth={mainWidth}
-                dash={object.style.dash}
-                lineCap="round"
-                lineJoin="round"
-              />
-              <Line
-                points={accentPoints}
-                stroke={secondaryColor}
-                strokeWidth={accentWidth}
-                dash={object.style.dash}
-                lineCap="round"
-                lineJoin="round"
-                listening={false}
-              />
-              <Line
-                points={offsetPoints(points, -normalX * mainWidth * .2, -normalY * mainWidth * .2)}
-                stroke={withAlpha("#ffffff", .48)}
-                strokeWidth={Math.max(.7, object.style.strokeWidth * .14)}
-                dash={object.style.dash}
-                lineCap="round"
-                lineJoin="round"
-                listening={false}
-              />
-            </Group>
-          );
-        }
-
+        const shadowX = effectiveShadow.offsetX;
+        const shadowY = effectiveShadow.offsetY;
         return (
           <Group opacity={temporalState.opacity}>
-            <Line
-              points={offsetPoints(points, shadowX, shadowY)}
-              stroke={shadowColor}
-              strokeWidth={object.style.strokeWidth + 3.5}
-              dash={object.style.dash}
-              lineCap="round"
-              lineJoin="round"
-              opacity={object.style.shadowOpacity * .62}
-              shadowColor={shadowColor}
-              shadowBlur={Math.max(9, object.style.shadowBlur)}
-              shadowOpacity={object.style.shadowOpacity}
-              listening={false}
-            />
-            <Line
-              points={points}
-              strokeWidth={object.style.strokeWidth}
-              dash={object.style.dash}
-              lineCap="round"
-              lineJoin="round"
-              strokeLinearGradientStartPoint={{ x: startX, y: startY }}
-              strokeLinearGradientEndPoint={{ x: endX, y: endY }}
-              strokeLinearGradientColorStops={[0, withAlpha(primaryColor, 0), .14, withAlpha(primaryColor, .48), .28, primaryColor, .72, primaryColor, .86, withAlpha(primaryColor, .48), 1, withAlpha(primaryColor, 0)]}
-            />
-            <Line
-              points={offsetPoints(points, 0, -Math.max(.6, object.style.strokeWidth * .13))}
-              strokeWidth={Math.max(.7, object.style.strokeWidth * .17)}
-              dash={object.style.dash}
-              lineCap="round"
-              lineJoin="round"
-              strokeLinearGradientStartPoint={{ x: startX, y: startY }}
-              strokeLinearGradientEndPoint={{ x: endX, y: endY }}
-              strokeLinearGradientColorStops={[0, withAlpha("#ffffff", 0), .2, withAlpha("#ffffff", .48), .5, withAlpha("#ffffff", .7), .8, withAlpha("#ffffff", .48), 1, withAlpha("#ffffff", 0)]}
-              listening={false}
-            />
+            {segments.map((points, index) => {
+              const startX = points[0];
+              const startY = points[1];
+              const endX = points[2];
+              const endY = points[3];
+              if (design === "single") return (
+                <Group key={`line-single-${index}`}>
+                  <Line points={offsetPoints(points, shadowX, shadowY)} stroke={shadowColor} strokeWidth={object.style.strokeWidth + 2.2} dash={object.style.dash} lineCap="round" lineJoin="round" opacity={effectiveShadow.opacity * .62} shadowColor={shadowColor} shadowBlur={Math.max(.5, effectiveShadow.blur)} shadowOpacity={effectiveShadow.opacity} listening={false} />
+                  <Line points={points} stroke={primaryColor} strokeWidth={object.style.strokeWidth} dash={object.style.dash} lineCap="round" lineJoin="round" />
+                  <Line points={offsetPoints(points, 0, -Math.max(.6, object.style.strokeWidth * .13))} stroke={withAlpha("#ffffff", .7)} strokeWidth={Math.max(.7, object.style.strokeWidth * .18)} dash={object.style.dash} lineCap="round" lineJoin="round" listening={false} />
+                </Group>
+              );
+              if (design === "dual") {
+                const deltaX = endX - startX;
+                const deltaY = endY - startY;
+                const lineLength = Math.max(1, Math.hypot(deltaX, deltaY));
+                let normalX = -deltaY / lineLength;
+                let normalY = deltaX / lineLength;
+                if (normalY < 0 || (Math.abs(normalY) < .001 && normalX < 0)) { normalX *= -1; normalY *= -1; }
+                const mainWidth = Math.max(object.style.strokeWidth + 3, object.style.strokeWidth * 1.65);
+                const accentWidth = Math.max(1.15, object.style.strokeWidth * .32);
+                const accentOffset = mainWidth / 2 - accentWidth * .15;
+                return (
+                  <Group key={`line-dual-${index}`}>
+                    <Line points={offsetPoints(points, shadowX, shadowY)} stroke={shadowColor} strokeWidth={mainWidth + 2.2} dash={object.style.dash} lineCap="round" lineJoin="round" opacity={effectiveShadow.opacity * .62} shadowColor={shadowColor} shadowBlur={Math.max(.5, effectiveShadow.blur)} shadowOpacity={effectiveShadow.opacity} listening={false} />
+                    <Line points={points} stroke={primaryColor} strokeWidth={mainWidth} dash={object.style.dash} lineCap="round" lineJoin="round" />
+                    <Line points={offsetPoints(points, normalX * accentOffset, normalY * accentOffset)} stroke={secondaryColor} strokeWidth={accentWidth} dash={object.style.dash} lineCap="round" lineJoin="round" listening={false} />
+                    <Line points={offsetPoints(points, -normalX * mainWidth * .2, -normalY * mainWidth * .2)} stroke={withAlpha("#ffffff", .48)} strokeWidth={Math.max(.7, object.style.strokeWidth * .14)} dash={object.style.dash} lineCap="round" lineJoin="round" listening={false} />
+                  </Group>
+                );
+              }
+              return (
+                <Group key={`line-fade-${index}`}>
+                  <Line points={offsetPoints(points, shadowX, shadowY)} stroke={shadowColor} strokeWidth={object.style.strokeWidth + 3.5} dash={object.style.dash} lineCap="round" lineJoin="round" opacity={effectiveShadow.opacity * .62} shadowColor={shadowColor} shadowBlur={Math.max(.5, effectiveShadow.blur)} shadowOpacity={effectiveShadow.opacity} listening={false} />
+                  <Line points={points} strokeWidth={object.style.strokeWidth} dash={object.style.dash} lineCap="round" lineJoin="round" strokeLinearGradientStartPoint={{ x: startX, y: startY }} strokeLinearGradientEndPoint={{ x: endX, y: endY }} strokeLinearGradientColorStops={[0, withAlpha(primaryColor, 0), .14, withAlpha(primaryColor, .48), .28, primaryColor, .72, primaryColor, .86, withAlpha(primaryColor, .48), 1, withAlpha(primaryColor, 0)]} />
+                  <Line points={offsetPoints(points, 0, -Math.max(.6, object.style.strokeWidth * .13))} strokeWidth={Math.max(.7, object.style.strokeWidth * .17)} dash={object.style.dash} lineCap="round" lineJoin="round" strokeLinearGradientStartPoint={{ x: startX, y: startY }} strokeLinearGradientEndPoint={{ x: endX, y: endY }} strokeLinearGradientColorStops={[0, withAlpha("#ffffff", 0), .2, withAlpha("#ffffff", .48), .5, withAlpha("#ffffff", .7), .8, withAlpha("#ffffff", .48), 1, withAlpha("#ffffff", 0)]} listening={false} />
+                </Group>
+              );
+            })}
           </Group>
         );
       }

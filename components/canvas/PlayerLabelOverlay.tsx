@@ -14,10 +14,11 @@ interface Props {
   currentTime: number;
   width: number;
   height: number;
+  editingPreview?: boolean;
 }
 
-export const PlayerLabelOverlay = forwardRef<Konva.Stage, Props>(function PlayerLabelOverlay({ drawings, playerTracks, currentTime, width, height }, ref) {
-  const labels = drawings.filter((drawing) => drawing.type === "playerRing" && getObjectStateAtTime(drawing, currentTime).visible);
+export const PlayerLabelOverlay = forwardRef<Konva.Stage, Props>(function PlayerLabelOverlay({ drawings, playerTracks, currentTime, width, height, editingPreview = false }, ref) {
+  const labels = drawings.filter((drawing) => (drawing.type === "playerRing" || drawing.type === "playerLabel") && getObjectStateAtTime(drawing, currentTime).visible);
 
   return (
     <Stage ref={ref} width={width} height={height} listening={false} className="drawing-stage player-label-stage">
@@ -34,7 +35,9 @@ export const PlayerLabelOverlay = forwardRef<Konva.Stage, Props>(function Player
             onSelect={() => undefined}
             onChange={() => undefined}
             renderMode="playerLabel"
+            editingPreview={editingPreview}
             targetOffset={targetOffsetAtTime(drawing, playerTracks, currentTime)}
+            allDrawings={drawings}
           />
         ))}
       </Layer>

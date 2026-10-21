@@ -13,7 +13,7 @@ function colorWithAlpha(color: string, alpha: number) {
   return `rgba(${value >> 16}, ${(value >> 8) & 255}, ${value & 255}, ${alpha})`;
 }
 
-function drawGroundArrow(
+function drawGroundLine(
   context: CanvasRenderingContext2D,
   drawing: DrawingObject,
   destination: { x: number; y: number },
@@ -33,23 +33,11 @@ function drawGroundArrow(
 
   const color = drawing.style.stroke.match(/^#[0-9a-f]{6}/i)?.[0] ?? "#ffffff";
   const strokeWidth = Math.max(2, drawing.style.strokeWidth);
-  const angle = Math.atan2(deltaY, deltaX);
-  const headLength = Math.max(11, strokeWidth * 2.5);
-  const headWidth = Math.max(9, strokeWidth * 2.15);
-  const tipX = destinationX;
-  const tipY = destinationY;
-  const baseX = tipX - Math.cos(angle) * headLength;
-  const baseY = tipY - Math.sin(angle) * headLength;
-  const normalX = -Math.sin(angle);
-  const normalY = Math.cos(angle);
 
   const path = () => {
     context.beginPath();
     context.moveTo(originX, originY);
-    context.lineTo(baseX, baseY);
-    context.moveTo(baseX + normalX * headWidth / 2, baseY + normalY * headWidth / 2);
-    context.lineTo(tipX, tipY);
-    context.lineTo(baseX - normalX * headWidth / 2, baseY - normalY * headWidth / 2);
+    context.lineTo(destinationX, destinationY);
   };
 
   context.save();
@@ -58,36 +46,15 @@ function drawGroundArrow(
   context.lineJoin = "round";
   context.setLineDash(drawing.style.dash);
   if (drawing.data.showArrow !== false) {
-    context.save();
-    context.translate(
-      drawing.style.shadowOffsetX || 3,
-      Math.max(3, drawing.style.shadowOffsetY || 4),
-    );
-    path();
-    context.strokeStyle = colorWithAlpha("#000000", .52);
-    context.lineWidth = strokeWidth + 3;
-    context.shadowColor = "rgba(0,0,0,.75)";
-    context.shadowBlur = Math.max(6, drawing.style.shadowBlur);
-    context.stroke();
-    context.restore();
-
     path();
     context.strokeStyle = color;
     context.lineWidth = strokeWidth;
-    context.shadowColor = drawing.style.shadowColor;
-    context.shadowBlur = drawing.style.shadowBlur;
-    context.shadowOffsetX = drawing.style.shadowOffsetX;
-    context.shadowOffsetY = drawing.style.shadowOffsetY;
     context.stroke();
   }
 
   if (drawing.data.showOrigin === true) {
     const radiusX = Math.max(10, drawing.data.radiusX * width * 1.45);
     const radiusY = Math.max(3.5, radiusX * .26);
-    context.shadowColor = "rgba(0,0,0,.7)";
-    context.shadowBlur = 6;
-    context.shadowOffsetX = 0;
-    context.shadowOffsetY = 3;
     context.setLineDash(drawing.style.dash.length ? drawing.style.dash : [8, 6]);
     context.beginPath();
     context.ellipse(originX, originY, radiusX, radiusY, 0, 0, Math.PI * 2);
@@ -108,9 +75,10 @@ interface Props {
   height: number;
   getVideoElement?: () => HTMLVideoElement | null;
   transformOverrides?: Record<string, ObjectTransform>;
+  editingPreview?: boolean;
 }
 
-export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(function PlayerOcclusionCanvas({ drawings, playerTracks, currentTime, width, height, getVideoElement, transformOverrides }, ref) {
+export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(function PlayerOcclusionCanvas({ drawings, playerTracks, currentTime, width, height, getVideoElement, transformOverrides, editingPreview = false }, ref) {
   useEffect(() => {
     const canvas = typeof ref === "object" ? ref?.current : null;
     const video = getVideoElement?.();
@@ -136,11 +104,8 @@ export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(functi
       const track = playerTracks?.find((item) => item.id === trackId);
       if (!track?.samples.length) continue;
       const sample = samplePlayerTrackAtTime(track, currentTime);
-      const ring = activeTargets.find((drawing) => drawing.target?.trackId === trackId && drawing.data.kind === "playerRing");
-      const radiusY = ring?.data.kind === "playerRing" ? ring.data.radiusY : Math.max(.009, sample.bbox.width * .34);
-      const occlusionWidth = ring?.data.kind === "playerRing" ? ring.data.occlusionWidth : sample.bbox.width;
       try {
-        drawPlayerForeground(context, video, sample.bbox, width, height, sample.foot, radiusY, occlusionWidth);
+        drawPlayerForeground(context, video, sample.bbox, width, height, sample.foot);
       } catch {
         // Keep the remaining identified players visible if one frame cannot be sampled.
       }
@@ -162,8 +127,8 @@ export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(functi
       const travelDuration = Math.min(objectDuration / (drawing.data.returnToOrigin ? 2 : 1), Math.max(.12, drawing.data.travelDuration ?? .7));
       const elapsed = Math.max(0, currentTime - drawing.startTime);
       const ease = (value: number) => 1 - (1 - Math.max(0, Math.min(1, value))) ** 3;
-      let travelProgress = drawing.data.animateMovement === false ? 1 : ease(elapsed / travelDuration);
-      if (drawing.data.animateMovement !== false && drawing.data.returnToOrigin && currentTime > drawing.endTime - travelDuration) {
+      let travelProgress = editingPreview || drawing.data.animateMovement === false ? 1 : ease(elapsed / travelDuration);
+      if (!editingPreview && drawing.data.animateMovement !== false && drawing.data.returnToOrigin && currentTime > drawing.endTime - travelDuration) {
         travelProgress = 1 - ease((currentTime - (drawing.endTime - travelDuration)) / travelDuration);
       }
       const destination = {
@@ -172,7 +137,7 @@ export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(functi
       };
       try {
         if (drawing.data.hideOriginal !== false) hidePlayerOriginal(context, video, sample.bbox, width, height);
-        drawGroundArrow(context, drawing, destination, width, height, state.opacity);
+        drawGroundLine(context, drawing, destination, width, height, editingPreview ? drawing.style.opacity : state.opacity);
         drawMovedPlayer(
           context,
           video,
@@ -183,13 +148,13 @@ export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(functi
           transform.scaleX,
           transform.scaleY,
           transform.rotation,
-          state.opacity * (drawing.data.playerOpacity ?? .96),
+          (editingPreview ? drawing.style.opacity : state.opacity) * (drawing.data.playerOpacity ?? .96),
         );
       } catch {
         // The next video frame redraws this overlay automatically.
       }
     }
-  }, [currentTime, drawings, getVideoElement, height, playerTracks, ref, transformOverrides, width]);
+  }, [currentTime, drawings, editingPreview, getVideoElement, height, playerTracks, ref, transformOverrides, width]);
 
   return <canvas ref={ref} className="player-occlusion-canvas" width={width} height={height} />;
 });

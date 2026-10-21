@@ -1,6 +1,7 @@
 export type Tool =
   | "select"
   | "identifyPlayer"
+  | "playerLabel"
   | "playerRing"
   | "ghost"
   | "spotlight"
@@ -84,6 +85,7 @@ export interface DrawingStyle {
   shadowOpacity: number;
   shadowOffsetX: number;
   shadowOffsetY: number;
+  groundHeight?: number;
 }
 
 export interface ObjectTransform {
@@ -106,6 +108,7 @@ export interface DrawingKeyframe {
 
 export type DrawingData =
   | { kind: "identifyPlayer"; center: Point; radiusX: number; radiusY: number }
+  | { kind: "playerLabel"; anchor: Point; labelOffsetY?: number; label: PlayerLabel }
   | { kind: "playerRing"; center: Point; radiusX: number; radiusY: number; occlusionWidth?: number; labelOffsetY?: number; label?: PlayerLabel; ringDesign?: PlayerRingDesign; spinEnabled?: boolean; spinSpeed?: number; showRing?: boolean; splashEnabled?: boolean; splashSpeed?: number }
   | { kind: "ghost"; origin: Point; destination: Point; radiusX: number; radiusY: number; hideOriginal?: boolean; playerOpacity?: number; showArrow?: boolean; showOrigin?: boolean; animateMovement?: boolean; returnToOrigin?: boolean; travelDuration?: number }
   | { kind: "spotlight"; target: Point; radiusX: number; radiusY: number; beamHeight: number; design?: "beam" | "isolation"; darkness?: number; feather?: number }
@@ -165,6 +168,7 @@ export const DEFAULT_STYLE: DrawingStyle = {
   shadowOpacity: 0,
   shadowOffsetX: 0,
   shadowOffsetY: 0,
+  groundHeight: .08,
 };
 
 export const DEFAULT_TRANSFORM: ObjectTransform = {

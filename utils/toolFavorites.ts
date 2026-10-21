@@ -18,6 +18,8 @@ export function applyFavoriteData(base: DrawingData, favorite: ToolFavorite): Dr
   switch (saved.kind) {
     case "identifyPlayer":
       return base.kind === "identifyPlayer" ? { ...base, radiusX: saved.radiusX, radiusY: saved.radiusY } : base;
+    case "playerLabel":
+      return base.kind === "playerLabel" ? { ...base, labelOffsetY: saved.labelOffsetY, label: structuredClone(saved.label) } : base;
     case "playerRing":
       return base.kind === "playerRing" ? { ...base, radiusX: saved.radiusX, radiusY: saved.radiusY, occlusionWidth: saved.occlusionWidth, labelOffsetY: saved.labelOffsetY, label: saved.label ? structuredClone(saved.label) : undefined, ringDesign: saved.ringDesign, spinEnabled: saved.spinEnabled, spinSpeed: saved.spinSpeed, showRing: saved.showRing, splashEnabled: saved.splashEnabled, splashSpeed: saved.splashSpeed } : base;
     case "ghost":

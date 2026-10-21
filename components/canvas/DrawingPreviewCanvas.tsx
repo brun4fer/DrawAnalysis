@@ -63,6 +63,7 @@ export function DrawingPreviewCanvas({ drawings, playerTracks, currentTime, widt
             renderMode="base"
             targetOffset={targetOffsetAtTime(object, playerTracks, currentTime)}
             playerTracks={playerTracks}
+            allDrawings={drawings}
           />
         ))}
       </Layer>

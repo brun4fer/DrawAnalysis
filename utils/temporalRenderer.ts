@@ -20,6 +20,7 @@ export function defaultDrawingAnimationFor(type: DrawingObject["type"]): NonNull
     return { configured: true, fadeIn: .55, fadeOut: .35, motion: "draw", pulseAmount: .05, pulseSpeed: 1.4 };
   }
   if (type === "text") return { configured: true, fadeIn: .65, fadeOut: .35, motion: "reveal", pulseAmount: .05, pulseSpeed: 1.4 };
+  if (type === "playerLabel") return { configured: true, fadeIn: .35, fadeOut: .35, motion: "none", pulseAmount: .05, pulseSpeed: 1.4 };
   if (type === "playerRing") return { configured: true, fadeIn: .34, fadeOut: .42, motion: "ringLock", pulseAmount: .05, pulseSpeed: 1.4 };
   if (["spotlight", "zoom", "ellipse", "triangle", "polygon", "rectangle", "glimpse"].includes(type)) {
     return { configured: true, fadeIn: .42, fadeOut: .45, motion: "scaleIn", pulseAmount: .05, pulseSpeed: 1.4 };
