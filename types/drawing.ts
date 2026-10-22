@@ -115,7 +115,7 @@ export type DrawingData =
   | { kind: "zoom"; center: Point; radius: number; zoom: number }
   | { kind: "ellipse"; center: Point; radiusX: number; radiusY: number }
   | { kind: "rectangle"; origin: Point; width: number; height: number; fillDesign?: ZoneDesign; stripeColor?: string; stripeSpacing?: number; stripeAngle?: number; stripeOpacity?: number }
-  | { kind: "longBallArrow"; start: Point; end: Point; curveHeight: number; showLandingZone?: boolean; landingZoneColor?: string; landingZoneSize?: number }
+  | { kind: "longBallArrow"; start: Point; end: Point; control?: Point; curveHeight: number; showLandingZone?: boolean; landingZoneColor?: string; landingZoneSize?: number }
   | { kind: "line"; points: Point[]; lineDesign?: LineDesign; secondaryColor?: string; startTarget?: DrawingTarget; endTarget?: DrawingTarget; pointTargets?: Array<DrawingTarget | null> }
   | { kind: "glimpse"; origin: Point; target: Point; spread: number }
   | { kind: "polygon"; points: Point[]; zoneDesign?: ZoneDesign; stripeColor?: string; stripeSpacing?: number; stripeAngle?: number; stripeOpacity?: number }

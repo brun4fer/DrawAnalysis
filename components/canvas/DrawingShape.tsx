@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import Konva from "konva";
-import { Arc, Ellipse, Group, Line, Rect, Text, Transformer } from "react-konva";
+import { Arc, Circle, Ellipse, Group, Line, Rect, Text, Transformer } from "react-konva";
 import type { DrawingData, DrawingObject, ObjectTransform, PlayerTrack, Point } from "@/types/drawing";
 import { flattenPoints } from "@/utils/coordinates";
+import { automaticLongBallControl, buildCurvedArrowGeometry, quadraticPointAt } from "@/utils/curvedArrowGeometry";
 import { samplePlayerTrackAtTime } from "@/utils/playerTracking";
 import { getObjectStateAtTime, resolvedDrawingAnimation } from "@/utils/temporalRenderer";
 
@@ -92,34 +93,6 @@ function arrowHeadPoints(points: number[], length: number, width: number) {
   const normalX = -Math.sin(angle) * width / 2;
   const normalY = Math.cos(angle) * width * .31;
   return [tipX, tipY, baseX + normalX, baseY + normalY, baseX - normalX, baseY - normalY];
-}
-
-function quadraticCurvePoints(start: { x: number; y: number }, end: { x: number; y: number }, curveHeight: number, height: number) {
-  const deltaX = end.x - start.x;
-  const deltaY = end.y - start.y;
-  const distance = Math.max(1, Math.hypot(deltaX, deltaY));
-  let normalX = -deltaY / distance;
-  let normalY = deltaX / distance;
-  // Keep the arc on the visually upper side of the pass while still making
-  // it perpendicular to the direction. This avoids loops and extreme bends
-  // when start/end positions are close, vertical or reversed.
-  if (normalY > 0 || (Math.abs(normalY) < .001 && normalX > 0)) {
-    normalX *= -1;
-    normalY *= -1;
-  }
-  const arcHeight = Math.min(curveHeight * height * 1.6, distance * .68);
-  const control = {
-    x: (start.x + end.x) / 2 + normalX * arcHeight,
-    y: (start.y + end.y) / 2 + normalY * arcHeight,
-  };
-  return Array.from({ length: 41 }, (_, index) => {
-    const t = index / 40;
-    const inverse = 1 - t;
-    return {
-      x: inverse * inverse * start.x + 2 * inverse * t * control.x + t * t * end.x,
-      y: inverse * inverse * start.y + 2 * inverse * t * control.y + t * t * end.y,
-    };
-  }).flatMap(({ x, y }) => [x, y]);
 }
 
 function anchoredLinePoints(data: Extract<DrawingData, { kind: "line" }>, playerTracks: PlayerTrack[] | undefined, currentTime: number) {
@@ -222,6 +195,7 @@ function partialLineSegments(segments: number[][], progress: number) {
 export function DrawingShape({ object, width, height, currentTime, selected, canEdit, onSelect, onChange, renderMode = "all", editingPreview = false, targetOffset = { x: 0, y: 0 }, playerTracks, allDrawings, onTransformPreview }: Props) {
   const nodeRef = useRef<Konva.Group>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
+  const [longBallPreviewData, setLongBallPreviewData] = useState<Extract<DrawingData, { kind: "longBallArrow" }> | null>(null);
   const calculatedTemporalState = getObjectStateAtTime(object, currentTime);
   const temporalState = editingPreview
     ? { ...calculatedTemporalState, opacity: object.style.opacity, entryProgress: 1, exitProgress: 1 }
@@ -234,9 +208,10 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
   useEffect(() => {
     if (selected && transformerRef.current && nodeRef.current) {
       transformerRef.current.nodes([nodeRef.current]);
+      transformerRef.current.forceUpdate();
       transformerRef.current.getLayer()?.batchDraw();
     }
-  }, [selected]);
+  }, [selected, longBallPreviewData]);
 
   const sitsOnGround = ["ellipse", "rectangle", "arrow", "longBallArrow", "line", "triangle", "polygon", "freeDraw"].includes(object.type);
   const groundHeight = Math.max(0, Math.min(1, object.style.groundHeight ?? .08));
@@ -319,7 +294,7 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
   };
 
   const content = (() => {
-    const data = object.data;
+    const data = selected && object.data.kind === "longBallArrow" && longBallPreviewData ? longBallPreviewData : object.data;
     if (renderMode === "playerLabel" && data.kind !== "playerRing" && data.kind !== "playerLabel") return null;
     switch (data.kind) {
       case "identifyPlayer": {
@@ -1010,31 +985,72 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         const start = { x: data.start.x * width, y: data.start.y * height };
         const end = { x: data.end.x * width, y: data.end.y * height };
         if (object.style.strokeWidth <= 0) return null;
-        const fullPoints = quadraticCurvePoints(start, end, data.curveHeight, height);
-        const fullGroundShadowPoints = quadraticCurvePoints(start, end, Math.min(.014, Math.max(.003, data.curveHeight * .055)), height);
-        const points = partialPolylinePoints(fullPoints, drawProgress);
-        const groundShadowPoints = partialPolylinePoints(fullGroundShadowPoints, drawProgress);
+        const control = data.control
+          ? { x: data.control.x * width, y: data.control.y * height }
+          : automaticLongBallControl(start, end, data.curveHeight, height);
+        const renderScale = Math.max(.45, Math.min(3, Math.min(width / 960, height / 540)));
+        const bodyWidth = object.style.strokeWidth * renderScale;
+        const geometry = buildCurvedArrowGeometry({ start, control, end, bodyWidth, renderScale, progress: drawProgress });
+        if (!geometry.polygon.length) return null;
+        const groundControl = automaticLongBallControl(
+          start,
+          end,
+          Math.min(.014, Math.max(.003, data.curveHeight * .06)),
+          height,
+        );
+        const groundGeometry = buildCurvedArrowGeometry({
+          start,
+          control: groundControl,
+          end,
+          bodyWidth: bodyWidth * .9,
+          renderScale,
+          progress: drawProgress,
+        });
         const faceColor = solidColor(object.style.stroke, "#65d9ff");
         const shadowColor = solidColor(object.style.shadowColor, "#000000");
         const travelLength = Math.hypot(end.x - start.x, end.y - start.y);
-        const pointerLength = Math.max(26, Math.min(58, travelLength * .105, object.style.strokeWidth * 5.4));
-        const pointerWidth = Math.max(28, Math.min(64, travelLength * .12, object.style.strokeWidth * 5.9));
-        const groundOffsetX = effectiveShadow.offsetX * .45;
-        const groundOffsetY = Math.max(.35, effectiveShadow.offsetY * .55);
         const landingSize = data.landingZoneSize ?? 1;
         const landingColor = solidColor(data.landingZoneColor ?? faceColor, faceColor);
         const landingRadiusX = Math.max(34, Math.min(180, travelLength * .2)) * landingSize;
         const landingRadiusY = landingRadiusX * .28;
-        const headPoints = arrowHeadPoints(points, pointerLength, pointerWidth);
-        const groundHeadPoints = arrowHeadPoints(groundShadowPoints, pointerLength + 3, pointerWidth + 4);
-        const headDepth = Math.max(.4, object.style.strokeWidth * (.06 + groundHeight * .3));
+        const depth = Math.max(1.4 * renderScale, bodyWidth * (.22 + groundHeight * .32));
+        const shadowX = (object.style.shadowOffsetX ?? 0) * .45;
+        const shadowY = Math.max(1.5 * renderScale, (object.style.shadowOffsetY ?? 0) * .62);
+        const shadowOpacity = Math.max(0, Math.min(.72, object.style.shadowOpacity * .58));
         const landingOpacity = Math.max(0, Math.min(1, (drawProgress - .78) / .22));
+        const updatePoint = (key: "start" | "control" | "end", commit = false) => (event: Konva.KonvaEventObject<DragEvent>) => {
+          event.cancelBubble = true;
+          const point = {
+            x: Math.max(0, Math.min(1, event.target.x() / width)),
+            y: Math.max(0, Math.min(1, event.target.y() / height)),
+          };
+          const nextData = { ...data, [key]: point };
+          if (commit) {
+            onChange({ data: nextData });
+            setLongBallPreviewData(null);
+          } else {
+            setLongBallPreviewData(nextData);
+          }
+        };
         return (
           <Group opacity={temporalState.opacity}>
+            <Line
+              points={offsetPoints(groundGeometry.polygon, shadowX, shadowY)}
+              closed
+              fill={shadowColor}
+              stroke={shadowColor}
+              strokeWidth={Math.max(.8 * renderScale, bodyWidth * .12)}
+              opacity={shadowOpacity}
+              shadowColor={shadowColor}
+              shadowBlur={Math.max(3 * renderScale, (object.style.shadowBlur ?? 0) * .55)}
+              shadowOpacity={shadowOpacity}
+              lineJoin="round"
+              listening={false}
+            />
             {data.showLandingZone !== false && (
               <Ellipse
                 x={end.x}
-                y={end.y + groundOffsetY}
+                y={end.y + depth * .45}
                 radiusX={landingRadiusX}
                 radiusY={landingRadiusY}
                 fill={withAlpha(landingColor, .28 * landingOpacity)}
@@ -1045,79 +1061,65 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
               />
             )}
             <Line
-              points={offsetPoints(groundShadowPoints, groundOffsetX, groundOffsetY)}
-              stroke={shadowColor}
-              strokeWidth={object.style.strokeWidth + 2.5}
-              dash={object.style.dash}
-              opacity={effectiveShadow.opacity * .52}
-              shadowColor={shadowColor}
-              shadowBlur={Math.max(.5, effectiveShadow.blur * 1.15)}
-              shadowOpacity={effectiveShadow.opacity}
-              lineCap="round"
+              points={offsetPoints(geometry.polygon, 0, depth)}
+              closed
+              fill={shadeColor(faceColor, -105)}
+              stroke={shadeColor(faceColor, -125)}
+              strokeWidth={Math.max(.9 * renderScale, bodyWidth * .17)}
               lineJoin="round"
               listening={false}
             />
             <Line
-              points={offsetPoints(groundHeadPoints, groundOffsetX, groundOffsetY)}
+              points={geometry.polygon}
               closed
-              fill={shadowColor}
-              opacity={effectiveShadow.opacity * .52}
-              shadowColor={shadowColor}
-              shadowBlur={Math.max(.5, effectiveShadow.blur * 1.15)}
-              shadowOpacity={effectiveShadow.opacity}
-              listening={false}
-            />
-            <Ellipse
-              x={start.x + groundOffsetX}
-              y={start.y + groundOffsetY}
-              radiusX={Math.max(7, object.style.strokeWidth * 1.8)}
-              radiusY={Math.max(2, object.style.strokeWidth * .48)}
-              fill={shadowColor}
-              opacity={effectiveShadow.opacity * .34}
-              shadowColor={shadowColor}
-              shadowBlur={Math.max(.5, effectiveShadow.blur * .8)}
-              shadowOpacity={effectiveShadow.opacity}
-              listening={false}
-            />
-            <Line
-              points={offsetPoints(headPoints, 0, headDepth)}
-              closed
-              fill={shadeColor(faceColor, -88)}
-              stroke={shadeColor(faceColor, -110)}
-              strokeWidth={Math.max(.8, object.style.strokeWidth * .16)}
-              shadowColor="#000000"
-              shadowBlur={4}
-              shadowOffsetY={2}
-              shadowOpacity={.62}
-              listening={false}
-            />
-            <Line
-              points={points}
-              stroke={faceColor}
-              strokeWidth={object.style.strokeWidth}
-              strokeLinearGradientStartPoint={start}
-              strokeLinearGradientEndPoint={end}
-              strokeLinearGradientColorStops={[0, withAlpha(faceColor, .12), .1, withAlpha(faceColor, .82), .24, faceColor, 1, faceColor]}
-              dash={object.style.dash}
-              lineCap="round"
+              fillLinearGradientStartPoint={start}
+              fillLinearGradientEndPoint={end}
+              fillLinearGradientColorStops={[
+                0, shadeColor(faceColor, -24),
+                .34, faceColor,
+                .72, shadeColor(faceColor, 28),
+                1, faceColor,
+              ]}
+              stroke={shadeColor(faceColor, -105)}
+              strokeWidth={Math.max(1.1 * renderScale, bodyWidth * .2)}
               lineJoin="round"
             />
             <Line
-              points={headPoints}
-              closed
-              fill={faceColor}
-              stroke={withAlpha(shadeColor(faceColor, 98), .82)}
-              strokeWidth={Math.max(.8, object.style.strokeWidth * .15)}
-              listening={false}
-            />
-            <Line
-              points={offsetPoints(points, 0, -Math.max(.8, object.style.strokeWidth * .16))}
-              stroke={withAlpha(shadeColor(faceColor, 92), .78)}
-              strokeWidth={Math.max(.8, object.style.strokeWidth * .24)}
+              points={geometry.highlight}
+              stroke={withAlpha(shadeColor(faceColor, 105), .82)}
+              strokeWidth={Math.max(.75 * renderScale, bodyWidth * .16)}
               lineCap="round"
               lineJoin="round"
               listening={false}
             />
+            {selected && canEdit && renderMode !== "playerLabel" && (
+              <Group name="selection-transformer">
+                <Line points={[start.x, start.y, control.x, control.y, end.x, end.y]} stroke="#ffffff" strokeWidth={1} dash={[5, 5]} opacity={.62} listening={false} />
+                {([
+                  ["start", start, "#65d9ff"],
+                  ["control", control, "#ffd34d"],
+                  ["end", end, "#65d9ff"],
+                ] as const).map(([key, point, color]) => (
+                  <Circle
+                    key={key}
+                    x={point.x}
+                    y={point.y}
+                    radius={6.5 * renderScale}
+                    fill={color}
+                    stroke="#071018"
+                    strokeWidth={2 * renderScale}
+                    shadowColor="#000000"
+                    shadowBlur={4 * renderScale}
+                    shadowOpacity={.7}
+                    draggable
+                    onPointerDown={(event) => { event.cancelBubble = true; }}
+                    onDragStart={(event) => { event.cancelBubble = true; }}
+                    onDragMove={updatePoint(key)}
+                    onDragEnd={updatePoint(key, true)}
+                  />
+                ))}
+              </Group>
+            )}
           </Group>
         );
       }
@@ -1343,14 +1345,12 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
       const end = actionPoints[actionPoints.length - 1];
       anchor = { x: (start.x + (end.x - start.x) * position) * width, y: (start.y + (end.y - start.y) * position) * height };
     } else if (object.data.kind === "longBallArrow") {
-      const curve = quadraticCurvePoints(
-        { x: object.data.start.x * width, y: object.data.start.y * height },
-        { x: object.data.end.x * width, y: object.data.end.y * height },
-        object.data.curveHeight,
-        height,
-      );
-      const index = Math.min(curve.length / 2 - 1, Math.round(position * (curve.length / 2 - 1)));
-      anchor = { x: curve[index * 2], y: curve[index * 2 + 1] };
+      const start = { x: object.data.start.x * width, y: object.data.start.y * height };
+      const end = { x: object.data.end.x * width, y: object.data.end.y * height };
+      const control = object.data.control
+        ? { x: object.data.control.x * width, y: object.data.control.y * height }
+        : automaticLongBallControl(start, end, object.data.curveHeight, height);
+      anchor = quadraticPointAt(start, control, end, position);
     }
     if (!anchor) return null;
     const fontSize = Math.max(10, label.fontSize * height);
@@ -1397,7 +1397,7 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         scaleX={object.data.kind === "ghost" ? 1 : transform.scaleX}
         scaleY={object.data.kind === "ghost" ? 1 : transform.scaleY}
         draggable={canEdit}
-        onPointerDown={(event) => { event.cancelBubble = true; onSelect(); }}
+        onPointerDown={(event) => { event.cancelBubble = true; if (object.data.kind === "longBallArrow") setLongBallPreviewData(null); onSelect(); }}
         onClick={(event) => { event.cancelBubble = true; onSelect(); }}
         onTap={(event) => { event.cancelBubble = true; onSelect(); }}
         onDragMove={(event) => {
@@ -1445,8 +1445,8 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         <Transformer
           ref={transformerRef}
           name="selection-transformer"
-          rotateEnabled={object.data.kind !== "ghost"}
-          resizeEnabled={object.data.kind !== "ghost"}
+          rotateEnabled={object.data.kind !== "ghost" && object.data.kind !== "longBallArrow"}
+          resizeEnabled={object.data.kind !== "ghost" && object.data.kind !== "longBallArrow"}
           flipEnabled={false}
           borderStroke="#ffffff"
           borderDash={[4, 4]}

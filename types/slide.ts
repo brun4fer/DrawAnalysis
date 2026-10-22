@@ -130,9 +130,15 @@ export interface ReportCustomField {
 
 export interface ReportDiagramMark {
   id: string;
-  type: "arrow" | "zone" | "free";
+  type: "arrow" | "zone" | "free" | "text";
   points: Point[];
   color: string;
+  fillColor?: string;
+  strokeWidth?: number;
+  opacity?: number;
+  dashed?: boolean;
+  text?: string;
+  fontSize?: number;
 }
 
 export interface WrittenReportSlideContent {
@@ -162,6 +168,7 @@ export interface WrittenReportSlideContent {
   awayTextColor?: string;
   pitchColor?: string;
   pitchLineColor?: string;
+  pitchLineWidth?: number;
   panelColor?: string;
   textColor?: string;
   accentColor?: string;
@@ -173,6 +180,7 @@ export interface WrittenReportSlideContent {
   playerSize?: number;
   ballPosition?: Point;
   showBall?: boolean;
+  selectedDiagramMarkId?: string;
   selectedPlayerId?: string;
 }
 
@@ -237,7 +245,9 @@ export interface MatchPresentationSlideContent {
   backgroundPositionY?: number;
   template?: MatchPresentationTemplate;
   homePanelColor?: string;
+  homeSecondaryColor?: string;
   awayPanelColor?: string;
+  awaySecondaryColor?: string;
   homeTextColor?: string;
   awayTextColor?: string;
   informationTextColor?: string;
@@ -249,6 +259,7 @@ export interface MatchPresentationSlideContent {
   overlayOpacity?: number;
   panelOpacity?: number;
   crestScale?: number;
+  designVersion?: number;
 }
 
 export interface BoardSlideContent {
@@ -262,6 +273,7 @@ export interface BoardSlideContent {
   awayTextColor?: string;
   pitchColor?: string;
   pitchLineColor?: string;
+  pitchLineWidth?: number;
   playerSize?: number;
   ballPosition?: Point;
   showBall?: boolean;
@@ -273,6 +285,7 @@ export interface BoardSlideContent {
   tacticalMarks?: TacticalBoardMark[];
   movements?: TacticalMovement[];
   activeMovementId?: string;
+  selectedMarkId?: string;
   selectedPlayerId?: string;
   movementDuration?: number;
   movementHoldDuration?: number;

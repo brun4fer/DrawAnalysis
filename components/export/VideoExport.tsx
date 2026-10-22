@@ -20,6 +20,7 @@ interface Props {
 const EXPORT_WIDTH = 1280;
 const EXPORT_HEIGHT = 720;
 const FPS = 25;
+const TACTICAL_EXPORT_MOVEMENT_HOLD = 2;
 
 const nextPaint = () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 
@@ -128,8 +129,19 @@ function drawVideoBackground(context: CanvasRenderingContext2D, video: HTMLVideo
   context.drawImage(video, (width - drawWidth) * positionX, (height - drawHeight) * positionY, drawWidth, drawHeight);
 }
 
+function slideWithExportTiming(slide: AnalysisSlide): AnalysisSlide {
+  if (slide.content.kind !== "tactical-board") return slide;
+  return {
+    ...slide,
+    content: {
+      ...slide.content,
+      movementHoldDuration: TACTICAL_EXPORT_MOVEMENT_HOLD,
+    },
+  };
+}
+
 function slideExportDuration(slide: AnalysisSlide) {
-  return getSlidePresentationDuration(slide);
+  return getSlidePresentationDuration(slideWithExportTiming(slide));
 }
 
 function formatDuration(seconds: number) {
@@ -223,7 +235,7 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
     };
     const showSlide = async (slide: AnalysisSlide) => {
       setRenderPresentationTime(0);
-      setRenderSlide(slide);
+      setRenderSlide(slideWithExportTiming(slide));
       await nextPaint();
       await document.fonts.ready;
       await nextPaint();
@@ -421,7 +433,7 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
             video.pause();
             completedDuration += duration;
           } else if (slide.content.kind === "tactical-board") {
-            const duration = getSlidePresentationDuration(slide);
+            const duration = slideExportDuration(slide);
             const root = captureRootRef.current?.querySelector<HTMLElement>(".slide-stage-shell");
             if (!root) throw new Error(`O quadro tático do slide ${index + 1} não ficou preparado.`);
             const startedAt = performance.now();

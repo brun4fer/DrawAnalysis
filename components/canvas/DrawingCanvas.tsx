@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Konva from "konva";
-import { Arc, Arrow, Ellipse, Layer, Line, Rect, Stage, Text } from "react-konva";
+import { Arc, Arrow, Ellipse, Group, Layer, Line, Rect, Stage, Text } from "react-konva";
 import { detectPlayers } from "@/lib/playerDetector";
 import { useEditorStore } from "@/store/useEditorStore";
 import type { DrawingData, DrawingObject, DrawingTarget, NormalizedBox, ObjectTransform, PlayerTrack, Point, Tool } from "@/types/drawing";
 import { DEFAULT_STYLE, DEFAULT_TRANSFORM } from "@/types/drawing";
 import { flattenPoints, toNormalized } from "@/utils/coordinates";
+import { automaticLongBallControl, buildCurvedArrowGeometry } from "@/utils/curvedArrowGeometry";
 import { createId } from "@/utils/id";
 import { defaultDrawingAnimationFor, getObjectStateAtTime } from "@/utils/temporalRenderer";
 import { timelineTimeToSource } from "@/utils/videoTimeline";
@@ -746,7 +747,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         stripeOpacity: .72,
       });
       if (tool === "arrow") makeDrawing("arrow", { kind: "arrow", points: [draft.start, point] });
-      if (tool === "longBallArrow") makeDrawing("longBallArrow", { kind: "longBallArrow", start: draft.start, end: point, curveHeight: .13, showLandingZone: true, landingZoneColor: "#65d9ff", landingZoneSize: 1 });
+      if (tool === "longBallArrow") makeDrawing("longBallArrow", { kind: "longBallArrow", start: draft.start, end: point, curveHeight: .13, showLandingZone: false, landingZoneColor: "#65d9ff", landingZoneSize: 1 });
       if (tool === "glimpse") makeDrawing("glimpse", { kind: "glimpse", origin: draft.start, target: point, spread: 38 });
       return;
     }
@@ -780,26 +781,28 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     if (tool === "longBallArrow") {
       const start = { x: draft.start.x * width, y: draft.start.y * height };
       const end = { x: draft.current.x * width, y: draft.current.y * height };
-      const deltaX = end.x - start.x;
-      const deltaY = end.y - start.y;
-      const distance = Math.max(1, Math.hypot(deltaX, deltaY));
-      let normalX = -deltaY / distance;
-      let normalY = deltaX / distance;
-      if (normalY > 0 || (Math.abs(normalY) < .001 && normalX > 0)) {
-        normalX *= -1;
-        normalY *= -1;
-      }
-      const arcHeight = Math.min(.13 * height * 1.6, distance * .68);
-      const control = {
-        x: (start.x + end.x) / 2 + normalX * arcHeight,
-        y: (start.y + end.y) / 2 + normalY * arcHeight,
-      };
-      const points = Array.from({ length: 25 }, (_, index) => {
-        const t = index / 24;
-        const inverse = 1 - t;
-        return { x: inverse * inverse * start.x + 2 * inverse * t * control.x + t * t * end.x, y: inverse * inverse * start.y + 2 * inverse * t * control.y + t * t * end.y };
-      }).flatMap(({ x, y }) => [x, y]);
-      return <Arrow listening={false} stroke="#65d9ff" strokeWidth={6} fill="#65d9ff" dash={[7, 6]} opacity={.9} shadowColor="#000000" shadowBlur={2} shadowOpacity={.12} shadowOffsetX={0} shadowOffsetY={1} points={points} pointerLength={17} pointerWidth={18} lineCap="round" lineJoin="round" />;
+      const control = automaticLongBallControl(start, end, .13, height);
+      const renderScale = Math.max(.45, Math.min(3, Math.min(width / 960, height / 540)));
+      const bodyWidth = 6 * renderScale;
+      const geometry = buildCurvedArrowGeometry({ start, control, end, bodyWidth, renderScale });
+      const offset = Math.max(1.4 * renderScale, bodyWidth * .25);
+      const shadowPoints = geometry.polygon.map((value, index) => value + (index % 2 === 0 ? .8 * renderScale : offset));
+      return (
+        <Group listening={false} opacity={.92}>
+          <Line points={shadowPoints} closed fill="#173a55" stroke="#071b2b" strokeWidth={Math.max(1, bodyWidth * .18)} lineJoin="round" />
+          <Line
+            points={geometry.polygon}
+            closed
+            fillLinearGradientStartPoint={start}
+            fillLinearGradientEndPoint={end}
+            fillLinearGradientColorStops={[0, "#329bc7", .38, "#65d9ff", .74, "#8be8ff", 1, "#65d9ff"]}
+            stroke="#174f78"
+            strokeWidth={Math.max(1.1 * renderScale, bodyWidth * .2)}
+            lineJoin="round"
+          />
+          <Line points={geometry.highlight} stroke="#d5f8ff" strokeWidth={Math.max(.75 * renderScale, bodyWidth * .16)} lineCap="round" lineJoin="round" />
+        </Group>
+      );
     }
     if (tool === "line") return <Line listening={false} stroke="#65d9ff" strokeWidth={6} dash={[7, 6]} opacity={.9} shadowColor="#000000" shadowBlur={2} shadowOpacity={.12} shadowOffsetX={0} shadowOffsetY={1} lineCap="round" lineJoin="round" points={flattenPoints([...draft.points, draft.current], width, height)} />;
     if (tool === "glimpse") {

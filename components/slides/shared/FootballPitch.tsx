@@ -12,6 +12,7 @@ interface Props {
   awayTextColor?: string;
   pitchColor?: string;
   lineColor?: string;
+  lineWidth?: number;
   playerSize?: number;
   labelMode?: "number-name" | "name";
   ballPosition?: { x: number; y: number };
@@ -31,6 +32,7 @@ export function FootballPitch({
   awayTextColor = "#ffffff",
   pitchColor = "#23643b",
   lineColor = "#ffffff",
+  lineWidth = 2,
   playerSize = 1,
   labelMode = "number-name",
   ballPosition,
@@ -74,6 +76,7 @@ export function FootballPitch({
   const pitchStyle = {
     "--pitch-color": pitchColor,
     "--pitch-line-color": lineColor,
+    "--pitch-line-width": `${lineWidth}px`,
     "--pitch-player-size": playerSize,
   } as CSSProperties;
 

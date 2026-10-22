@@ -138,7 +138,7 @@ export function normalizePresentationSlides(slides: AnalysisSlide[]) {
       };
     }
     if (normalized.content.kind === "written-report") {
-      const reportDesign = normalized.content.layoutDesign ?? "light-right";
+      const reportDesign = normalized.content.layoutDesign === "light-left" ? "light-right" : normalized.content.layoutDesign ?? "light-right";
       normalized.content = {
         ...normalized.content,
         players: completeTacticalTeams(normalized.content.players, normalized.id),
@@ -150,12 +150,13 @@ export function normalizePresentationSlides(slides: AnalysisSlide[]) {
         awayTextColor: normalized.content.awayTextColor ?? "#ffffff",
         pitchColor: normalized.content.pitchColor ?? "#4f78a5",
         pitchLineColor: normalized.content.pitchLineColor ?? "#ffffff",
+        pitchLineWidth: normalized.content.pitchLineWidth ?? 4,
         panelColor: normalized.content.panelColor ?? (reportDesign === "dark-right" ? "#10161a" : reportDesign === "accent-right" ? "#f04b2f" : "#ffffff"),
         textColor: normalized.content.textColor ?? (reportDesign === "dark-right" || reportDesign === "accent-right" ? "#ffffff" : "#101010"),
         accentColor: normalized.content.accentColor ?? (reportDesign === "dark-right" ? "#a3ff12" : reportDesign === "accent-right" ? "#ffffff" : "#f04b2f"),
         panelOpacity: normalized.content.panelOpacity ?? 1,
         fieldRatio: normalized.content.fieldRatio ?? .55,
-        titleFontSize: normalized.content.titleFontSize ?? 30,
+        titleFontSize: normalized.content.titleFontSize ?? 44,
         subtitleFontSize: normalized.content.subtitleFontSize ?? 14,
         bodyFontSize: normalized.content.bodyFontSize ?? 21,
         playerSize: normalized.content.playerSize ?? .82,
@@ -166,6 +167,7 @@ export function normalizePresentationSlides(slides: AnalysisSlide[]) {
     }
     if (normalized.content.kind === "kickoff") {
       const clearExample = (value: string | undefined, examples: string[]) => value && !examples.includes(value) ? value : "";
+      const legacyReference = (normalized.content.designVersion ?? 1) < 2;
       normalized.content = {
         ...normalized.content,
         homeClubName: clearExample(normalized.content.homeClubName, ["FEIRENSE", "EQUIPA DA CASA"]),
@@ -179,7 +181,9 @@ export function normalizePresentationSlides(slides: AnalysisSlide[]) {
         backgroundPositionY: normalized.content.backgroundPositionY ?? .5,
         template: normalized.content.template ?? "broadcast",
         homePanelColor: normalized.content.homePanelColor ?? "#245b9b",
-        awayPanelColor: normalized.content.awayPanelColor ?? "#ef6c32",
+        homeSecondaryColor: normalized.content.homeSecondaryColor ?? "#ffffff",
+        awayPanelColor: legacyReference && normalized.content.awayPanelColor === "#ef6c32" ? "#41499e" : normalized.content.awayPanelColor ?? "#41499e",
+        awaySecondaryColor: normalized.content.awaySecondaryColor ?? "#ef6c32",
         homeTextColor: normalized.content.homeTextColor ?? "#ffffff",
         awayTextColor: normalized.content.awayTextColor ?? "#ffffff",
         informationTextColor: normalized.content.informationTextColor ?? "#ffffff",
@@ -188,9 +192,10 @@ export function normalizePresentationSlides(slides: AnalysisSlide[]) {
         accentColor: normalized.content.accentColor ?? "#ffffff",
         frameColor: normalized.content.frameColor ?? "#ffffff",
         overlayColor: normalized.content.overlayColor ?? "#071018",
-        overlayOpacity: normalized.content.overlayOpacity ?? .24,
-        panelOpacity: normalized.content.panelOpacity ?? .25,
+        overlayOpacity: legacyReference && normalized.content.overlayOpacity === .24 ? .12 : normalized.content.overlayOpacity ?? .12,
+        panelOpacity: legacyReference && normalized.content.panelOpacity === .25 ? .22 : normalized.content.panelOpacity ?? .22,
         crestScale: normalized.content.crestScale ?? 1,
+        designVersion: 2,
       };
     }
     if (normalized.content.kind === "tactical-board") {
@@ -201,6 +206,7 @@ export function normalizePresentationSlides(slides: AnalysisSlide[]) {
         awayTextColor: normalized.content.awayTextColor ?? "#ffffff",
         pitchColor: normalized.content.pitchColor ?? "#4f78a5",
         pitchLineColor: normalized.content.pitchLineColor ?? "#ffffff",
+        pitchLineWidth: normalized.content.pitchLineWidth ?? 4,
         playerSize: normalized.content.playerSize ?? 1,
         ballPosition: normalized.content.ballPosition ?? { x: .5, y: .5 },
         showBall: normalized.content.showBall ?? true,

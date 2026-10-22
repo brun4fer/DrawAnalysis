@@ -306,7 +306,8 @@ export function PropertiesPanel() {
         )}
         {object.data.kind === "longBallArrow" && (
           <>
-            <label className="stacked-field"><span><FieldLabel>Altura da trajetória</FieldLabel><b>{Math.round(object.data.curveHeight * 100)}%</b></span><input type="range" min={.02} max={.34} step={.01} value={object.data.curveHeight} onChange={(event) => object.data.kind === "longBallArrow" && updateDrawing(object.id, { data: { ...object.data, curveHeight: Number(event.target.value) } })} /></label>
+            <p className="property-help">Arraste os pontos azuis inicial/final e o ponto amarelo da curvatura diretamente sobre o vídeo.</p>
+            <label className="stacked-field"><span><FieldLabel>Altura automática</FieldLabel><b>{Math.round(object.data.curveHeight * 100)}%</b></span><input type="range" min={.02} max={.34} step={.01} value={object.data.curveHeight} onChange={(event) => object.data.kind === "longBallArrow" && updateDrawing(object.id, { data: { ...object.data, curveHeight: Number(event.target.value), control: undefined } })} /></label>
             <label className="toggle-row"><span><FieldLabel>Zona de destino</FieldLabel><small>Marca no relvado onde termina a bola longa</small></span><input type="checkbox" checked={object.data.showLandingZone !== false} onChange={(event) => object.data.kind === "longBallArrow" && updateDrawing(object.id, { data: { ...object.data, showLandingZone: event.target.checked } })} /><span /></label>
             {object.data.showLandingZone !== false && <>
               <div className="field-row"><FieldLabel>Cor da zona</FieldLabel><ColorPalettePicker value={(object.data.landingZoneColor ?? object.style.stroke).slice(0, 7)} onChange={(landingZoneColor) => object.data.kind === "longBallArrow" && updateDrawing(object.id, { data: { ...object.data, landingZoneColor } })} label="Cor da zona de destino" /></div>

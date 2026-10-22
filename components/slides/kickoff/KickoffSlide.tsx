@@ -25,7 +25,9 @@ function TeamIdentity({ side, name, crest }: { side: "home" | "away"; name: stri
 export function KickoffSlide({ content, playbackTime, playing }: Props) {
   const style = {
     "--match-home-color": content.homePanelColor ?? "#245b9b",
-    "--match-away-color": content.awayPanelColor ?? "#ef6c32",
+    "--match-home-secondary": content.homeSecondaryColor ?? "#ffffff",
+    "--match-away-color": content.awayPanelColor ?? "#41499e",
+    "--match-away-secondary": content.awaySecondaryColor ?? "#ef6c32",
     "--match-home-text": content.homeTextColor ?? "#ffffff",
     "--match-away-text": content.awayTextColor ?? "#ffffff",
     "--match-info-text": content.informationTextColor ?? "#ffffff",
@@ -34,8 +36,8 @@ export function KickoffSlide({ content, playbackTime, playing }: Props) {
     "--match-accent": content.accentColor ?? "#ffffff",
     "--match-frame": content.frameColor ?? "#ffffff",
     "--match-overlay": content.overlayColor ?? "#071018",
-    "--match-overlay-opacity": content.overlayOpacity ?? .24,
-    "--match-panel-opacity": `${Math.round((content.panelOpacity ?? .25) * 100)}%`,
+    "--match-overlay-opacity": content.overlayOpacity ?? .12,
+    "--match-panel-opacity": `${Math.round((content.panelOpacity ?? .22) * 100)}%`,
     "--match-crest-scale": content.crestScale ?? 1,
   } as CSSProperties;
   const template = content.template ?? "broadcast";
