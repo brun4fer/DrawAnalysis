@@ -14,9 +14,10 @@ interface Props {
   activeDrawings: DrawingObject[];
   onClose: () => void;
   onOpen: (project: { id: string; name: string; slides: AnalysisSlide[] }) => void;
+  onResolveMissingVideo?: (slideId: string) => void;
 }
 
-export function ProjectLibraryModal({ slides, selectedSlideId, activeDrawings, onClose, onOpen }: Props) {
+export function ProjectLibraryModal({ slides, selectedSlideId, activeDrawings, onClose, onOpen, onResolveMissingVideo }: Props) {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(true);
@@ -42,6 +43,11 @@ export function ProjectLibraryModal({ slides, selectedSlideId, activeDrawings, o
 
   async function create() {
     if (!name.trim()) return;
+    const localVideo = slides.find((slide) => slide.content.kind === "video" && slide.content.fileName.trim() && !slide.content.mediaAssetId);
+    if (localVideo && !window.confirm("Esta apresentação contém pelo menos um vídeo apenas local. Os desenhos serão guardados, mas esse vídeo não poderá ser reaberto.\n\nOK: guardar sem o vídeo\nCancelar: abrir a biblioteca cloud")) {
+      onResolveMissingVideo?.(localVideo.id);
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -105,7 +111,7 @@ export function ProjectLibraryModal({ slides, selectedSlideId, activeDrawings, o
             </div>
           )) : <div className="modal-empty">Ainda não existem apresentações guardadas neste workspace.</div>}
         </div>
-        <footer>Os vídeos e imagens locais não são enviados. Para reabrir vídeos noutro dispositivo, escolha-os na biblioteca cloud.</footer>
+        <footer>Os desenhos e configurações ficam no projeto. Para que o vídeo também seja reaberto noutro dispositivo, carregue-o na biblioteca cloud e associe-o ao slide.</footer>
       </section>
     </div>
   );

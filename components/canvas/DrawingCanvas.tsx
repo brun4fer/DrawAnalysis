@@ -2,17 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Konva from "konva";
-import { Arc, Arrow, Ellipse, Group, Layer, Line, Rect, Stage, Text } from "react-konva";
+import { Arc, Ellipse, Group, Layer, Line, Rect, Stage, Text } from "react-konva";
 import { detectPlayers } from "@/lib/playerDetector";
 import { useEditorStore } from "@/store/useEditorStore";
 import type { DrawingData, DrawingObject, DrawingTarget, NormalizedBox, ObjectTransform, PlayerTrack, Point, Tool } from "@/types/drawing";
 import { DEFAULT_STYLE, DEFAULT_TRANSFORM } from "@/types/drawing";
 import { flattenPoints, toNormalized } from "@/utils/coordinates";
-import { automaticLongBallControl, buildCurvedArrowGeometry } from "@/utils/curvedArrowGeometry";
+import { automaticLongBallControl, buildCurvedArrowGeometry, buildPolylineArrowGeometry } from "@/utils/curvedArrowGeometry";
 import { createId } from "@/utils/id";
 import { defaultDrawingAnimationFor, getObjectStateAtTime } from "@/utils/temporalRenderer";
 import { timelineTimeToSource } from "@/utils/videoTimeline";
-import { samplePlayerTrackAtTime, targetOffsetAtTime } from "@/utils/playerTracking";
+import { playerGroundPoint, samplePlayerTrackAtTime, targetOffsetAtTime } from "@/utils/playerTracking";
 import { applyFavoriteData } from "@/utils/toolFavorites";
 import { DrawingShape } from "./DrawingShape";
 import { PlayerOcclusionCanvas } from "./PlayerOcclusionCanvas";
@@ -258,7 +258,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         : Math.min(duration || defaultEndTime, defaultEndTime);
     const favorite = favorites.find((item) => item.id === activeFavoriteId && item.type === type);
     const defaultActionLabel = ["line", "arrow", "longBallArrow"].includes(type)
-      ? { visible: false, value: String(actionCount), position: .5, color: "#ffffff", backgroundColor: "#174ea6", fontSize: .022 }
+      ? { visible: false, value: String(actionCount), position: .5, color: effectStyle.stroke ?? DEFAULT_STYLE.stroke, backgroundColor: "#174ea6", fontSize: .022 }
       : undefined;
     const object: DrawingObject = {
       id: createId(),
@@ -608,9 +608,10 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       .filter((candidate) => candidate.distance <= .035)
       .sort((left, right) => left.distance - right.distance)[0];
     if (!nearby) return null;
+    const groundPoint = playerGroundPoint(nearby.sample);
     return {
-      point: nearby.sample.foot,
-      target: { kind: "player", trackId: nearby.track.id, anchor: "feet", referenceFoot: nearby.sample.foot } as DrawingTarget,
+      point: groundPoint,
+      target: { kind: "player", trackId: nearby.track.id, anchor: "feet", referenceFoot: groundPoint } as DrawingTarget,
     };
   };
 
@@ -777,7 +778,17 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     const style = { stroke: DEFAULT_STYLE.stroke, strokeWidth: DEFAULT_STYLE.strokeWidth, dash: [7, 6], opacity: 0.9 };
     if (tool === "ellipse") return <Ellipse listening={false} {...style} stroke="#65d9ff" fill="#65d9ff47" strokeWidth={0} shadowColor="#65d9ff" shadowBlur={12} shadowOpacity={.48} x={(draft.start.x + draft.current.x) / 2 * width} y={(draft.start.y + draft.current.y) / 2 * height} radiusX={Math.abs(draft.current.x - draft.start.x) / 2 * width} radiusY={Math.abs(draft.current.y - draft.start.y) / 2 * height} />;
     if (tool === "rectangle") return <Rect listening={false} {...style} x={Math.min(draft.start.x, draft.current.x) * width} y={Math.min(draft.start.y, draft.current.y) * height} width={Math.abs(draft.current.x - draft.start.x) * width} height={Math.abs(draft.current.y - draft.start.y) * height} />;
-    if (tool === "arrow") return <Arrow listening={false} {...style} fill={DEFAULT_STYLE.stroke} points={flattenPoints([draft.start, draft.current], width, height)} pointerLength={12} pointerWidth={12} />;
+    if (tool === "arrow") {
+      const geometry = buildPolylineArrowGeometry(flattenPoints([draft.start, draft.current], width, height), 7);
+      if (!geometry.polygon.length) return null;
+      const shadowPoints = geometry.polygon.map((value, index) => value + (index % 2 === 0 ? 4 : 7));
+      return (
+        <Group listening={false} opacity={.92}>
+          <Line points={shadowPoints} closed fill="#000000" opacity={.34} shadowColor="#000000" shadowBlur={7} shadowOpacity={.45} />
+          <Line points={geometry.polygon} closed fill="#65d9ff" lineJoin="round" />
+        </Group>
+      );
+    }
     if (tool === "longBallArrow") {
       const start = { x: draft.start.x * width, y: draft.start.y * height };
       const end = { x: draft.current.x * width, y: draft.current.y * height };
@@ -785,22 +796,13 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       const renderScale = Math.max(.45, Math.min(3, Math.min(width / 960, height / 540)));
       const bodyWidth = 6 * renderScale;
       const geometry = buildCurvedArrowGeometry({ start, control, end, bodyWidth, renderScale });
-      const offset = Math.max(1.4 * renderScale, bodyWidth * .25);
-      const shadowPoints = geometry.polygon.map((value, index) => value + (index % 2 === 0 ? .8 * renderScale : offset));
+      const groundControl = automaticLongBallControl(start, end, .008, height);
+      const groundGeometry = buildCurvedArrowGeometry({ start, control: groundControl, end, bodyWidth: bodyWidth * .9, renderScale });
+      const shadowPoints = groundGeometry.polygon.map((value, index) => value + (index % 2 === 0 ? 2 * renderScale : 4 * renderScale));
       return (
         <Group listening={false} opacity={.92}>
-          <Line points={shadowPoints} closed fill="#173a55" stroke="#071b2b" strokeWidth={Math.max(1, bodyWidth * .18)} lineJoin="round" />
-          <Line
-            points={geometry.polygon}
-            closed
-            fillLinearGradientStartPoint={start}
-            fillLinearGradientEndPoint={end}
-            fillLinearGradientColorStops={[0, "#329bc7", .38, "#65d9ff", .74, "#8be8ff", 1, "#65d9ff"]}
-            stroke="#174f78"
-            strokeWidth={Math.max(1.1 * renderScale, bodyWidth * .2)}
-            lineJoin="round"
-          />
-          <Line points={geometry.highlight} stroke="#d5f8ff" strokeWidth={Math.max(.75 * renderScale, bodyWidth * .16)} lineCap="round" lineJoin="round" />
+          <Line points={shadowPoints} closed fill="#000000" opacity={.34} shadowColor="#000000" shadowBlur={7 * renderScale} shadowOpacity={.45} />
+          <Line points={geometry.polygon} closed fill="#65d9ff" lineJoin="round" />
         </Group>
       );
     }

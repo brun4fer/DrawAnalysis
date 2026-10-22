@@ -19,6 +19,13 @@ export interface CurvedArrowGeometry {
   headWidth: number;
 }
 
+export interface PolylineArrowGeometry {
+  polygon: number[];
+  totalLength: number;
+  headLength: number;
+  headWidth: number;
+}
+
 const clamp = (value: number, minimum: number, maximum: number) => Math.max(minimum, Math.min(maximum, value));
 
 function normalizedVector(x: number, y: number, fallback: CanvasPoint = { x: 1, y: 0 }) {
@@ -105,6 +112,83 @@ function flatten(points: CanvasPoint[]) {
   return points.flatMap((point) => [point.x, point.y]);
 }
 
+export function buildPolylineArrowGeometry(points: number[], bodyWidth: number): PolylineArrowGeometry {
+  const centers: Array<CanvasPoint & { length: number }> = [];
+  let totalLength = 0;
+  for (let index = 0; index + 1 < points.length; index += 2) {
+    const point = { x: points[index], y: points[index + 1] };
+    const previous = centers.at(-1);
+    if (previous) {
+      const segmentLength = Math.hypot(point.x - previous.x, point.y - previous.y);
+      if (segmentLength < .001) continue;
+      totalLength += segmentLength;
+    }
+    centers.push({ ...point, length: totalLength });
+  }
+  const safeBodyWidth = Math.max(1, bodyWidth);
+  if (centers.length < 2 || totalLength < 2) return { polygon: [], totalLength, headLength: 0, headWidth: 0 };
+
+  const preferredHeadLength = Math.max(safeBodyWidth * 3.2, Math.min(safeBodyWidth * 7, totalLength * .16));
+  const headLength = Math.min(preferredHeadLength, totalLength * .48);
+  const headWidth = Math.min(
+    Math.max(safeBodyWidth * 3.2, headLength * .72),
+    safeBodyWidth * 4.4,
+    headLength * 1.55,
+  );
+  const bodyEndLength = totalLength - headLength;
+  let bodyEnd = centers[0];
+  let bodyEndIndex = 1;
+  for (; bodyEndIndex < centers.length; bodyEndIndex += 1) {
+    const current = centers[bodyEndIndex];
+    if (current.length < bodyEndLength) continue;
+    const previous = centers[bodyEndIndex - 1];
+    const span = Math.max(.001, current.length - previous.length);
+    const ratio = (bodyEndLength - previous.length) / span;
+    bodyEnd = {
+      x: previous.x + (current.x - previous.x) * ratio,
+      y: previous.y + (current.y - previous.y) * ratio,
+      length: bodyEndLength,
+    };
+    break;
+  }
+  const bodyCenters = centers.filter((point) => point.length < bodyEndLength - .001);
+  bodyCenters.push(bodyEnd);
+  const tip = centers.at(-1)!;
+  const tangent = normalizedVector(tip.x - bodyEnd.x, tip.y - bodyEnd.y);
+  const normal = { x: -tangent.y, y: tangent.x };
+  const halfBody = safeBodyWidth / 2;
+
+  const tangentAt = (index: number) => {
+    if (index === bodyCenters.length - 1) return tangent;
+    const previous = bodyCenters[Math.max(0, index - 1)];
+    const next = bodyCenters[Math.min(bodyCenters.length - 1, index + 1)];
+    return normalizedVector(next.x - previous.x, next.y - previous.y, tangent);
+  };
+  const leftEdge = bodyCenters.map((point, index) => {
+    const direction = tangentAt(index);
+    return { x: point.x - direction.y * halfBody, y: point.y + direction.x * halfBody };
+  });
+  const rightEdge = bodyCenters.map((point, index) => {
+    const direction = tangentAt(index);
+    return { x: point.x + direction.y * halfBody, y: point.y - direction.x * halfBody };
+  });
+  const headBaseLeft = { x: bodyEnd.x + normal.x * headWidth / 2, y: bodyEnd.y + normal.y * headWidth / 2 };
+  const headBaseRight = { x: bodyEnd.x - normal.x * headWidth / 2, y: bodyEnd.y - normal.y * headWidth / 2 };
+
+  return {
+    polygon: flatten([
+      ...leftEdge,
+      headBaseLeft,
+      { x: tip.x, y: tip.y },
+      headBaseRight,
+      ...[...rightEdge].reverse(),
+    ]),
+    totalLength,
+    headLength,
+    headWidth,
+  };
+}
+
 export function sampleQuadraticCurve(start: CanvasPoint, control: CanvasPoint, end: CanvasPoint, sampleCount = 72) {
   return flatten(sampleQuadratic(start, control, end, 1, sampleCount));
 }
@@ -138,7 +222,17 @@ export function buildCurvedArrowGeometry({
   const idealHeadWidth = clamp(fullLength * .075, scaledBodyWidth * 4.1, Math.min(64 * renderScale, scaledBodyWidth * 6));
   const headWidth = Math.min(idealHeadWidth, Math.max(scaledBodyWidth * 1.35, headLength * .62), headLength * 1.6);
   const bodyEndLength = Math.max(0, visibleLength - headLength);
-  const bodyEnd = sampleAtLength(samples, bodyEndLength);
+  const sampledBodyEnd = sampleAtLength(samples, bodyEndLength);
+  const tipSample = samples.at(-1)!;
+  const tangent = normalizedVector(tipSample.tangentX, tipSample.tangentY);
+  const normal = { x: -tangent.y, y: tangent.x };
+  const bodyEnd: CurveSample = {
+    ...sampledBodyEnd,
+    x: tipSample.x - tangent.x * headLength,
+    y: tipSample.y - tangent.y * headLength,
+    tangentX: tangent.x,
+    tangentY: tangent.y,
+  };
   const bodySamples = samples.filter((sample) => sample.length < bodyEndLength - .01);
   bodySamples.push(bodyEnd);
 
@@ -152,21 +246,8 @@ export function buildCurvedArrowGeometry({
     y: sample.y - sample.tangentX * halfBody,
   }));
 
-  const tipSample = samples.at(-1)!;
-  const tangent = normalizedVector(tipSample.tangentX, tipSample.tangentY);
-  const normal = { x: -tangent.y, y: tangent.x };
-  const tail = {
-    x: tipSample.x - tangent.x * headLength,
-    y: tipSample.y - tangent.y * headLength,
-  };
-  const shoulder = {
-    x: tipSample.x - tangent.x * headLength * .82,
-    y: tipSample.y - tangent.y * headLength * .82,
-  };
-  const tailLeft = { x: tail.x + normal.x * halfBody, y: tail.y + normal.y * halfBody };
-  const tailRight = { x: tail.x - normal.x * halfBody, y: tail.y - normal.y * halfBody };
-  const shoulderLeft = { x: shoulder.x + normal.x * headWidth / 2, y: shoulder.y + normal.y * headWidth / 2 };
-  const shoulderRight = { x: shoulder.x - normal.x * headWidth / 2, y: shoulder.y - normal.y * headWidth / 2 };
+  const headBaseLeft = { x: bodyEnd.x + normal.x * headWidth / 2, y: bodyEnd.y + normal.y * headWidth / 2 };
+  const headBaseRight = { x: bodyEnd.x - normal.x * headWidth / 2, y: bodyEnd.y - normal.y * headWidth / 2 };
   const tip = { x: tipSample.x, y: tipSample.y };
   const firstSample = bodySamples[0];
   const startAngle = Math.atan2(firstSample.tangentY, firstSample.tangentX);
@@ -180,18 +261,16 @@ export function buildCurvedArrowGeometry({
 
   const polygonPoints = [
     ...leftEdge,
-    tailLeft,
-    shoulderLeft,
+    headBaseLeft,
     tip,
-    shoulderRight,
-    tailRight,
+    headBaseRight,
     ...[...rightEdge].reverse(),
     ...startCap,
   ];
   const upperIsLeft = (leftEdge.at(Math.floor(leftEdge.length / 2))?.y ?? 0) <= (rightEdge.at(Math.floor(rightEdge.length / 2))?.y ?? 0);
   const highlight = upperIsLeft
-    ? [...leftEdge, tailLeft, shoulderLeft, tip]
-    : [...rightEdge, tailRight, shoulderRight, tip];
+    ? [...leftEdge, headBaseLeft, tip]
+    : [...rightEdge, headBaseRight, tip];
 
   return {
     polygon: flatten(polygonPoints),

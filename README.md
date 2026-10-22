@@ -130,18 +130,38 @@ Os três deployments devem usar os mesmos `DATABASE_URL`, `DIRECT_URL`,
 `AUTH_SECRET`, `MEDIA_DATABASE_URL` e valores `MEDIA_R2_*`. Assim, as contas e
 os vídeos são comuns, enquanto as apresentações ficam separadas.
 
-Os vídeos locais e URLs temporários não são enviados para a base de dados. As
+Os URLs temporários não são enviados para a base de dados. Os vídeos locais podem
+ser carregados diretamente para a biblioteca cloud partilhada; as apresentações
+guardam apenas o identificador permanente do vídeo. As
 imagens usadas nos novos slides de Título / Momento e Onze provável são reduzidas
 no browser e ficam incorporadas no projeto; os desenhos, cortes, ordem dos slides
 e referências a vídeos cloud ficam guardados no Neon.
 
 ## Biblioteca cloud partilhada
 
-No slide de vídeo, **Cloud** abre a biblioteca do workspace. O DrawAnalysis apenas
-lista e reproduz conteúdos existentes com URLs assinados; não inclui endpoints de
-upload. Para associar a conta ao mesmo catálogo usado nas outras aplicações, gere
+No slide de vídeo, **Cloud** abre a biblioteca do workspace. É possível carregar
+vídeos grandes por upload multipart retomável, usar um vídeo já existente e
+associá-lo à apresentação. O ficheiro fica no R2 e o projeto guarda apenas o seu
+identificador; os URLs de reprodução são assinados novamente ao abrir o projeto.
+Para associar a conta ao mesmo catálogo usado nas outras aplicações, gere
 um código de utilização única numa aplicação já ligada e cole-o em **Ligar
 workspace**. O código expira ao fim de 30 minutos.
+
+O bucket R2 deve autorizar `GET`, `HEAD` e `PUT` para os domínios da aplicação
+(incluindo os endereços locais usados em desenvolvimento), aceitar os headers
+do pedido e expor `ETag`. Exemplo de política CORS:
+
+```json
+[
+  {
+    "AllowedOrigins": ["http://localhost:3000", "http://localhost:3001", "https://SEU-DOMINIO"],
+    "AllowedMethods": ["GET", "HEAD", "PUT"],
+    "AllowedHeaders": ["*"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
 
 ## Configuração
 
@@ -154,7 +174,7 @@ Copie `.env.example` para um ficheiro local ignorado pelo Git e configure:
   `written-report`;
 - `INITIAL_ADMIN_*`: conta inicial opcional;
 - `MEDIA_DATABASE_URL` e `MEDIA_DIRECT_URL`: catálogo partilhado;
-- `MEDIA_R2_*`: credenciais R2 necessárias apenas para gerar URLs de leitura;
+- `MEDIA_R2_*`: credenciais R2 usadas para leitura e autorização de uploads multipart;
 - `MEDIA_LIBRARY_APP_ID`: mantenha `draw-analysis`.
 
 Numa base nova, execute `npm run db:push`, `npm run db:seed` e `npm run dev`.

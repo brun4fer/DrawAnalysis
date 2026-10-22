@@ -20,7 +20,7 @@ import { useEditorStore } from "@/store/useEditorStore";
 import { TOOLS } from "@/components/tools/toolDefinitions";
 import { createSlide } from "@/utils/slideFactory";
 import { prepareSlidesForStorage } from "@/utils/presentationData";
-import type { SlideType } from "@/types/slide";
+import type { AnalysisSlide, SlideType } from "@/types/slide";
 import { APP_PRODUCT } from "@/lib/product";
 
 type Account = { user: { id: string; name: string; username: string }; workspace: { id: string; name: string } };
@@ -33,6 +33,7 @@ export function Editor() {
   const inputRef = useRef<HTMLInputElement>(null);
   const playerRef = useRef<VideoPlayerHandle>(null);
   const sourceUrlsRef = useRef<Set<string>>(new Set());
+  const localFilesRef = useRef<Map<string, File>>(new Map());
   const resolvingAssetsRef = useRef<Set<string>>(new Set());
   const [pickerOpen, setPickerOpen] = useState(false);
   const [presenting, setPresenting] = useState(false);
@@ -47,7 +48,7 @@ export function Editor() {
   const [notice, setNotice] = useState("");
   const {
     selectedId, removeDrawing, undo, redo, setTool,
-    drawings, slides, selectedSlideId, addSlide, updateSlide, replacePresentation, setVideoSource, setIsPlaying, loadFavorites,
+    drawings, slides, selectedSlideId, addSlide, updateSlide, replacePresentation, setVideoSource, setIsPlaying, setSelectedSlideId, loadFavorites,
   } = useEditorStore();
   const selectedSlide = slides.find((slide) => slide.id === selectedSlideId) ?? null;
   const isVideoSlide = selectedSlide?.content.kind === "video";
@@ -69,6 +70,17 @@ export function Editor() {
     const sourceUrls = sourceUrlsRef.current;
     return () => sourceUrls.forEach((url) => URL.revokeObjectURL(url));
   }, []);
+
+  useEffect(() => {
+    const hasLocalVideo = slides.some((slide) => slide.content.kind === "video" && slide.content.fileName.trim() && !slide.content.mediaAssetId);
+    if (!hasLocalVideo) return;
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeLeaving);
+    return () => window.removeEventListener("beforeunload", warnBeforeLeaving);
+  }, [slides]);
 
   useEffect(() => {
     for (const slide of slides) {
@@ -110,15 +122,30 @@ export function Editor() {
 
   const openFile = (file?: File) => {
     if (!file || !selectedSlide || selectedSlide.content.kind !== "video") return;
+    const previousUrl = selectedSlide.content.sourceUrl;
+    if (previousUrl?.startsWith("blob:") && sourceUrlsRef.current.delete(previousUrl)) URL.revokeObjectURL(previousUrl);
     const url = URL.createObjectURL(file);
     sourceUrlsRef.current.add(url);
+    localFilesRef.current.set(selectedSlide.id, file);
     updateSlide(selectedSlide.id, { content: { ...selectedSlide.content, fileName: file.name, mediaAssetId: undefined, sourceUrl: url, startTime: 0, endTime: undefined } });
   };
 
   const selectCloudAsset = (asset: CloudAssetSelection) => {
     if (!selectedSlide || selectedSlide.content.kind !== "video") return;
-    updateSlide(selectedSlide.id, { content: { ...selectedSlide.content, fileName: asset.fileName, mediaAssetId: asset.id, sourceUrl: asset.url, startTime: 0, endTime: asset.durationSeconds } });
+    const previousUrl = selectedSlide.content.sourceUrl;
+    const sameVideo = selectedSlide.content.fileName.trim() === asset.fileName.trim();
+    const startTime = sameVideo ? Math.min(selectedSlide.content.startTime, asset.durationSeconds) : 0;
+    const endTime = sameVideo && selectedSlide.content.endTime !== undefined
+      ? Math.min(selectedSlide.content.endTime, asset.durationSeconds)
+      : asset.durationSeconds;
+    const content = { ...selectedSlide.content, fileName: asset.fileName, mediaAssetId: asset.id, sourceUrl: asset.url, startTime, endTime };
+    const nextSlides = slides.map((slide) => slide.id === selectedSlide.id ? { ...slide, content } : slide);
+    updateSlide(selectedSlide.id, { content });
+    localFilesRef.current.delete(selectedSlide.id);
+    if (previousUrl?.startsWith("blob:") && sourceUrlsRef.current.delete(previousUrl)) URL.revokeObjectURL(previousUrl);
     setCloudOpen(false);
+    setNotice("Vídeo guardado e associado à apresentação.");
+    if (projectId) void persistProject(nextSlides);
   };
 
   const addNewSlide = (type: SlideType) => {
@@ -143,12 +170,12 @@ export function Editor() {
     addSlide(imageSlide);
   };
 
-  async function saveProject() {
-    if (!projectId) { setProjectsOpen(true); return; }
+  async function persistProject(projectSlides: AnalysisSlide[]) {
+    if (!projectId) return;
     setSaveState("saving");
     setNotice("");
     try {
-      const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: projectName, data: { slides: prepareSlidesForStorage(slides, { selectedSlideId, drawings }) } }) });
+      const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: projectName, data: { slides: prepareSlidesForStorage(projectSlides, { selectedSlideId, drawings }) } }) });
       const result = await response.json() as { error?: string };
       if (!response.ok) throw new Error(result.error || "Não foi possível guardar a apresentação.");
       setSaveState("saved");
@@ -159,11 +186,44 @@ export function Editor() {
     }
   }
 
+  async function saveProject() {
+    if (!projectId) { setProjectsOpen(true); return; }
+    const localVideo = slides.find((slide) => slide.content.kind === "video" && slide.content.fileName.trim() && !slide.content.mediaAssetId);
+    if (localVideo && !window.confirm("Esta apresentação contém pelo menos um vídeo apenas local. Os desenhos serão guardados, mas esse vídeo não poderá ser reaberto.\n\nOK: guardar sem o vídeo\nCancelar: abrir a biblioteca cloud")) {
+      setSelectedSlideId(localVideo.id);
+      setCloudOpen(true);
+      return;
+    }
+    await persistProject(slides);
+  }
+
   async function logout() {
+    const localVideo = slides.find((slide) => slide.content.kind === "video" && slide.content.fileName.trim() && !slide.content.mediaAssetId);
+    if (localVideo && !window.confirm("Existe um vídeo apenas local nesta apresentação. Se terminar a sessão agora, terá de o selecionar novamente.\n\nOK: terminar sessão\nCancelar: guardar o vídeo na cloud")) {
+      setSelectedSlideId(localVideo.id);
+      setCloudOpen(true);
+      return;
+    }
     await fetch("/api/auth/logout", { method: "POST" });
     router.replace("/login");
     router.refresh();
   }
+
+  const openStoredProject = (project: { id: string; name: string; slides: AnalysisSlide[] }) => {
+    const localVideo = slides.find((slide) => slide.content.kind === "video" && slide.content.fileName.trim() && !slide.content.mediaAssetId);
+    if (localVideo && !window.confirm("Existe um vídeo apenas local na apresentação atual. Se abrir outro projeto agora, terá de o selecionar novamente.\n\nOK: abrir o outro projeto\nCancelar: guardar o vídeo na cloud")) {
+      setSelectedSlideId(localVideo.id);
+      setCloudOpen(true);
+      return;
+    }
+    sourceUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    sourceUrlsRef.current.clear();
+    localFilesRef.current.clear();
+    setProjectId(project.id);
+    setProjectName(project.name);
+    replacePresentation(project.slides);
+    setSaveState("idle");
+  };
 
   const openVideoExport = useCallback(() => {
     setIsPlaying(false);
@@ -227,8 +287,8 @@ export function Editor() {
       </div>
       {isVideoSlide ? <Timeline /> : <StaticSlideFooter />}
       {pickerOpen && <SlideTypePicker onSelect={addNewSlide} onClose={() => setPickerOpen(false)} />}
-      {cloudOpen && <CloudLibraryModal onSelect={selectCloudAsset} onClose={() => setCloudOpen(false)} />}
-      {projectsOpen && <ProjectLibraryModal slides={slides} selectedSlideId={selectedSlideId} activeDrawings={drawings} onClose={() => setProjectsOpen(false)} onOpen={(project) => { setProjectId(project.id); setProjectName(project.name); replacePresentation(project.slides); setSaveState("idle"); }} />}
+      {cloudOpen && <CloudLibraryModal localFile={selectedSlide ? localFilesRef.current.get(selectedSlide.id) : null} onSelect={selectCloudAsset} onClose={() => setCloudOpen(false)} />}
+      {projectsOpen && <ProjectLibraryModal slides={slides} selectedSlideId={selectedSlideId} activeDrawings={drawings} onClose={() => setProjectsOpen(false)} onResolveMissingVideo={(slideId) => { setProjectsOpen(false); setSelectedSlideId(slideId); setCloudOpen(true); }} onOpen={openStoredProject} />}
       {presenting && <PresentationMode onClose={closePreview} />}
       {videoExportOpen && <VideoExport slides={slides} selectedSlideId={selectedSlideId} projectName={projectName} onClose={closeVideoExport} />}
       {pdfExportOpen && <PdfExport slides={slides} projectName={projectName} onClose={closePdfExport} />}

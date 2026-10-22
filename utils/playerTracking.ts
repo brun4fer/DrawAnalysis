@@ -1,5 +1,16 @@
 import type { DrawingObject, PlayerTrack, PlayerTrackSample, Point } from "@/types/drawing";
 
+const clamp = (value: number, minimum: number, maximum: number) => Math.max(minimum, Math.min(maximum, value));
+
+export function playerGroundPoint(sample: PlayerTrackSample): Point {
+  const detectedFootY = sample.bbox.y + sample.bbox.height;
+  const groundOffset = Math.min(.005, sample.bbox.height * .04);
+  return {
+    x: clamp(sample.foot.x, sample.bbox.x, sample.bbox.x + sample.bbox.width),
+    y: clamp(Math.max(sample.foot.y, detectedFootY) + groundOffset, 0, 1),
+  };
+}
+
 export function samplePlayerTrackAtTime(track: PlayerTrack, currentTime: number): PlayerTrackSample {
   const samples = [...track.samples].sort((left, right) => left.time - right.time);
   const rightIndex = samples.findIndex((sample) => sample.time >= currentTime);

@@ -99,11 +99,11 @@ export function PropertiesPanel() {
       visible: false,
       value: String(Math.max(1, actionIndex)),
       position: .5,
-      color: "#ffffff",
       backgroundColor: "#174ea6",
       fontSize: .022,
       ...object.actionLabel,
       ...patch,
+      color: object.style.stroke,
     };
     updateDrawing(object.id, { actionLabel });
   };
@@ -278,7 +278,7 @@ export function PropertiesPanel() {
         <label className="stacked-field"><span><FieldLabel>Suavidade</FieldLabel><b>{object.style.shadowBlur ?? 0}px</b></span><input type="range" min={0} max={40} value={object.style.shadowBlur ?? 0} onChange={(e) => updateStyle({ shadowBlur: Number(e.target.value) })} /></label>
         <label className="stacked-field"><span><FieldLabel>Força efeito</FieldLabel><b>{Math.round((object.style.shadowOpacity ?? 0) * 100)}%</b></span><input type="range" min={0} max={1} step={.05} value={object.style.shadowOpacity ?? 0} onChange={(e) => updateStyle({ shadowOpacity: Number(e.target.value) })} /></label>
         <div className="two-fields shadow-offset-fields"><label><FieldLabel>Sombra X</FieldLabel><input type="number" min={-30} max={30} value={object.style.shadowOffsetX ?? 0} onChange={(e) => updateStyle({ shadowOffsetX: Number(e.target.value) })} /></label><label><FieldLabel>Sombra Y</FieldLabel><input type="number" min={-30} max={30} value={object.style.shadowOffsetY ?? 0} onChange={(e) => updateStyle({ shadowOffsetY: Number(e.target.value) })} /></label></div>
-        {!isPlayerRing && !["text", "playerLabel", "zoom", "glimpse", "spotlight"].includes(object.type) && <label className="field-row"><FieldLabel>Estilo linha</FieldLabel><select value={object.style.dash.length ? "dashed" : "solid"} onChange={(event) => updateStyle({ dash: event.target.value === "dashed" ? [10, 7] : [] })}><option value="solid">Linha contínua</option><option value="dashed">Tracejado</option></select></label>}
+        {!isPlayerRing && !["arrow", "longBallArrow", "text", "playerLabel", "zoom", "glimpse", "spotlight"].includes(object.type) && <label className="field-row"><FieldLabel>Estilo linha</FieldLabel><select value={object.style.dash.length ? "dashed" : "solid"} onChange={(event) => updateStyle({ dash: event.target.value === "dashed" ? [10, 7] : [] })}><option value="solid">Linha contínua</option><option value="dashed">Tracejado</option></select></label>}
         </>}
         {object.data.kind === "spotlight" && (
           <>
@@ -343,7 +343,7 @@ export function PropertiesPanel() {
               <label className="field-row"><FieldLabel>Número / ação</FieldLabel><input type="text" maxLength={4} value={object.actionLabel?.value ?? "1"} onChange={(event) => updateActionLabel({ value: event.target.value })} /></label>
               <label className="stacked-field"><span><FieldLabel>Posição na linha</FieldLabel><b>{Math.round((object.actionLabel?.position ?? .5) * 100)}%</b></span><input type="range" min={.05} max={.95} step={.01} value={object.actionLabel?.position ?? .5} onChange={(event) => updateActionLabel({ position: Number(event.target.value) })} /></label>
               <label className="stacked-field"><span><FieldLabel>Tamanho</FieldLabel><b>{Math.round((object.actionLabel?.fontSize ?? .022) * 540)}px</b></span><input type="range" min={.014} max={.05} step={.002} value={object.actionLabel?.fontSize ?? .022} onChange={(event) => updateActionLabel({ fontSize: Number(event.target.value) })} /></label>
-              <div className="field-row"><FieldLabel>Cor do número</FieldLabel><ColorPalettePicker value={(object.actionLabel?.color ?? "#ffffff").slice(0, 7)} onChange={(color) => updateActionLabel({ color })} label="Cor do número" /></div>
+              <div className="field-row"><FieldLabel>Cor do número</FieldLabel><small>Igual à cor principal</small></div>
               <div className="field-row"><FieldLabel>Cor do marcador</FieldLabel><ColorPalettePicker value={(object.actionLabel?.backgroundColor ?? "#174ea6").slice(0, 7)} onChange={(backgroundColor) => updateActionLabel({ backgroundColor })} label="Cor do marcador" /></div>
             </>
           )}
