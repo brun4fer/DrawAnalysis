@@ -1,4 +1,100 @@
-import type { NormalizedBox, Point } from "@/types/drawing";
+import type { DrawingStyle, NormalizedBox, PlayerSegmentationMask, Point } from "@/types/drawing";
+
+interface CachedImage {
+  image: HTMLImageElement;
+  loaded: boolean;
+  callbacks: Set<() => void>;
+}
+
+const imageCache = new Map<string, CachedImage>();
+
+function maskImage(source: string, onLoad?: () => void) {
+  let cached = imageCache.get(source);
+  if (!cached) {
+    const image = new Image();
+    cached = { image, loaded: false, callbacks: new Set() };
+    imageCache.set(source, cached);
+    image.onload = () => {
+      cached!.loaded = true;
+      cached!.callbacks.forEach((callback) => callback());
+      cached!.callbacks.clear();
+    };
+    image.onerror = () => cached!.callbacks.clear();
+    image.src = source;
+  }
+  if (!cached.loaded && onLoad) cached.callbacks.add(onLoad);
+  return cached.loaded ? cached.image : null;
+}
+
+function drawMaskEffects(
+  context: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  style: DrawingStyle | undefined,
+  opacity: number,
+  renderScale: number,
+) {
+  if (!style || opacity <= 0) return;
+  const apparentSize = Math.max(2, Math.min(width, height));
+  const outline = Math.min(apparentSize * .09, Math.max(0, style.strokeWidth * renderScale));
+  const blur = Math.min(apparentSize * .35, Math.max(0, style.shadowBlur * renderScale));
+  const maximumOffset = apparentSize * .3;
+  const offsetX = clampSigned(style.shadowOffsetX * renderScale, maximumOffset);
+  const offsetY = clampSigned(style.shadowOffsetY * renderScale, maximumOffset);
+  const padding = Math.ceil(outline + blur * 2.5 + Math.max(Math.abs(offsetX), Math.abs(offsetY)) + 3);
+  if (padding <= 0) return;
+
+  if (style.shadowOpacity > 0 && (blur > 0 || offsetX || offsetY)) {
+    const shadow = document.createElement("canvas");
+    shadow.width = Math.max(1, Math.ceil(width + padding * 2));
+    shadow.height = Math.max(1, Math.ceil(height + padding * 2));
+    const shadowContext = shadow.getContext("2d");
+    if (shadowContext) {
+      shadowContext.globalAlpha = clamp01(style.shadowOpacity * opacity);
+      shadowContext.filter = `drop-shadow(${offsetX}px ${offsetY}px ${blur}px ${style.shadowColor})`;
+      shadowContext.drawImage(image, padding, padding, width, height);
+      shadowContext.filter = "none";
+      shadowContext.globalCompositeOperation = "destination-out";
+      shadowContext.globalAlpha = 1;
+      shadowContext.drawImage(image, padding, padding, width, height);
+      context.drawImage(shadow, x - padding, y - padding);
+    }
+  }
+
+  if (outline > .2) {
+    const edge = document.createElement("canvas");
+    edge.width = Math.max(1, Math.ceil(width + padding * 2));
+    edge.height = Math.max(1, Math.ceil(height + padding * 2));
+    const edgeContext = edge.getContext("2d");
+    if (edgeContext) {
+      const steps = 16;
+      for (let index = 0; index < steps; index += 1) {
+        const angle = index / steps * Math.PI * 2;
+        edgeContext.drawImage(image, padding + Math.cos(angle) * outline, padding + Math.sin(angle) * outline, width, height);
+      }
+      edgeContext.globalCompositeOperation = "source-in";
+      edgeContext.fillStyle = style.stroke;
+      edgeContext.fillRect(0, 0, edge.width, edge.height);
+      edgeContext.globalCompositeOperation = "destination-out";
+      edgeContext.drawImage(image, padding, padding, width, height);
+      context.save();
+      context.globalAlpha = clamp01(opacity);
+      context.drawImage(edge, x - padding, y - padding);
+      context.restore();
+    }
+  }
+}
+
+function clamp01(value: number) {
+  return Math.max(0, Math.min(1, value));
+}
+
+function clampSigned(value: number, limit: number) {
+  return Math.max(-limit, Math.min(limit, value));
+}
 
 function addPlayerSilhouettePath(
   context: CanvasRenderingContext2D,
@@ -144,11 +240,30 @@ export function drawMovedPlayer(
   scaleY = 1,
   rotation = 0,
   opacity = 1,
+  segmentation?: PlayerSegmentationMask,
+  sourceFoot?: Point,
+  onImageLoad?: () => void,
 ) {
   const bodyWidth = Math.max(4, box.width * canvasWidth * Math.abs(scaleX));
   const bodyHeight = Math.max(8, box.height * canvasHeight * Math.abs(scaleY));
   const destinationX = destination.x * canvasWidth;
   const destinationY = destination.y * canvasHeight;
+  if (segmentation && sourceFoot) {
+    const cutout = maskImage(segmentation.cutoutDataUrl, onImageLoad);
+    if (cutout) {
+      const cutoutWidth = segmentation.bounds.width * canvasWidth * Math.abs(scaleX);
+      const cutoutHeight = segmentation.bounds.height * canvasHeight * Math.abs(scaleY);
+      const anchorX = (sourceFoot.x - segmentation.bounds.x) / Math.max(.000001, segmentation.bounds.width) * cutoutWidth;
+      const anchorY = (sourceFoot.y - segmentation.bounds.y) / Math.max(.000001, segmentation.bounds.height) * cutoutHeight;
+      context.save();
+      context.translate(destinationX, destinationY);
+      context.rotate(rotation * Math.PI / 180);
+      context.globalAlpha = clamp01(opacity);
+      context.drawImage(cutout, -anchorX, -anchorY, cutoutWidth, cutoutHeight);
+      context.restore();
+      return;
+    }
+  }
   const x = -bodyWidth / 2;
   const y = -bodyHeight;
   const sourceX = box.x * video.videoWidth;
@@ -200,7 +315,30 @@ export function drawPlayerForeground(
   canvasWidth: number,
   canvasHeight: number,
   foot: Point,
+  segmentation?: PlayerSegmentationMask,
+  style?: DrawingStyle,
+  opacity = 1,
+  onImageLoad?: () => void,
 ) {
+  if (segmentation) {
+    const alpha = maskImage(segmentation.maskDataUrl, onImageLoad);
+    const cutout = maskImage(segmentation.cutoutDataUrl, onImageLoad);
+    if (alpha && cutout) {
+      const maskX = segmentation.bounds.x * canvasWidth;
+      const maskY = segmentation.bounds.y * canvasHeight;
+      const maskWidth = segmentation.bounds.width * canvasWidth;
+      const maskHeight = segmentation.bounds.height * canvasHeight;
+      const renderScale = Math.max(.45, Math.min(3, Math.min(canvasWidth / 960, canvasHeight / 540)));
+      drawMaskEffects(context, alpha, maskX, maskY, maskWidth, maskHeight, style, opacity, renderScale);
+      context.save();
+      context.globalAlpha = clamp01(opacity);
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
+      context.drawImage(cutout, maskX, maskY, maskWidth, maskHeight);
+      context.restore();
+      return;
+    }
+  }
   const x = box.x * canvasWidth;
   const y = box.y * canvasHeight;
   const bodyWidth = box.width * canvasWidth;

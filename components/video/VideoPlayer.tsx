@@ -32,9 +32,10 @@ interface Props {
   captionPositionY?: number;
   onChooseVideo: () => void;
   onDurationReady?: (duration: number) => void;
+  onPlaybackError?: (message: string) => void;
 }
 
-export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer({ source, clipStart = 0, clipEnd, freezeFrames, caption, captionOpacity = .74, captionBackgroundColor = "#ffffff", captionTextColor = "#101010", captionFontSize = 22, captionHeight = .075, captionPositionY = .9625, onChooseVideo, onDurationReady }, ref) {
+export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer({ source, clipStart = 0, clipEnd, freezeFrames, caption, captionOpacity = .74, captionBackgroundColor = "#ffffff", captionTextColor = "#101010", captionFontSize = 22, captionHeight = .075, captionPositionY = .9625, onChooseVideo, onDurationReady, onPlaybackError }, ref) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const areaRef = useRef<HTMLDivElement>(null);
   const fullscreenRef = useRef<HTMLDivElement>(null);
@@ -290,6 +291,14 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
               onPlay={() => setIsPlaying(true)}
               onPause={() => { if (!holdingFreezeRef.current) setIsPlaying(false); }}
               onEnded={() => setIsPlaying(false)}
+              onError={(event) => {
+                const video = event.currentTarget;
+                const code = video.error?.code ?? 0;
+                const codeName = ({ 1: "ABORTED", 2: "NETWORK", 3: "DECODE", 4: "SOURCE_NOT_SUPPORTED" } as Record<number, string>)[code] || "UNKNOWN";
+                let target = "origem desconhecida";
+                try { target = new URL(video.currentSrc || source, window.location.href).origin; } catch { /* Keep safe fallback. */ }
+                onPlaybackError?.(`Falha ao carregar o vídeo [GET ${target} · MEDIA_ERR_${codeName} (${code}) · readyState ${video.readyState} · networkState ${video.networkState} · aplicação ${window.location.origin}]`);
+              }}
             />
             <div className="canvas-overlay"><DrawingCanvas width={size.width} height={size.height} registerCapture={registerCapture} getVideoElement={getVideoElement} /></div>
             {caption && <div className="video-caption slide-caption" style={{ top: `${captionPositionY * 100}%`, minHeight: `${captionHeight * 100}%`, backgroundColor: hexToRgba(captionBackgroundColor, captionOpacity), color: captionTextColor, fontSize: `${captionFontSize}px` }}>{caption}</div>}

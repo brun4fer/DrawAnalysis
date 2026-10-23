@@ -142,6 +142,8 @@ export function PropertiesPanel() {
   const playerTrack = object.target?.kind === "player" && activeSlide?.content.kind === "video"
     ? activeSlide.content.playerTracks?.find((track) => track.id === object.target?.trackId)
     : undefined;
+  const playerMask = playerTrack?.samples.find((sample) => Math.abs(sample.time - currentTime) < .05)?.mask
+    ?? playerTrack?.samples[0]?.mask;
   const layerIndex = drawings.findIndex((drawing) => drawing.id === object.id);
   const effectiveAnimation = resolvedDrawingAnimation(object);
   type AnimationPreset = "none" | "fade" | "scaleIn" | "draw" | "reveal" | "pulse";
@@ -453,7 +455,15 @@ export function PropertiesPanel() {
         <button className="secondary-button full" onClick={() => updateTransform({ x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 })}>Repor transformação</button>
       </section>
 
-      <section className="property-section tracking-section">
+      {playerTrack && <section className="property-section tracking-section">
+        <h3>SEGMENTAÇÃO DO FOTOGRAMA</h3>
+        <p className="property-help">A identificação pertence apenas ao fotograma clicado. Não existe tracking nem processamento contínuo do vídeo.</p>
+        <div className="keyframe-count">{playerMask
+          ? `Máscara individual · qualidade ${Math.round(playerMask.quality * 100)}% · ${playerMask.method === "bodypix-instance" ? "instância" : "refinamento local"}${playerMask.analysisMs ? ` · ${(playerMask.analysisMs / 1000).toFixed(1)} s` : ""}`
+          : `Contorno aproximado · confiança ${Math.round((playerTrack.samples[0]?.confidence ?? 0) * 100)}%`}</div>
+      </section>}
+
+      <section className="property-section tracking-section" hidden>
         <label className="toggle-row"><span><FieldLabel>Tracking</FieldLabel><small>{playerTrack ? `${playerTrack.name} · ${playerTrack.status === "processing" ? "a seguir até parar" : playerTrack.status === "seeded" ? "pronto para iniciar" : "tracking terminado"}` : "Sem jogador associado"}</small></span><input type="checkbox" checked={playerTrack ? playerTrack.status === "processing" : object.trackingEnabled} onChange={(e) => {
           const enabled = e.target.checked;
           if (playerTrack) {

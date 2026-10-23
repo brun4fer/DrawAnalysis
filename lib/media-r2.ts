@@ -15,7 +15,6 @@ function pemCertificate(base64: string) {
   const lines = base64.match(/.{1,64}/g)?.join("\n") ?? base64;
   return `-----BEGIN CERTIFICATE-----\n${lines}\n-----END CERTIFICATE-----`;
 }
-
 function trustedWindowsAgent() {
   if (windowsHttpsAgent) return windowsHttpsAgent;
   const command = "$ErrorActionPreference='Stop'; Get-ChildItem Cert:\\CurrentUser\\Root,Cert:\\LocalMachine\\Root | ForEach-Object { [Convert]::ToBase64String($_.RawData) }";
@@ -243,5 +242,76 @@ export async function headMediaObject(key: string) {
     contentLength: Number(response.headers.get("content-length") || 0),
     contentType: response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() || null,
     etag: response.headers.get("etag"),
+  };
+}
+
+export interface MediaCorsProbe {
+  origin: string;
+  playback: {
+    status: number;
+    allowOrigin: string | null;
+    contentType: string | null;
+    contentRange: string | null;
+    acceptRanges: string | null;
+    ok: boolean;
+  };
+  upload: {
+    status: number;
+    allowOrigin: string | null;
+    allowMethods: string | null;
+    allowHeaders: string | null;
+    ok: boolean;
+  };
+}
+
+function corsAllowsOrigin(header: string | null, origin: string) {
+  return header === "*" || header === origin;
+}
+
+async function publicMediaRequest(url: string, method: "GET" | "OPTIONS", headers: Headers) {
+  return process.platform === "win32"
+    ? windowsSystemFetch(url, method, headers)
+    : fetch(url, { method, headers, cache: "no-store", redirect: "manual" });
+}
+
+/** Probe browser-facing R2 CORS without returning either signed URL to the caller. */
+export async function probeMediaCors(storageKey: string, origin: string): Promise<MediaCorsProbe> {
+  const playbackUrl = createMediaPlaybackUrl(storageKey).url;
+  const uploadUrl = presignMediaMultipartParts(storageKey, "cors-diagnostic", [1])[0].url;
+  const playbackHeaders = new Headers({ Origin: origin, Range: "bytes=0-0" });
+  const uploadHeaders = new Headers({
+    Origin: origin,
+    "Access-Control-Request-Method": "PUT",
+    "Access-Control-Request-Headers": "content-type",
+  });
+  const [playbackResponse, uploadResponse] = await Promise.all([
+    publicMediaRequest(playbackUrl, "GET", playbackHeaders),
+    publicMediaRequest(uploadUrl, "OPTIONS", uploadHeaders),
+  ]);
+  const playbackAllowOrigin = playbackResponse.headers.get("access-control-allow-origin");
+  const uploadAllowOrigin = uploadResponse.headers.get("access-control-allow-origin");
+  const uploadMethods = uploadResponse.headers.get("access-control-allow-methods");
+  const uploadHeadersAllowed = uploadResponse.headers.get("access-control-allow-headers");
+  await playbackResponse.body?.cancel();
+  await uploadResponse.body?.cancel();
+  return {
+    origin,
+    playback: {
+      status: playbackResponse.status,
+      allowOrigin: playbackAllowOrigin,
+      contentType: playbackResponse.headers.get("content-type"),
+      contentRange: playbackResponse.headers.get("content-range"),
+      acceptRanges: playbackResponse.headers.get("accept-ranges"),
+      ok: playbackResponse.status === 206 && corsAllowsOrigin(playbackAllowOrigin, origin),
+    },
+    upload: {
+      status: uploadResponse.status,
+      allowOrigin: uploadAllowOrigin,
+      allowMethods: uploadMethods,
+      allowHeaders: uploadHeadersAllowed,
+      ok: uploadResponse.ok
+        && corsAllowsOrigin(uploadAllowOrigin, origin)
+        && Boolean(uploadMethods?.split(/\s*,\s*/).includes("PUT")),
+    },
   };
 }

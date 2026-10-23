@@ -23,6 +23,7 @@ import { prepareSlidesForStorage } from "@/utils/presentationData";
 import type { AnalysisSlide, SlideType } from "@/types/slide";
 import { APP_PRODUCT } from "@/lib/product";
 import { type CloudUploadStatus, type CloudVideoAsset, uploadCloudVideo } from "@/utils/cloudVideoUpload";
+import { resolveCloudPlayback } from "@/utils/cloudPlayback";
 
 type Account = { user: { id: string; name: string; username: string }; workspace: { id: string; name: string } };
 type AutomaticUpload = { fileName: string; status: CloudUploadStatus };
@@ -91,12 +92,8 @@ export function Editor() {
     for (const slide of slides) {
       if (slide.content.kind !== "video" || !slide.content.mediaAssetId || slide.content.sourceUrl || resolvingAssetsRef.current.has(slide.id)) continue;
       resolvingAssetsRef.current.add(slide.id);
-      void fetch(`/api/media-library/${encodeURIComponent(slide.content.mediaAssetId)}/playback`)
-        .then(async (response) => {
-          const result = await response.json() as { url?: string; error?: string };
-          if (!response.ok || !result.url) throw new Error(result.error || "Não foi possível abrir um vídeo cloud.");
-          setVideoSource(slide.id, result.url);
-        })
+      void resolveCloudPlayback(slide.content.mediaAssetId)
+        .then((result) => setVideoSource(slide.id, result.url))
         .catch((error: unknown) => setNotice(error instanceof Error ? error.message : "Não foi possível abrir um vídeo cloud."))
         .finally(() => resolvingAssetsRef.current.delete(slide.id));
     }
@@ -365,6 +362,7 @@ export function Editor() {
                 captionHeight={selectedSlide.captionHeight}
                 captionPositionY={selectedSlide.captionPositionY}
                 onChooseVideo={() => inputRef.current?.click()}
+                onPlaybackError={setNotice}
                 onDurationReady={(videoDuration) => {
                   if (selectedSlide.content.kind === "video" && selectedSlide.content.endTime === undefined) updateSlide(selectedSlide.id, { content: { ...selectedSlide.content, endTime: videoDuration } });
                 }}

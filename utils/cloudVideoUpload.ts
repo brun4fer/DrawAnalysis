@@ -20,12 +20,20 @@ const UPLOAD_CONCURRENCY = 2;
 const UPLOAD_RETRY_DELAYS = [0, 1_000, 2_500, 5_000, 8_000];
 
 async function apiJson<T>(url: string, init?: RequestInit) {
-  const response = await fetch(url, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
-  });
+  const method = init?.method || "GET";
+  const target = new URL(url, window.location.href);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...init,
+      cache: "no-store",
+      headers: { "Content-Type": "application/json", ...init?.headers },
+    });
+  } catch {
+    throw new Error(`Falha de rede em ${method} ${target.origin}${target.pathname}.`);
+  }
   const result = await response.json().catch(() => ({})) as T & { error?: string };
-  if (!response.ok) throw new Error(result.error || "Não foi possível comunicar com a biblioteca cloud.");
+  if (!response.ok) throw new Error(`${result.error || "Não foi possível comunicar com a biblioteca cloud."} [${method} ${target.origin}${target.pathname} → HTTP ${response.status}]`);
   return result;
 }
 
@@ -165,6 +173,7 @@ async function uploadPartWithRetry(url: string, blob: Blob, onProgress: (loaded:
 function uploadPart(url: string, blob: Blob, onProgress: (loaded: number) => void, signal?: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
     const request = new XMLHttpRequest();
+    const targetOrigin = (() => { try { return new URL(url).origin; } catch { return "cloud"; } })();
     const abort = () => request.abort();
     const cleanup = () => signal?.removeEventListener("abort", abort);
     request.open("PUT", url);
@@ -172,12 +181,12 @@ function uploadPart(url: string, blob: Blob, onProgress: (loaded: number) => voi
     request.upload.onprogress = (event) => onProgress(event.loaded);
     request.onload = () => {
       cleanup();
-      if (request.status < 200 || request.status >= 300) return reject(new Error(`A cloud rejeitou uma parte do vídeo (HTTP ${request.status}).`));
+      if (request.status < 200 || request.status >= 300) return reject(new Error(`A cloud rejeitou uma parte do vídeo. [PUT ${targetOrigin} → HTTP ${request.status}]`));
       onProgress(blob.size);
       resolve();
     };
-    request.onerror = () => { cleanup(); reject(new Error("O browser não conseguiu enviar o vídeo para a cloud.")); };
-    request.ontimeout = () => { cleanup(); reject(new Error("Uma parte do vídeo demorou demasiado tempo a enviar.")); };
+    request.onerror = () => { cleanup(); reject(new Error(`O browser bloqueou ou não conseguiu enviar a parte. [PUT ${targetOrigin} · origem ${window.location.origin} · provável rede/CORS]`)); };
+    request.ontimeout = () => { cleanup(); reject(new Error(`Uma parte do vídeo excedeu o tempo limite. [PUT ${targetOrigin}]`)); };
     request.onabort = () => { cleanup(); reject(new DOMException("O envio do vídeo foi cancelado.", "AbortError")); };
     signal?.addEventListener("abort", abort, { once: true });
     if (signal?.aborted) return abort();

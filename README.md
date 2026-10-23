@@ -155,13 +155,31 @@ ao browser. Exemplo de política CORS:
 ```json
 [
   {
-    "AllowedOrigins": ["http://localhost:3000", "http://localhost:3001", "https://SEU-DOMINIO"],
+    "AllowedOrigins": [
+      "http://localhost:3000",
+      "http://localhost:3001",
+      "https://draw-analysis.vercel.app",
+      "https://ap-gameplan.vercel.app",
+      "https://ap-written-report.vercel.app"
+    ],
     "AllowedMethods": ["GET", "HEAD", "PUT"],
     "AllowedHeaders": ["*"],
+    "ExposeHeaders": ["ETag", "Content-Length", "Content-Range", "Accept-Ranges"],
     "MaxAgeSeconds": 3600
   }
 ]
 ```
+
+As origens têm de coincidir exatamente com o endereço de onde a PWA foi
+instalada. Para verificar a política efetiva sem mostrar URLs assinados ou
+credenciais, execute `npm run diagnose:cloud-cors`. Para aplicar a política pela
+API oficial da Cloudflare, defina temporariamente `CLOUDFLARE_API_TOKEN` num
+ambiente local de manutenção e execute `npm run configure:cloud-cors`. Esse token
+nunca deve usar o prefixo `NEXT_PUBLIC_` nem ser incluído no deployment.
+
+Na própria biblioteca existe ainda o botão **Diagnóstico cloud**. O resultado
+mostra ambiente, origem, estado de `GET`/`OPTIONS` e CORS, mas não mostra os
+parâmetros secretos dos URLs assinados.
 
 ## Configuração
 
@@ -175,6 +193,7 @@ Copie `.env.example` para um ficheiro local ignorado pelo Git e configure:
 - `INITIAL_ADMIN_*`: conta inicial opcional;
 - `MEDIA_DATABASE_URL` e `MEDIA_DIRECT_URL`: catálogo partilhado;
 - `MEDIA_R2_*`: credenciais R2 usadas para leitura e autorização de uploads multipart;
+- `MEDIA_ALLOWED_ORIGINS`: origens explícitas autorizadas pela política CORS do R2;
 - `MEDIA_LIBRARY_APP_ID`: mantenha `draw-analysis`.
 
 Numa base nova, execute `npm run db:push`, `npm run db:seed` e `npm run dev`.

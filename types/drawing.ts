@@ -28,11 +28,28 @@ export interface NormalizedBox {
   height: number;
 }
 
+export interface PlayerSegmentationMask {
+  /** Tight mask bounds in coordinates of the original video frame. */
+  bounds: NormalizedBox;
+  /** Feathered alpha mask, stored independently from its visual effects. */
+  maskDataUrl: string;
+  /** Original frame pixels clipped by maskDataUrl. */
+  cutoutDataUrl: string;
+  width: number;
+  height: number;
+  frameTime: number;
+  quality: number;
+  /** Local segmentation time, including first-use model initialization. */
+  analysisMs?: number;
+  method: "bodypix-instance" | "bodypix-semantic";
+}
+
 export interface PlayerTrackSample {
   time: number;
   bbox: NormalizedBox;
   foot: Point;
   confidence: number;
+  mask?: PlayerSegmentationMask;
 }
 
 export interface PlayerTrack {

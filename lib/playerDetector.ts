@@ -1,5 +1,7 @@
 "use client";
 
+import { ensureTensorFlow } from "@/lib/tensorflow";
+
 export interface PlayerDetection {
   bbox: [number, number, number, number];
   score: number;
@@ -18,18 +20,7 @@ let modelPromise: Promise<CocoModel> | null = null;
 async function loadModel(): Promise<CocoModel> {
   if (!modelPromise) {
     modelPromise = (async () => {
-      const tf = await import("@tensorflow/tfjs-core");
-      // COCO-SSD uses CPU kernels for non-maximum suppression even when the
-      // model itself runs through WebGL, so both registries must be loaded.
-      await import("@tensorflow/tfjs-backend-cpu");
-      try {
-        await import("@tensorflow/tfjs-backend-webgl");
-        const enabled = await tf.setBackend("webgl");
-        if (!enabled) throw new Error("WebGL indisponível");
-      } catch {
-        await tf.setBackend("cpu");
-      }
-      await tf.ready();
+      await ensureTensorFlow();
       const cocoSsd = await import("@tensorflow-models/coco-ssd");
       return cocoSsd.load({ base: "mobilenet_v2" });
     })();
@@ -38,9 +29,12 @@ async function loadModel(): Promise<CocoModel> {
   return modelPromise;
 }
 
-export async function detectPlayers(input: HTMLVideoElement | HTMLCanvasElement): Promise<PlayerDetection[]> {
+export async function detectPlayers(
+  input: HTMLVideoElement | HTMLCanvasElement,
+  options: { maxNumBoxes?: number; minScore?: number } = {},
+): Promise<PlayerDetection[]> {
   const model = await loadModel();
-  const detections = await model.detect(input, 50, 0.18);
+  const detections = await model.detect(input, options.maxNumBoxes ?? 80, options.minScore ?? 0.14);
   return detections
     .filter((item) => item.class === "person")
     .map(({ bbox, score }) => ({ bbox, score }));

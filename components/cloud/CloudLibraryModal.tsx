@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Cloud, Copy, Film, Link2, RefreshCw, Upload, X } from "lucide-react";
 import { APP_PRODUCT } from "@/lib/product";
 import { type CloudUploadStatus, type CloudVideoAsset, uploadCloudVideo } from "@/utils/cloudVideoUpload";
+import { formatCloudDiagnostics, loadCloudDiagnostics } from "@/utils/cloudDiagnostics";
+import { resolveCloudPlayback } from "@/utils/cloudPlayback";
 
 export interface CloudAssetSelection {
   id: string;
@@ -37,8 +39,15 @@ export function CloudLibraryModal({ onClose, onSelect, localFile, backgroundUplo
   const [uploading, setUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<CloudUploadStatus | null>(null);
   const [error, setError] = useState("");
+  const [diagnostic, setDiagnostic] = useState("");
   const [copied, setCopied] = useState(false);
   const activeUploadStatus = uploadStatus ?? backgroundUpload?.status;
+
+  const runDiagnostics = useCallback(async () => {
+    setDiagnostic("A verificar API, armazenamento e CORS…");
+    try { setDiagnostic(formatCloudDiagnostics(await loadCloudDiagnostics())); }
+    catch (caught) { setDiagnostic(caught instanceof Error ? caught.message : "Não foi possível executar o diagnóstico cloud."); }
+  }, []);
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -53,10 +62,11 @@ export function CloudLibraryModal({ onClose, onSelect, localFile, backgroundUplo
       setLinkedApps(link.linkedApps ?? []);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Não foi possível abrir a biblioteca.");
+      void runDiagnostics();
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [runDiagnostics]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
@@ -91,13 +101,12 @@ export function CloudLibraryModal({ onClose, onSelect, localFile, backgroundUplo
     setSelecting(asset.id);
     setError("");
     try {
-      const response = await fetch(`/api/media-library/${encodeURIComponent(asset.id)}/playback`);
-      const result = await response.json() as { url?: string; error?: string };
-      if (!response.ok || !result.url) throw new Error(result.error || "Não foi possível reproduzir este vídeo.");
-      onSelect({ id: asset.id, fileName: asset.fileName, durationSeconds: asset.durationSeconds, url: result.url });
+      const result = await resolveCloudPlayback(asset.id);
+      onSelect({ id: result.id, fileName: result.fileName, durationSeconds: result.durationSeconds, url: result.url });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Não foi possível reproduzir este vídeo.");
       setSelecting("");
+      void runDiagnostics();
     }
   }
 
@@ -115,6 +124,7 @@ export function CloudLibraryModal({ onClose, onSelect, localFile, backgroundUplo
     } catch (caught) {
       if (!(caught instanceof DOMException && caught.name === "AbortError")) {
         setError(caught instanceof Error ? caught.message : "Não foi possível guardar o vídeo na cloud.");
+        void runDiagnostics();
       }
     } finally {
       uploadControllerRef.current = null;
@@ -161,6 +171,7 @@ export function CloudLibraryModal({ onClose, onSelect, localFile, backgroundUplo
           {generatedCode && <div className="generated-code"><code>{generatedCode}</code><button onClick={() => { void navigator.clipboard.writeText(generatedCode); setCopied(true); }} title="Copiar">{copied ? <Check size={15} /> : <Copy size={15} />}</button><small>Válido durante 30 minutos e utilizável uma vez.</small></div>}
         </div>
         {error && <div className="modal-error">{error}</div>}
+        <div className="cloud-diagnostic"><button onClick={() => void runDiagnostics()} disabled={busy || uploading}>Diagnóstico cloud</button>{diagnostic && <small>{diagnostic}</small>}</div>
         <div className="cloud-assets-head"><strong>Vídeos disponíveis</strong><button onClick={() => void load()} disabled={busy || uploading}><RefreshCw size={13} /> Atualizar</button></div>
         <div className="cloud-assets">
           {busy && !assets.length ? <div className="modal-empty">A carregar biblioteca…</div> : assets.length ? assets.map((asset) => (

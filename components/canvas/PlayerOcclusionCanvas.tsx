@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useEffect } from "react";
+import { forwardRef, useCallback, useEffect, useState } from "react";
 import type { DrawingObject, ObjectTransform, PlayerTrack } from "@/types/drawing";
 import { drawMovedPlayer, drawPlayerForeground, hidePlayerOriginal } from "@/utils/playerOcclusion";
 import { samplePlayerTrackAtTime } from "@/utils/playerTracking";
@@ -79,6 +79,8 @@ interface Props {
 }
 
 export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(function PlayerOcclusionCanvas({ drawings, playerTracks, currentTime, width, height, getVideoElement, transformOverrides, editingPreview = false }, ref) {
+  const [maskRevision, setMaskRevision] = useState(0);
+  const redrawLoadedMask = useCallback(() => setMaskRevision((revision) => revision + 1), []);
   useEffect(() => {
     const canvas = typeof ref === "object" ? ref?.current : null;
     const video = getVideoElement?.();
@@ -104,8 +106,12 @@ export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(functi
       const track = playerTracks?.find((item) => item.id === trackId);
       if (!track?.samples.length) continue;
       const sample = samplePlayerTrackAtTime(track, currentTime);
+      const identification = activeTargets.find((drawing) => drawing.data.kind === "identifyPlayer" && drawing.target?.trackId === trackId);
+      const effectOpacity = identification
+        ? editingPreview ? identification.style.opacity : getObjectStateAtTime(identification, currentTime).opacity
+        : 1;
       try {
-        drawPlayerForeground(context, video, sample.bbox, width, height, sample.foot);
+        drawPlayerForeground(context, video, sample.bbox, width, height, sample.foot, sample.mask, identification?.style, effectOpacity, redrawLoadedMask);
       } catch {
         // Keep the remaining identified players visible if one frame cannot be sampled.
       }
@@ -149,12 +155,15 @@ export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(functi
           transform.scaleY,
           transform.rotation,
           (editingPreview ? drawing.style.opacity : state.opacity) * (drawing.data.playerOpacity ?? .96),
+          sample.mask,
+          sample.foot,
+          redrawLoadedMask,
         );
       } catch {
         // The next video frame redraws this overlay automatically.
       }
     }
-  }, [currentTime, drawings, editingPreview, getVideoElement, height, playerTracks, ref, transformOverrides, width]);
+  }, [currentTime, drawings, editingPreview, getVideoElement, height, maskRevision, playerTracks, redrawLoadedMask, ref, transformOverrides, width]);
 
   return <canvas ref={ref} className="player-occlusion-canvas" width={width} height={height} />;
 });
