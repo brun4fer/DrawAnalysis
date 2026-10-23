@@ -1,7 +1,7 @@
 import { handleApiError } from "@/lib/api";
 import { requireWorkspace } from "@/lib/auth";
 import { mediaPrisma } from "@/lib/media-prisma";
-import { completeMediaMultipartUpload, headMediaObject } from "@/lib/media-r2";
+import { completeMediaMultipartUpload, headMediaObject, listMediaMultipartParts } from "@/lib/media-r2";
 import { ensureMediaWorkspace } from "@/lib/media-workspace";
 import { legacyVideoUploadPartSize, videoUploadPartSize } from "@/lib/video-upload";
 
@@ -14,12 +14,6 @@ export async function POST(request: Request) {
     const body = await request.json();
     const assetId = typeof body.assetId === "string" ? body.assetId : "";
     const uploadId = typeof body.uploadId === "string" ? body.uploadId : "";
-    const parts = Array.isArray(body.parts)
-      ? body.parts.map((part: { partNumber?: unknown; etag?: unknown }) => ({
-          partNumber: Number(part.partNumber),
-          etag: typeof part.etag === "string" ? part.etag : "",
-        }))
-      : [];
     const asset = await mediaPrisma.mediaAsset.findFirst({
       where: { id: assetId, mediaWorkspaceId: mediaWorkspace.id, storageStatus: "UPLOADING" },
     });
@@ -29,13 +23,23 @@ export async function POST(request: Request) {
 
     const fileSize = Number(asset.fileSize);
     const requestedPartSize = Number(body.partSize);
+    const parts = await listMediaMultipartParts(asset.storageKey, asset.uploadId);
     const allowedPartSizes = [...new Set([videoUploadPartSize(fileSize), legacyVideoUploadPartSize(fileSize)])];
     const partSize = allowedPartSizes.find((candidate) =>
       candidate === requestedPartSize && Math.ceil(fileSize / candidate) === parts.length
     );
     const expectedParts = partSize ? Math.ceil(fileSize / partSize) : 0;
-    const unique = new Set(parts.map((part: { partNumber: number }) => part.partNumber));
-    if (parts.length !== expectedParts || unique.size !== expectedParts || parts.some((part: { partNumber: number; etag: string }) => !Number.isInteger(part.partNumber) || part.partNumber < 1 || part.partNumber > expectedParts || !part.etag)) {
+    const unique = new Set(parts.map((part) => part.partNumber));
+    if (parts.length !== expectedParts || unique.size !== expectedParts || parts.some((part) => {
+      const expectedSize = part.partNumber === expectedParts
+        ? fileSize - ((expectedParts - 1) * (partSize ?? 0))
+        : partSize;
+      return !Number.isInteger(part.partNumber)
+        || part.partNumber < 1
+        || part.partNumber > expectedParts
+        || !part.etag
+        || part.size !== expectedSize;
+    })) {
       return Response.json({ error: "Faltam uma ou mais partes do vídeo." }, { status: 400 });
     }
 

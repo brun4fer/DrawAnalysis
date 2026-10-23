@@ -16,6 +16,7 @@ interface Props {
   onClose: () => void;
   onSelect: (asset: CloudAssetSelection) => void;
   localFile?: File | null;
+  backgroundUpload?: { fileName: string; status: CloudUploadStatus };
 }
 
 const formatSize = (raw: string | number) => {
@@ -24,7 +25,7 @@ const formatSize = (raw: string | number) => {
   return bytes >= 1_000_000_000 ? `${(bytes / 1_000_000_000).toFixed(1)} GB` : `${(bytes / 1_000_000).toFixed(1)} MB`;
 };
 
-export function CloudLibraryModal({ onClose, onSelect, localFile }: Props) {
+export function CloudLibraryModal({ onClose, onSelect, localFile, backgroundUpload }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const uploadControllerRef = useRef<AbortController | null>(null);
   const [assets, setAssets] = useState<CloudVideoAsset[]>([]);
@@ -37,6 +38,7 @@ export function CloudLibraryModal({ onClose, onSelect, localFile }: Props) {
   const [uploadStatus, setUploadStatus] = useState<CloudUploadStatus | null>(null);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const activeUploadStatus = uploadStatus ?? backgroundUpload?.status;
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -100,7 +102,7 @@ export function CloudLibraryModal({ onClose, onSelect, localFile }: Props) {
   }
 
   async function upload(file?: File | null) {
-    if (!file || uploading) return;
+    if (!file || uploading || backgroundUpload) return;
     const controller = new AbortController();
     uploadControllerRef.current = controller;
     setUploading(true);
@@ -134,19 +136,21 @@ export function CloudLibraryModal({ onClose, onSelect, localFile }: Props) {
             <strong><Upload size={15} /> Guardar vídeo na cloud</strong>
             <small>{localFile ? `${localFile.name} · ${formatSize(localFile.size)}` : "O vídeo ficará disponível em todo o workspace."}</small>
           </div>
-          {!uploading ? (
+          {!uploading && !backgroundUpload ? (
             <div className="cloud-upload-actions">
               {localFile && <button className="primary" onClick={() => void upload(localFile)}>Guardar vídeo atual</button>}
               <button onClick={() => inputRef.current?.click()}>{localFile ? "Escolher outro" : "Escolher vídeo"}</button>
             </div>
-          ) : (
+          ) : uploading ? (
             <button className="cloud-upload-cancel" onClick={() => uploadControllerRef.current?.abort()}>Cancelar</button>
+          ) : (
+            <button className="cloud-upload-cancel" disabled>A guardar automaticamente</button>
           )}
-          {uploadStatus && (
+          {activeUploadStatus && (
             <div className="cloud-upload-progress">
-              <div><i style={{ width: `${Math.round(uploadStatus.progress * 100)}%` }} /></div>
-              <span>{Math.round(uploadStatus.progress * 100)}%</span>
-              <small>{uploadStatus.detail}</small>
+              <div><i style={{ width: `${Math.round(activeUploadStatus.progress * 100)}%` }} /></div>
+              <span>{Math.round(activeUploadStatus.progress * 100)}%</span>
+              <small>{activeUploadStatus.detail}</small>
             </div>
           )}
         </div>
@@ -160,7 +164,7 @@ export function CloudLibraryModal({ onClose, onSelect, localFile }: Props) {
         <div className="cloud-assets-head"><strong>Vídeos disponíveis</strong><button onClick={() => void load()} disabled={busy || uploading}><RefreshCw size={13} /> Atualizar</button></div>
         <div className="cloud-assets">
           {busy && !assets.length ? <div className="modal-empty">A carregar biblioteca…</div> : assets.length ? assets.map((asset) => (
-            <button className="cloud-asset" key={asset.id} onClick={() => void selectAsset(asset)} disabled={uploading || Boolean(selecting)}>
+            <button className="cloud-asset" key={asset.id} onClick={() => void selectAsset(asset)} disabled={uploading || Boolean(backgroundUpload) || Boolean(selecting)}>
               <i><Film size={19} /></i><span><strong>{asset.fileName}</strong><small>{formatSize(asset.fileSize)} · {Math.round(asset.durationSeconds)} s</small></span><em>{selecting === asset.id ? "A abrir…" : "Usar vídeo"}</em>
             </button>
           )) : <div className="modal-empty">Ainda não existem vídeos neste workspace. Carregue o primeiro vídeo acima ou ligue outro software da mesma conta.</div>}

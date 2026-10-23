@@ -13,7 +13,7 @@ export interface CloudUploadStatus {
   detail: string;
 }
 
-type UploadedPart = { partNumber: number; etag: string; size?: number };
+type UploadedPart = { partNumber: number; etag?: string; size?: number };
 
 const UPLOAD_BATCH_SIZE = 12;
 const UPLOAD_CONCURRENCY = 2;
@@ -105,11 +105,11 @@ export async function uploadCloudVideo(file: File, onStatus?: (status: CloudUplo
           const current = signed.parts[cursor++];
           const start = (current.partNumber - 1) * init.partSize;
           const blob = file.slice(start, Math.min(file.size, start + init.partSize));
-          const etag = await uploadPartWithRetry(current.url, blob, (loaded) => {
+          await uploadPartWithRetry(current.url, blob, (loaded) => {
             partProgress.set(current.partNumber, loaded);
             emitProgress(`A enviar parte ${current.partNumber} de ${totalParts}…`);
           }, signal);
-          const part = { partNumber: current.partNumber, etag, size: blob.size };
+          const part = { partNumber: current.partNumber, size: blob.size };
           completed.set(current.partNumber, part);
           partProgress.set(current.partNumber, blob.size);
           emitProgress(`${completed.size} de ${totalParts} partes concluídas.`);
@@ -124,7 +124,6 @@ export async function uploadCloudVideo(file: File, onStatus?: (status: CloudUplo
         assetId: init.asset.id,
         uploadId: init.uploadId,
         partSize: init.partSize,
-        parts: [...completed.values()].map(({ partNumber, etag }) => ({ partNumber, etag })),
       }),
       signal,
     });
@@ -164,7 +163,7 @@ async function uploadPartWithRetry(url: string, blob: Blob, onProgress: (loaded:
 }
 
 function uploadPart(url: string, blob: Blob, onProgress: (loaded: number) => void, signal?: AbortSignal) {
-  return new Promise<string>((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     const request = new XMLHttpRequest();
     const abort = () => request.abort();
     const cleanup = () => signal?.removeEventListener("abort", abort);
@@ -174,9 +173,8 @@ function uploadPart(url: string, blob: Blob, onProgress: (loaded: number) => voi
     request.onload = () => {
       cleanup();
       if (request.status < 200 || request.status >= 300) return reject(new Error(`A cloud rejeitou uma parte do vídeo (HTTP ${request.status}).`));
-      const etag = request.getResponseHeader("ETag");
-      if (!etag) return reject(new Error("A cloud não devolveu o ETag. Confirme a configuração CORS do R2."));
-      resolve(etag);
+      onProgress(blob.size);
+      resolve();
     };
     request.onerror = () => { cleanup(); reject(new Error("O browser não conseguiu enviar o vídeo para a cloud.")); };
     request.ontimeout = () => { cleanup(); reject(new Error("Uma parte do vídeo demorou demasiado tempo a enviar.")); };

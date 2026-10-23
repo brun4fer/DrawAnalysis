@@ -22,8 +22,10 @@ import { createSlide } from "@/utils/slideFactory";
 import { prepareSlidesForStorage } from "@/utils/presentationData";
 import type { AnalysisSlide, SlideType } from "@/types/slide";
 import { APP_PRODUCT } from "@/lib/product";
+import { type CloudUploadStatus, type CloudVideoAsset, uploadCloudVideo } from "@/utils/cloudVideoUpload";
 
 type Account = { user: { id: string; name: string; username: string }; workspace: { id: string; name: string } };
+type AutomaticUpload = { fileName: string; status: CloudUploadStatus };
 
 const VideoExport = dynamic(() => import("@/components/export/VideoExport").then((module) => module.VideoExport), { ssr: false });
 const PdfExport = dynamic(() => import("@/components/export/PdfExport").then((module) => module.PdfExport), { ssr: false });
@@ -34,6 +36,7 @@ export function Editor() {
   const playerRef = useRef<VideoPlayerHandle>(null);
   const sourceUrlsRef = useRef<Set<string>>(new Set());
   const localFilesRef = useRef<Map<string, File>>(new Map());
+  const automaticUploadPromisesRef = useRef<Map<string, { file: File; promise: Promise<CloudVideoAsset>; controller: AbortController }>>(new Map());
   const resolvingAssetsRef = useRef<Set<string>>(new Set());
   const [pickerOpen, setPickerOpen] = useState(false);
   const [presenting, setPresenting] = useState(false);
@@ -46,6 +49,7 @@ export function Editor() {
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [account, setAccount] = useState<Account | null>(null);
   const [notice, setNotice] = useState("");
+  const [automaticUploads, setAutomaticUploads] = useState<Record<string, AutomaticUpload>>({});
   const {
     selectedId, removeDrawing, undo, redo, setTool,
     drawings, slides, selectedSlideId, addSlide, updateSlide, replacePresentation, setVideoSource, setIsPlaying, setSelectedSlideId, loadFavorites,
@@ -54,6 +58,7 @@ export function Editor() {
   const isVideoSlide = selectedSlide?.content.kind === "video";
   const source = selectedSlide?.content.kind === "video" ? selectedSlide.content.sourceUrl ?? null : null;
   const filename = selectedSlide?.content.kind === "video" ? selectedSlide.content.fileName : "";
+  const activeAutomaticUpload = (selectedSlideId ? automaticUploads[selectedSlideId] : undefined) ?? Object.values(automaticUploads)[0];
 
   useEffect(() => {
     void fetch("/api/account").then(async (response) => {
@@ -120,6 +125,81 @@ export function Editor() {
     return () => window.removeEventListener("keydown", onKey);
   });
 
+  async function uploadSlideVideo(slideId: string, file: File) {
+    const existing = automaticUploadPromisesRef.current.get(slideId);
+    if (existing?.file === file) return existing.promise;
+    if (existing) {
+      existing.controller.abort();
+      await existing.promise.catch(() => undefined);
+    }
+    const controller = new AbortController();
+    const task = (async () => {
+      try {
+        const asset = await uploadCloudVideo(file, (status) => {
+          setAutomaticUploads((current) => ({ ...current, [slideId]: { fileName: file.name, status } }));
+        }, controller.signal);
+        const before = useEditorStore.getState().slides;
+        const origin = before.find((slide) => slide.id === slideId);
+        if (!origin || origin.content.kind !== "video" || origin.content.fileName !== file.name || localFilesRef.current.get(slideId) !== file) return asset;
+        const originUrl = origin?.content.kind === "video" ? origin.content.sourceUrl : undefined;
+        useEditorStore.setState((state) => ({
+          slides: state.slides.map((slide) => {
+            if (slide.content.kind !== "video" || slide.content.mediaAssetId) return slide;
+            const matches = slide.id === slideId || Boolean(originUrl && slide.content.sourceUrl === originUrl && slide.content.fileName === file.name);
+            return matches
+              ? { ...slide, content: { ...slide.content, mediaAssetId: asset.id, endTime: slide.content.endTime ?? asset.durationSeconds } }
+              : slide;
+          }),
+        }));
+        const savedSlides = useEditorStore.getState().slides;
+        savedSlides.forEach((slide) => {
+          if (slide.content.kind === "video" && slide.content.mediaAssetId === asset.id) localFilesRef.current.delete(slide.id);
+        });
+        setNotice(`Vídeo “${file.name}” guardado automaticamente na cloud.`);
+        if (projectId) await persistProject(savedSlides);
+        return asset;
+      } catch (caught) {
+        if (caught instanceof DOMException && caught.name === "AbortError") throw caught;
+        const message = caught instanceof Error ? caught.message : "Não foi possível guardar o vídeo na cloud.";
+        setNotice(`Falha ao guardar “${file.name}”: ${message}`);
+        throw caught;
+      } finally {
+        if (automaticUploadPromisesRef.current.get(slideId)?.controller === controller) {
+          automaticUploadPromisesRef.current.delete(slideId);
+          setAutomaticUploads((current) => {
+            const next = { ...current };
+            delete next[slideId];
+            return next;
+          });
+        }
+      }
+    })();
+    automaticUploadPromisesRef.current.set(slideId, { file, promise: task, controller });
+    return task;
+  }
+
+  async function ensureLocalVideosInCloud() {
+    const currentSlides = useEditorStore.getState().slides;
+    const uploads = currentSlides.flatMap((slide) => {
+      if (slide.content.kind !== "video" || !slide.content.fileName.trim() || slide.content.mediaAssetId) return [];
+      let file = localFilesRef.current.get(slide.id);
+      let uploadSlideId = slide.id;
+      if (!file && slide.content.sourceUrl) {
+        const sourceUrl = slide.content.sourceUrl;
+        const sourceSlideId = currentSlides.find((candidate) => candidate.content.kind === "video"
+          && candidate.content.sourceUrl === sourceUrl
+          && localFilesRef.current.has(candidate.id))?.id;
+        if (sourceSlideId) {
+          file = localFilesRef.current.get(sourceSlideId);
+          uploadSlideId = sourceSlideId;
+        }
+      }
+      return file ? [uploadSlideVideo(uploadSlideId, file)] : [];
+    });
+    if (uploads.length) await Promise.all(uploads);
+    return useEditorStore.getState().slides;
+  }
+
   const openFile = (file?: File) => {
     if (!file || !selectedSlide || selectedSlide.content.kind !== "video") return;
     const previousUrl = selectedSlide.content.sourceUrl;
@@ -128,6 +208,7 @@ export function Editor() {
     sourceUrlsRef.current.add(url);
     localFilesRef.current.set(selectedSlide.id, file);
     updateSlide(selectedSlide.id, { content: { ...selectedSlide.content, fileName: file.name, mediaAssetId: undefined, sourceUrl: url, startTime: 0, endTime: undefined } });
+    void uploadSlideVideo(selectedSlide.id, file).catch(() => undefined);
   };
 
   const selectCloudAsset = (asset: CloudAssetSelection) => {
@@ -188,13 +269,19 @@ export function Editor() {
 
   async function saveProject() {
     if (!projectId) { setProjectsOpen(true); return; }
-    const localVideo = slides.find((slide) => slide.content.kind === "video" && slide.content.fileName.trim() && !slide.content.mediaAssetId);
+    let preparedSlides: AnalysisSlide[];
+    try {
+      preparedSlides = await ensureLocalVideosInCloud();
+    } catch {
+      return;
+    }
+    const localVideo = preparedSlides.find((slide) => slide.content.kind === "video" && slide.content.fileName.trim() && !slide.content.mediaAssetId);
     if (localVideo && !window.confirm("Esta apresentação contém pelo menos um vídeo apenas local. Os desenhos serão guardados, mas esse vídeo não poderá ser reaberto.\n\nOK: guardar sem o vídeo\nCancelar: abrir a biblioteca cloud")) {
       setSelectedSlideId(localVideo.id);
       setCloudOpen(true);
       return;
     }
-    await persistProject(slides);
+    await persistProject(preparedSlides);
   }
 
   async function logout() {
@@ -251,6 +338,13 @@ export function Editor() {
       <input ref={inputRef} className="sr-only" type="file" accept="video/*" onChange={(event) => { openFile(event.target.files?.[0]); event.target.value = ""; }} />
       <TopBar filename={filename} isVideoSlide={isVideoSlide} onOpen={() => inputRef.current?.click()} onPreview={openPreview} onCapture={captureAsImageSlide} onCloud={() => setCloudOpen(true)} onProjects={() => setProjectsOpen(true)} onSave={() => void saveProject()} onExportVideo={openVideoExport} onExportPdf={openPdfExport} onLogout={() => void logout()} projectName={projectName} saveState={saveState} account={account} />
       {notice && <button className="editor-notice" onClick={() => setNotice("")}>{notice}<span>×</span></button>}
+      {activeAutomaticUpload && (
+        <div className="automatic-cloud-upload" role="status">
+          <span><b>A guardar vídeo na cloud</b><small>{activeAutomaticUpload.fileName} · {activeAutomaticUpload.status.detail}</small></span>
+          <div><i style={{ width: `${Math.round(activeAutomaticUpload.status.progress * 100)}%` }} /></div>
+          <strong>{Math.round(activeAutomaticUpload.status.progress * 100)}%</strong>
+        </div>
+      )}
       <div className="presentation-workspace">
         <SlideList onAdd={() => setPickerOpen(true)} />
         {selectedSlide ? (
@@ -287,8 +381,8 @@ export function Editor() {
       </div>
       {isVideoSlide ? <Timeline /> : <StaticSlideFooter />}
       {pickerOpen && <SlideTypePicker onSelect={addNewSlide} onClose={() => setPickerOpen(false)} />}
-      {cloudOpen && <CloudLibraryModal localFile={selectedSlide ? localFilesRef.current.get(selectedSlide.id) : null} onSelect={selectCloudAsset} onClose={() => setCloudOpen(false)} />}
-      {projectsOpen && <ProjectLibraryModal slides={slides} selectedSlideId={selectedSlideId} activeDrawings={drawings} onClose={() => setProjectsOpen(false)} onResolveMissingVideo={(slideId) => { setProjectsOpen(false); setSelectedSlideId(slideId); setCloudOpen(true); }} onOpen={openStoredProject} />}
+      {cloudOpen && <CloudLibraryModal localFile={selectedSlide ? localFilesRef.current.get(selectedSlide.id) : null} backgroundUpload={selectedSlide ? automaticUploads[selectedSlide.id] : undefined} onSelect={selectCloudAsset} onClose={() => setCloudOpen(false)} />}
+      {projectsOpen && <ProjectLibraryModal slides={slides} selectedSlideId={selectedSlideId} activeDrawings={drawings} onPrepareForSave={ensureLocalVideosInCloud} onClose={() => setProjectsOpen(false)} onResolveMissingVideo={(slideId) => { setProjectsOpen(false); setSelectedSlideId(slideId); setCloudOpen(true); }} onOpen={openStoredProject} />}
       {presenting && <PresentationMode onClose={closePreview} />}
       {videoExportOpen && <VideoExport slides={slides} selectedSlideId={selectedSlideId} projectName={projectName} onClose={closeVideoExport} />}
       {pdfExportOpen && <PdfExport slides={slides} projectName={projectName} onClose={closePdfExport} />}

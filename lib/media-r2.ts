@@ -1,10 +1,62 @@
 import { createHash, createHmac } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { Agent, request as httpsRequest } from "node:https";
+import { rootCertificates } from "node:tls";
 
 const REGION = "auto";
 const SERVICE = "s3";
 
 type QueryEntry = [string, string];
 type CompletedPart = { partNumber: number; etag: string; size?: number };
+
+let windowsHttpsAgent: Agent | null = null;
+
+function pemCertificate(base64: string) {
+  const lines = base64.match(/.{1,64}/g)?.join("\n") ?? base64;
+  return `-----BEGIN CERTIFICATE-----\n${lines}\n-----END CERTIFICATE-----`;
+}
+
+function trustedWindowsAgent() {
+  if (windowsHttpsAgent) return windowsHttpsAgent;
+  const command = "$ErrorActionPreference='Stop'; Get-ChildItem Cert:\\CurrentUser\\Root,Cert:\\LocalMachine\\Root | ForEach-Object { [Convert]::ToBase64String($_.RawData) }";
+  const certificates = execFileSync("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command], {
+    encoding: "utf8",
+    timeout: 10_000,
+    windowsHide: true,
+  }).split(/\r?\n/).map((value) => value.trim()).filter(Boolean).map(pemCertificate);
+  windowsHttpsAgent = new Agent({ ca: [...rootCertificates, ...certificates] });
+  return windowsHttpsAgent;
+}
+
+function windowsSystemFetch(url: string, method: string, headers: Headers, body?: string) {
+  return new Promise<Response>((resolve, reject) => {
+    const request = httpsRequest(url, {
+      method,
+      headers: Object.fromEntries(headers.entries()),
+      agent: trustedWindowsAgent(),
+    }, (response) => {
+      const chunks: Buffer[] = [];
+      response.on("data", (chunk: Buffer | string) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+      response.on("end", () => {
+        const responseHeaders = new Headers();
+        Object.entries(response.headers).forEach(([name, value]) => {
+          if (Array.isArray(value)) value.forEach((item) => responseHeaders.append(name, item));
+          else if (value !== undefined) responseHeaders.set(name, String(value));
+        });
+        const status = response.statusCode ?? 500;
+        const responseBody = method === "HEAD" || [204, 205, 304].includes(status) ? null : Buffer.concat(chunks);
+        resolve(new Response(responseBody, {
+          status,
+          statusText: response.statusMessage,
+          headers: responseHeaders,
+        }));
+      });
+    });
+    request.on("error", reject);
+    if (body) request.write(body);
+    request.end();
+  });
+}
 
 function required(name: string) {
   const value = process.env[name]?.trim();
@@ -90,12 +142,10 @@ async function signedRequest(method: string, key: string, query: QueryEntry[] = 
   headers.set("x-amz-content-sha256", payloadHash);
   headers.set("x-amz-date", amzDate);
   headers.set("authorization", `AWS4-HMAC-SHA256 Credential=${settings.accessKeyId}/${signed.scope}, SignedHeaders=${signed.signedHeaders}, Signature=${signed.value}`);
-  const response = await fetch(`${settings.endpoint}${path}${query.length ? `?${canonicalQuery(query)}` : ""}`, {
-    method,
-    headers,
-    body: body || undefined,
-    cache: "no-store",
-  });
+  const url = `${settings.endpoint}${path}${query.length ? `?${canonicalQuery(query)}` : ""}`;
+  const response = process.platform === "win32"
+    ? await windowsSystemFetch(url, method, headers, body || undefined)
+    : await fetch(url, { method, headers, body: body || undefined, cache: "no-store" });
   if (!response.ok) {
     const payload = await response.text();
     const message = xmlValue(payload, "Message") || payload.slice(0, 300) || response.statusText;
@@ -123,8 +173,23 @@ function presignedUrl(method: string, key: string, query: QueryEntry[], expiresS
   return `${settings.endpoint}${path}?${canonicalQuery(signedQuery)}`;
 }
 
+function decodeXml(value: string) {
+  return value.replace(/&(quot|apos|lt|gt|amp|#x[0-9a-f]+|#\d+);/gi, (entity, code: string) => {
+    const named: Record<string, string> = { quot: '"', apos: "'", lt: "<", gt: ">", amp: "&" };
+    const normalized = code.toLowerCase();
+    if (normalized in named) return named[normalized];
+    const numeric = normalized.startsWith("#x")
+      ? Number.parseInt(normalized.slice(2), 16)
+      : Number.parseInt(normalized.slice(1), 10);
+    return Number.isFinite(numeric) ? String.fromCodePoint(numeric) : entity;
+  });
+}
+
 function xmlValue(xml: string, name: string) {
-  return xml.match(new RegExp(`<${name}>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?</${name}>`))?.[1]?.trim() || null;
+  const raw = xml.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`))?.[1]?.trim();
+  if (!raw) return null;
+  const cdata = raw.match(/^<!\[CDATA\[([\s\S]*)\]\]>$/);
+  return cdata ? cdata[1] : decodeXml(raw);
 }
 
 function escapeXml(value: string) {

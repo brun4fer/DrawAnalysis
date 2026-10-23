@@ -148,8 +148,9 @@ um código de utilização única numa aplicação já ligada e cole-o em **Liga
 workspace**. O código expira ao fim de 30 minutos.
 
 O bucket R2 deve autorizar `GET`, `HEAD` e `PUT` para os domínios da aplicação
-(incluindo os endereços locais usados em desenvolvimento), aceitar os headers
-do pedido e expor `ETag`. Exemplo de política CORS:
+(incluindo os endereços locais usados em desenvolvimento) e aceitar os headers
+do pedido. Os `ETag` são confirmados pelo servidor, sem depender da sua exposição
+ao browser. Exemplo de política CORS:
 
 ```json
 [
@@ -157,7 +158,6 @@ do pedido e expor `ETag`. Exemplo de política CORS:
     "AllowedOrigins": ["http://localhost:3000", "http://localhost:3001", "https://SEU-DOMINIO"],
     "AllowedMethods": ["GET", "HEAD", "PUT"],
     "AllowedHeaders": ["*"],
-    "ExposeHeaders": ["ETag"],
     "MaxAgeSeconds": 3600
   }
 ]
