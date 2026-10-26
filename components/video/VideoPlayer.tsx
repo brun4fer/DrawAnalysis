@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type WheelEvent as ReactWheelEvent } from "react";
 import { Film, Upload } from "lucide-react";
 import { useEditorStore } from "@/store/useEditorStore";
 import type { FreezeFrame } from "@/types/slide";
@@ -17,6 +17,9 @@ export interface VideoPlayerHandle {
   frameBy: (frames: number) => void;
   captureFrame: () => string | null;
 }
+
+const DEFAULT_EDITOR_VIEWPORT = { zoom: 1, x: 0, y: 0 };
+const MAX_EDITOR_ZOOM = 6;
 
 interface Props {
   source: string | null;
@@ -46,6 +49,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
   const lastSourceTimeRef = useRef(0);
   const currentTimelineTimeRef = useRef(0);
   const [size, setSize] = useState({ width: 960, height: 540 });
+  const [editorViewport, setEditorViewport] = useState(DEFAULT_EDITOR_VIEWPORT);
   const [aspect, setAspect] = useState(16 / 9);
   const [volume, setVolume] = useState(0.8);
   const [speed, setSpeed] = useState(1);
@@ -81,6 +85,44 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
     resize();
     return () => observer.disconnect();
   }, [aspect]);
+
+  useEffect(() => {
+    setEditorViewport((current) => {
+      if (current.zoom <= 1) return DEFAULT_EDITOR_VIEWPORT;
+      const maximumX = size.width * (current.zoom - 1) / 2;
+      const maximumY = size.height * (current.zoom - 1) / 2;
+      return {
+        ...current,
+        x: Math.max(-maximumX, Math.min(maximumX, current.x)),
+        y: Math.max(-maximumY, Math.min(maximumY, current.y)),
+      };
+    });
+  }, [size.height, size.width]);
+
+  const handleEditorZoom = useCallback((event: ReactWheelEvent<HTMLDivElement>) => {
+    if (!source) return;
+    event.preventDefault();
+    const area = areaRef.current;
+    if (!area) return;
+    const bounds = area.getBoundingClientRect();
+    const cursorX = event.clientX - bounds.left - bounds.width / 2;
+    const cursorY = event.clientY - bounds.top - bounds.height / 2;
+    const deltaScale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? bounds.height : 1;
+    const factor = Math.exp(-event.deltaY * deltaScale * .0017);
+    setEditorViewport((current) => {
+      const zoom = Math.max(1, Math.min(MAX_EDITOR_ZOOM, current.zoom * factor));
+      if (zoom <= 1.001) return DEFAULT_EDITOR_VIEWPORT;
+      const contentX = (cursorX - current.x) / current.zoom;
+      const contentY = (cursorY - current.y) / current.zoom;
+      const maximumX = size.width * (zoom - 1) / 2;
+      const maximumY = size.height * (zoom - 1) / 2;
+      return {
+        zoom,
+        x: Math.max(-maximumX, Math.min(maximumX, cursorX - contentX * zoom)),
+        y: Math.max(-maximumY, Math.min(maximumY, cursorY - contentY * zoom)),
+      };
+    });
+  }, [size.height, size.width, source]);
 
   const stopFreezeHold = useCallback(() => {
     holdingFreezeRef.current = false;
@@ -160,6 +202,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
     setDuration(0);
     setCurrentTime(0);
     setIsPlaying(false);
+    setEditorViewport(DEFAULT_EDITOR_VIEWPORT);
   }, [source, setCurrentTime, setDuration, setIsPlaying, stopFreezeHold]);
 
   useEffect(() => {
@@ -267,9 +310,17 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
 
   return (
     <div className="video-workspace" ref={fullscreenRef}>
-      <div className="video-area" ref={areaRef}>
+      <div className={`video-area${editorViewport.zoom > 1.001 ? " editor-view-zoomed" : ""}`} ref={areaRef} onWheel={handleEditorZoom}>
         {source ? (
-          <div className="video-frame" style={{ width: size.width, height: size.height }}>
+          <div
+            className="video-frame"
+            style={{
+              width: size.width,
+              height: size.height,
+              transform: `translate3d(${editorViewport.x}px, ${editorViewport.y}px, 0) scale(${editorViewport.zoom})`,
+              transformOrigin: "50% 50%",
+            }}
+          >
             <video
               ref={videoRef}
               src={source}
@@ -310,6 +361,16 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
             <span>MP4, WebM ou MOV compatível com o browser</span>
             <span className="upload-cta"><Upload size={15} /> Escolher ficheiro</span>
             <small>O vídeo fica sempre neste dispositivo</small>
+          </button>
+        )}
+        {source && editorViewport.zoom > 1.001 && (
+          <button
+            type="button"
+            className="editor-view-zoom-indicator"
+            onClick={() => setEditorViewport(DEFAULT_EDITOR_VIEWPORT)}
+            title="Repor a ampliação de edição"
+          >
+            ZOOM {Math.round(editorViewport.zoom * 100)}% <span>REPOR</span>
           </button>
         )}
       </div>

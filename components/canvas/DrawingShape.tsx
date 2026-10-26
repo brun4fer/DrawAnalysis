@@ -519,7 +519,7 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
               radiusX={radiusX * .27}
               radiusY={radiusY * .16}
               fill="#000000"
-              opacity={.34}
+              opacity={.34 * object.style.shadowOpacity}
               shadowColor="#000000"
               shadowBlur={Math.max(4, object.style.shadowBlur * .3)}
               shadowOpacity={.72}

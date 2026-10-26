@@ -89,19 +89,19 @@ export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(functi
     context.clearRect(0, 0, canvas.width, canvas.height);
 
     const activeTargets = drawings.filter((drawing) => getObjectStateAtTime(drawing, currentTime).visible);
-    const spotlightTrackIds = new Set(activeTargets.flatMap((drawing) =>
-      drawing.data.kind === "spotlight" && drawing.target?.kind === "player" ? [drawing.target.trackId] : [],
-    ));
     const trackIds = [...new Set(activeTargets.flatMap((drawing) => {
       const ids: string[] = [];
-      if (drawing.target?.kind === "player") ids.push(drawing.target.trackId);
+      // The dark spotlight intentionally does not redraw its target. Every
+      // other player-bound drawing, especially a ring, needs the static
+      // foreground cutout so that the player remains above the graphic.
+      if (drawing.target?.kind === "player" && drawing.data.kind !== "spotlight") ids.push(drawing.target.trackId);
       if (drawing.data.kind === "line") {
         if (drawing.data.startTarget?.trackId) ids.push(drawing.data.startTarget.trackId);
         if (drawing.data.endTarget?.trackId) ids.push(drawing.data.endTarget.trackId);
         drawing.data.pointTargets?.forEach((target) => { if (target?.trackId) ids.push(target.trackId); });
       }
       return ids;
-    }))].filter((trackId) => !spotlightTrackIds.has(trackId));
+    }))];
     for (const trackId of trackIds) {
       const track = playerTracks?.find((item) => item.id === trackId);
       if (!track?.samples.length) continue;

@@ -54,7 +54,9 @@ interface EditorState {
   setVideoSource: (id: string, sourceUrl?: string) => void;
   insertFreezeFrame: (sourceTime: number, duration: number) => void;
   loadFavorites: (storageKey: string) => void;
-  saveDrawingAsFavorite: (drawingId: string) => void;
+  saveDrawingAsFavorite: (drawingId: string, name?: string) => void;
+  renameFavorite: (favoriteId: string, name: string) => void;
+  moveFavorite: (favoriteId: string, direction: -1 | 1) => void;
   removeFavorite: (favoriteId: string) => void;
   activateFavorite: (favoriteId: string) => void;
 }
@@ -404,15 +406,31 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       })
       .catch(() => undefined);
   },
-  saveDrawingAsFavorite: (drawingId) => set((state) => {
+  saveDrawingAsFavorite: (drawingId, requestedName) => set((state) => {
     const drawing = state.drawings.find((item) => item.id === drawingId);
     if (!drawing) return state;
     const sameTypeCount = state.favorites.filter((item) => item.type === drawing.type).length + 1;
     const favorite = favoriteFromDrawing(drawing, createId());
-    favorite.name = `${drawing.name || drawing.type} · ${sameTypeCount}`;
+    favorite.name = requestedName?.trim().slice(0, 48) || `${drawing.name || drawing.type} · ${sameTypeCount}`;
     const favorites = [...state.favorites, favorite].slice(-24);
     persistFavorites(state.favoriteStorageKey, favorites);
     return { favorites, activeFavoriteId: null };
+  }),
+  renameFavorite: (favoriteId, requestedName) => set((state) => {
+    const name = requestedName.trim().slice(0, 48);
+    if (!name) return state;
+    const favorites = state.favorites.map((favorite) => favorite.id === favoriteId ? { ...favorite, name } : favorite);
+    persistFavorites(state.favoriteStorageKey, favorites);
+    return { favorites };
+  }),
+  moveFavorite: (favoriteId, direction) => set((state) => {
+    const currentIndex = state.favorites.findIndex((favorite) => favorite.id === favoriteId);
+    const nextIndex = currentIndex + direction;
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= state.favorites.length) return state;
+    const favorites = [...state.favorites];
+    [favorites[currentIndex], favorites[nextIndex]] = [favorites[nextIndex], favorites[currentIndex]];
+    persistFavorites(state.favoriteStorageKey, favorites);
+    return { favorites };
   }),
   removeFavorite: (favoriteId) => set((state) => {
     const favorites = state.favorites.filter((item) => item.id !== favoriteId);

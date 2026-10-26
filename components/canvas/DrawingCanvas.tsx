@@ -57,11 +57,11 @@ function captureVideoFrame(video: HTMLVideoElement) {
   return canvas;
 }
 
-function makeDetectionCrop(frame: HTMLCanvasElement, click: Point, widthRatio: number, heightRatio: number) {
+function makeDetectionCrop(frame: HTMLCanvasElement, click: Point, widthRatio: number, heightRatio: number, clickAnchorY = .5) {
   const cropWidth = frame.width * widthRatio;
   const cropHeight = frame.height * heightRatio;
   const sourceX = clamp(click.x * frame.width - cropWidth / 2, 0, frame.width - cropWidth);
-  const sourceY = clamp(click.y * frame.height - cropHeight / 2, 0, frame.height - cropHeight);
+  const sourceY = clamp(click.y * frame.height - cropHeight * clickAnchorY, 0, frame.height - cropHeight);
   const canvas = document.createElement("canvas");
   const scale = Math.min(7, 768 / Math.max(cropWidth, cropHeight));
   canvas.width = Math.max(384, Math.round(cropWidth * scale));
@@ -160,17 +160,28 @@ function deduplicateDetections(candidates: PlayerDetectionMatch[]) {
   return kept;
 }
 
-function clickedMatch(candidates: PlayerDetectionMatch[], click: Point) {
-  return candidates.filter(({ box }) => containsPoint(box, click)).sort((left, right) => {
-    const leftDistance = Math.hypot(click.x - (left.box.x + left.box.width / 2), click.y - (left.box.y + left.box.height / 2));
-    const rightDistance = Math.hypot(click.x - (right.box.x + right.box.width / 2), click.y - (right.box.y + right.box.height / 2));
+function isNearPlayerFeet(box: NormalizedBox, point: Point) {
+  const horizontalPadding = Math.max(.006, box.width * .35);
+  const verticalPadding = Math.max(.008, box.height * .18);
+  return point.x >= box.x - horizontalPadding
+    && point.x <= box.x + box.width + horizontalPadding
+    && point.y >= box.y + box.height * .52
+    && point.y <= box.y + box.height + verticalPadding;
+}
+
+function clickedMatch(candidates: PlayerDetectionMatch[], click: Point, clickAnchor: "body" | "feet" = "body") {
+  return candidates.filter(({ box }) => clickAnchor === "feet" ? isNearPlayerFeet(box, click) : containsPoint(box, click)).sort((left, right) => {
+    const leftAnchor = clickAnchor === "feet" ? { x: left.box.x + left.box.width / 2, y: left.box.y + left.box.height } : { x: left.box.x + left.box.width / 2, y: left.box.y + left.box.height / 2 };
+    const rightAnchor = clickAnchor === "feet" ? { x: right.box.x + right.box.width / 2, y: right.box.y + right.box.height } : { x: right.box.x + right.box.width / 2, y: right.box.y + right.box.height / 2 };
+    const leftDistance = Math.hypot(click.x - leftAnchor.x, click.y - leftAnchor.y);
+    const rightDistance = Math.hypot(click.x - rightAnchor.x, click.y - rightAnchor.y);
     const leftCost = leftDistance / Math.max(.01, left.box.height) - left.detection.score * .28;
     const rightCost = rightDistance / Math.max(.01, right.box.height) - right.detection.score * .28;
     return leftCost - rightCost;
   })[0];
 }
 
-async function detectPlayerAtPoint(frame: HTMLCanvasElement, click: Point) {
+async function detectPlayerAtPoint(frame: HTMLCanvasElement, click: Point, clickAnchor: "body" | "feet" = "body") {
   const candidates: PlayerDetectionMatch[] = [];
   const cropSpecs = [
     { width: .085, height: .22 },
@@ -178,7 +189,7 @@ async function detectPlayerAtPoint(frame: HTMLCanvasElement, click: Point) {
     { width: .25, height: .48 },
   ];
   for (const spec of cropSpecs) {
-    const crop = makeDetectionCrop(frame, click, spec.width, spec.height);
+    const crop = makeDetectionCrop(frame, click, spec.width, spec.height, clickAnchor === "feet" ? .82 : .5);
     const detections = await detectPlayers(crop.canvas, { maxNumBoxes: 30, minScore: .1 });
     candidates.push(...detections.map((detection) => ({
       detection,
@@ -192,7 +203,7 @@ async function detectPlayerAtPoint(frame: HTMLCanvasElement, click: Point) {
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   }
   let boxes = deduplicateDetections(candidates);
-  let match = clickedMatch(boxes, click);
+  let match = clickedMatch(boxes, click, clickAnchor);
   let usedFullFrame = false;
   if (!match) {
     usedFullFrame = true;
@@ -207,7 +218,7 @@ async function detectPlayerAtPoint(frame: HTMLCanvasElement, click: Point) {
       },
     }));
     boxes = deduplicateDetections([...boxes, ...fullBoxes]);
-    match = clickedMatch(fullBoxes, click);
+    match = clickedMatch(fullBoxes, click, clickAnchor);
   }
   return { match, boxes, usedFullFrame };
 }
@@ -275,7 +286,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       : type === "playerLabel"
       ? { stroke: "#ffffff", fill: "#ffffff", strokeWidth: 2, shadowColor: "#000000", shadowBlur: 6, shadowOpacity: .65 }
       : type === "playerRing"
-      ? { stroke: "#f7f8f2", fill: "#1454c4", strokeWidth: 3, shadowColor: "#f1e72b", shadowBlur: 22, shadowOpacity: .82 }
+      ? { stroke: "#f7f8f2", fill: "#1454c4", strokeWidth: 3, shadowColor: "#f1e72b", shadowBlur: 0, shadowOpacity: 0, shadowOffsetX: 0, shadowOffsetY: 0 }
       : type === "ghost"
         ? { stroke: "#ffffff", fill: "#ffffff14", strokeWidth: 3, shadowColor: "#ffffff", shadowBlur: 14, shadowOpacity: .7 }
       : type === "spotlight"
@@ -353,16 +364,37 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     );
   };
 
+  const createApproximateRingForPlayer = (foot: Point) => {
+    const boxHeight = clamp(.055 + foot.y * .16, .06, .22);
+    const boxWidth = boxHeight * .46 * height / Math.max(1, width);
+    const bbox: NormalizedBox = {
+      x: clamp(foot.x - boxWidth / 2, 0, 1 - boxWidth),
+      y: clamp(foot.y - boxHeight * .94, 0, 1 - boxHeight),
+      width: boxWidth,
+      height: boxHeight,
+    };
+    const track: PlayerTrack = {
+      id: createId(),
+      name: `Jogador ${drawings.filter((item) => item.target?.kind === "player").length + 1}`,
+      source: "manual",
+      status: "ready",
+      samples: [{ time: currentTime, bbox, foot, confidence: .18 }],
+    };
+    addPlayerTrack(track);
+    createRingForPlayer({ track, sample: track.samples[0] });
+  };
+
   const identifyPlayerAtClick = async (click: Point, mode: "ring" | "identify" | "identifyKeepTool" = "ring"): Promise<IdentifiedPlayer | null> => {
     if (detectingPlayer) return null;
+    const showIdentificationAnimation = mode !== "ring";
     const existingTrack = [...(activeVideoContent?.playerTracks ?? [])].reverse().find((track) => {
       if (!track.samples.length) return false;
       const sample = samplePlayerTrackAtTime(track, currentTime);
-      return Math.abs(sample.time - currentTime) < .05 && containsPoint(sample.bbox, click);
+      return Math.abs(sample.time - currentTime) < .05 && (mode === "ring" ? isNearPlayerFeet(sample.bbox, click) : containsPoint(sample.bbox, click));
     });
     if (existingTrack) {
       const identified = { track: existingTrack, sample: samplePlayerTrackAtTime(existingTrack, currentTime) };
-      setDetectionEffect({ phase: "locked", click, box: identified.sample.bbox, score: identified.sample.confidence });
+      if (showIdentificationAnimation) setDetectionEffect({ phase: "locked", click, box: identified.sample.bbox, score: identified.sample.confidence });
       setDetectionMessage(`${existingTrack.name} reconhecido neste fotograma`);
       if (mode === "ring") createRingForPlayer(identified);
       else if (mode === "identify") setTool("select");
@@ -371,10 +403,10 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     }
 
     const video = getVideoElement?.();
-    setDetectionEffect({ phase: "scanning", click });
+    if (showIdentificationAnimation) setDetectionEffect({ phase: "scanning", click });
     if (!video || !video.videoWidth || !video.videoHeight || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
       setDetectionMessage("O fotograma do vídeo ainda não está pronto.");
-      setDetectionEffect({ phase: "failed", click });
+      if (showIdentificationAnimation) setDetectionEffect({ phase: "failed", click });
       window.setTimeout(() => { setDetectionMessage(null); setDetectionEffect(null); }, 2600);
       return null;
     }
@@ -385,7 +417,8 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     try {
       const frame = captureVideoFrame(video);
       setDetectionMessage("A analisar regiões de alta resolução à volta do clique…");
-      const { match, boxes, usedFullFrame } = await detectPlayerAtPoint(frame, click);
+      const clickAnchor = mode === "ring" ? "feet" : "body";
+      const { match, boxes, usedFullFrame } = await detectPlayerAtPoint(frame, click, clickAnchor);
       if (usedFullFrame) setDetectionMessage("A confirmar o jogador no fotograma completo…");
       setDetectionMessage(match ? "A criar o contorno individual do jogador…" : "A tentar segmentar diretamente o ponto selecionado…");
       const segmented = await segmentPlayerAtPoint(
@@ -394,14 +427,20 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         match?.box,
         match?.detection.score ?? .2,
         currentTime,
+        { clickAnchor },
       ).catch(() => null);
 
       if (!match && !segmented) {
         setDetectionBoxes([]);
-        setDetectionEffect({ phase: "failed", click });
-        setDetectionMessage(boxes.length
-          ? "Não consegui isolar esse jogador. Tente clicar no centro do tronco."
-          : "O jogador é demasiado pequeno ou não tem píxeis suficientes para criar um contorno fiável.");
+        if (mode === "ring") {
+          createApproximateRingForPlayer(click);
+          setDetectionMessage("Ring colocado nos pés. Não foi possível isolar a silhueta, por isso pode ajustá-lo manualmente.");
+        } else {
+          setDetectionEffect({ phase: "failed", click });
+          setDetectionMessage(boxes.length
+            ? "Não consegui isolar esse jogador. Tente clicar no centro do tronco."
+            : "O jogador é demasiado pequeno ou não tem píxeis suficientes para criar um contorno fiável.");
+        }
         window.setTimeout(() => { setDetectionMessage(null); setDetectionBoxes([]); setDetectionEffect(null); }, 4200);
         return null;
       }
@@ -412,7 +451,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         x: clamp(click.x * .72 + (box.x + box.width / 2) * .28, 0, 1),
         y: clamp(box.y + box.height, 0, 1),
       };
-      setDetectionEffect({ phase: "locked", click, box, score: confidence });
+      if (showIdentificationAnimation) setDetectionEffect({ phase: "locked", click, box, score: confidence });
       setDetectionMessage(segmented
         ? segmented.mask.quality < .5
           ? `Jogador segmentado · qualidade ${Math.round(segmented.mask.quality * 100)}% · detalhe limitado pelos píxeis do vídeo`
@@ -431,20 +470,28 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         samples: [{ time: currentTime, bbox: box, foot, confidence, mask: segmented?.mask }],
       };
       addPlayerTrack(track);
-      makeDrawing(
-        "identifyPlayer",
-        { kind: "identifyPlayer", center: foot, radiusX: Math.max(radiusX * .72, .025), radiusY: Math.max(radiusY * .72, .01) },
-        { target: { kind: "player", trackId: track.id, anchor: "feet", referenceFoot: foot }, trackingEnabled: false, keepTool: true },
-      );
-      if (mode === "ring") createRingForPlayer({ track, sample: track.samples[0] });
-      else if (mode === "identify") setTool("select");
+      if (mode === "ring") {
+        createRingForPlayer({ track, sample: track.samples[0] });
+      } else {
+        makeDrawing(
+          "identifyPlayer",
+          { kind: "identifyPlayer", center: foot, radiusX: Math.max(radiusX * .72, .025), radiusY: Math.max(radiusY * .72, .01) },
+          { target: { kind: "player", trackId: track.id, anchor: "feet", referenceFoot: foot }, trackingEnabled: false, keepTool: mode === "identifyKeepTool" },
+        );
+        if (mode === "identify") setTool("select");
+      }
       setDetectionBoxes([]);
       window.setTimeout(() => { setDetectionMessage(null); setDetectionEffect(null); }, 1500);
       return { track, sample: track.samples[0] };
     } catch {
       setDetectionBoxes([]);
-      setDetectionEffect({ phase: "failed", click });
-      setDetectionMessage("Não foi possível analisar este fotograma. Confirme o acesso ao vídeo e tente novamente.");
+      if (mode === "ring") {
+        createApproximateRingForPlayer(click);
+        setDetectionMessage("Ring colocado no ponto clicado. Pode movê-lo e redimensioná-lo manualmente.");
+      } else {
+        setDetectionEffect({ phase: "failed", click });
+        setDetectionMessage("Não foi possível analisar este fotograma. Confirme o acesso ao vídeo e tente novamente.");
+      }
       window.setTimeout(() => { setDetectionMessage(null); setDetectionEffect(null); }, 4200);
       return null;
     } finally {

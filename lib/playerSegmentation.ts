@@ -44,12 +44,12 @@ async function loadModel() {
   return modelPromise;
 }
 
-function manualPlayerBox(frame: HTMLCanvasElement, click: Point): NormalizedBox {
+function manualPlayerBox(frame: HTMLCanvasElement, click: Point, clickAnchor: "body" | "feet"): NormalizedBox {
   const height = clamp(.055 + click.y * .16, .06, .22);
   const width = height * .46 * frame.height / frame.width;
   return {
     x: clamp(click.x - width / 2, 0, 1 - width),
-    y: clamp(click.y - height * .48, 0, 1 - height),
+    y: clamp(click.y - height * (clickAnchor === "feet" ? .94 : .48), 0, 1 - height),
     width,
     height,
   };
@@ -294,13 +294,21 @@ export async function segmentPlayerAtPoint(
   detectedBox: NormalizedBox | undefined,
   detectionConfidence: number,
   frameTime: number,
+  options?: { clickAnchor?: "body" | "feet" },
 ): Promise<PlayerSegmentationResult | null> {
   const startedAt = performance.now();
-  const playerBox = detectedBox ?? manualPlayerBox(frame, click);
+  const clickAnchor = options?.clickAnchor ?? "body";
+  const playerBox = detectedBox ?? manualPlayerBox(frame, click, clickAnchor);
   const region = segmentationRegion(playerBox);
   const input = inferenceCanvas(frame, region, playerBox);
-  const clickX = (click.x - region.x) / region.width * input.width;
-  const clickY = (click.y - region.y) / region.height * input.height;
+  const seed = clickAnchor === "feet" && detectedBox
+    ? {
+        x: clamp(click.x * .68 + (detectedBox.x + detectedBox.width / 2) * .32, detectedBox.x, detectedBox.x + detectedBox.width),
+        y: Math.min(click.y, detectedBox.y + detectedBox.height * .94),
+      }
+    : click;
+  const clickX = (seed.x - region.x) / region.width * input.width;
+  const clickY = (seed.y - region.y) / region.height * input.height;
   const model = await loadModel();
   const shared = {
     flipHorizontal: false,

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { ArrowDown, ArrowUp, Copy, LocateFixed, Star, Trash2 } from "lucide-react";
 import { useEditorStore } from "@/store/useEditorStore";
 import type { ActionLabel, LineDesign, PlayerLabel, PlayerRingDesign, TextDesign, ZoneDesign } from "@/types/drawing";
@@ -26,6 +27,7 @@ function withFillOpacity(color: string, opacity: number) {
 
 export function PropertiesPanel() {
   const { drawings, selectedId, updateDrawing, removeDrawing, duplicateDrawing, moveDrawingLayer, saveDrawingAsFavorite, slides, selectedSlideId, updateSlide, setPlayerTrackStatus, currentTime, duration: videoDuration } = useEditorStore();
+  const [favoriteEditor, setFavoriteEditor] = useState({ drawingId: "", name: "" });
   const object = drawings.find((drawing) => drawing.id === selectedId);
   const activeSlide = slides.find((slide) => slide.id === selectedSlideId);
 
@@ -51,6 +53,7 @@ export function PropertiesPanel() {
   }
 
   const updateStyle = (patch: Partial<typeof object.style>) => updateDrawing(object.id, { style: { ...object.style, ...patch } });
+  const favoriteName = favoriteEditor.drawingId === object.id ? favoriteEditor.name : object.name;
   const updateTransform = (patch: Partial<typeof object.transform>) => updateDrawing(object.id, { transform: { ...object.transform, ...patch } });
   const updatePlayerLabel = (patch: Partial<PlayerLabel>) => {
     if (object.data.kind !== "playerRing" && object.data.kind !== "playerLabel") return;
@@ -180,7 +183,7 @@ export function PropertiesPanel() {
         {object.data.kind === "playerRing" && (
           <>
             <label className="toggle-row">
-              <span><FieldLabel>Mostrar anel</FieldLabel><small>O tracking continua mesmo sem o anel</small></span>
+              <span><FieldLabel>Mostrar anel</FieldLabel><small>Identificação apenas neste fotograma</small></span>
               <input type="checkbox" checked={object.data.showRing !== false} onChange={(event) => updatePlayerRingAppearance({ showRing: event.target.checked })} />
               <span />
             </label>
@@ -486,7 +489,24 @@ export function PropertiesPanel() {
       </section>
 
       <div className="property-actions">
-        <button className="secondary-button favorite-save-button" onClick={() => saveDrawingAsFavorite(object.id)}><Star size={15} /> Guardar favorito</button>
+        <div className="favorite-save-editor">
+          <label>
+            <span>Nome do favorito</span>
+            <input
+              type="text"
+              maxLength={48}
+              value={favoriteName}
+              placeholder="Ex.: Ring amarelo"
+              onChange={(event) => setFavoriteEditor({ drawingId: object.id, name: event.target.value })}
+            />
+          </label>
+          <button
+            type="button"
+            className="secondary-button favorite-save-button"
+            disabled={!favoriteName.trim()}
+            onClick={() => saveDrawingAsFavorite(object.id, favoriteName)}
+          ><Star size={15} /> Guardar nos favoritos</button>
+        </div>
         <button className="secondary-button" disabled={layerIndex === drawings.length - 1} onClick={() => moveDrawingLayer(object.id, 1)}><ArrowUp size={15} /> Mover para cima</button>
         <button className="secondary-button" disabled={layerIndex <= 0} onClick={() => moveDrawingLayer(object.id, -1)}><ArrowDown size={15} /> Mover para baixo</button>
         <button className="secondary-button" onClick={() => duplicateDrawing(object.id)}><Copy size={15} /> Duplicar</button>
