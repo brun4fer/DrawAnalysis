@@ -25,8 +25,11 @@ interface EditorState {
   selectedSlideId: string | null;
   favorites: ToolFavorite[];
   activeFavoriteId: string | null;
+  ringReidentifyId: string | null;
   favoriteStorageKey: string;
   setTool: (tool: Tool) => void;
+  beginRingReidentify: (drawingId: string) => void;
+  cancelRingReidentify: () => void;
   setSelectedId: (id: string | null) => void;
   setCurrentTime: (time: number) => void;
   setDuration: (duration: number) => void;
@@ -97,8 +100,19 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   selectedSlideId: initialSlide.id,
   favorites: [],
   activeFavoriteId: null,
+  ringReidentifyId: null,
   favoriteStorageKey: DEFAULT_FAVORITES_KEY,
-  setTool: (tool) => set({ tool, activeFavoriteId: null }),
+  setTool: (tool) => set((state) => ({
+    tool,
+    activeFavoriteId: null,
+    ringReidentifyId: tool === "playerRing" ? state.ringReidentifyId : null,
+  })),
+  beginRingReidentify: (drawingId) => set((state) => {
+    const drawing = state.drawings.find((item) => item.id === drawingId);
+    if (drawing?.data.kind !== "playerRing") return state;
+    return { tool: "playerRing", activeFavoriteId: null, selectedId: drawingId, ringReidentifyId: drawingId };
+  }),
+  cancelRingReidentify: () => set({ ringReidentifyId: null }),
   setSelectedId: (selectedId) => set({ selectedId }),
   setCurrentTime: (currentTime) => set({ currentTime }),
   setDuration: (duration) => set({ duration }),
@@ -173,6 +187,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       history: [...state.history, { drawings: copy(state.drawings), slides: copySlides(state.slides) }].slice(-80),
       future: [], drawings, slides: withVideoDrawings(state.slides, state.selectedSlideId, drawings),
       selectedId: state.selectedId === id ? null : state.selectedId,
+      ringReidentifyId: state.ringReidentifyId === id ? null : state.ringReidentifyId,
     };
   }),
   duplicateDrawing: (id) => {
@@ -225,6 +240,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       future: [{ drawings: copy(state.drawings), slides: copySlides(state.slides) }, ...state.future],
       selectedId: previous.drawings.some((item) => item.id === state.selectedId) ? state.selectedId : null,
       selectedSlideId,
+      ringReidentifyId: null,
     };
   }),
   redo: () => set((state) => {
@@ -240,6 +256,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       future: state.future.slice(1),
       selectedId: next.drawings.some((item) => item.id === state.selectedId) ? state.selectedId : null,
       selectedSlideId,
+      ringReidentifyId: null,
     };
   }),
   reset: () => set((state) => ({
@@ -248,6 +265,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     drawings: [],
     slides: withVideoDrawings(state.slides, state.selectedSlideId, []),
     selectedId: null,
+    ringReidentifyId: null,
     currentTime: 0,
   })),
   addSlide: (slide) => set((state) => ({
@@ -256,6 +274,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     slides: [...state.slides, slide],
     selectedSlideId: slide.id,
     selectedId: null,
+    ringReidentifyId: null,
     drawings: slide.content.kind === "video" ? copy(slide.content.drawings) : state.drawings,
   })),
   updateSlide: (id, patch) => set((state) => ({
@@ -288,6 +307,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       history: [...state.history, { drawings: copy(state.drawings), slides: copySlides(state.slides) }].slice(-80),
       future: [], slides, selectedSlideId: duplicate.id,
       selectedId: null,
+      ringReidentifyId: null,
       drawings: duplicate.content.kind === "video" ? copy(duplicate.content.drawings) : state.drawings,
     });
   },
@@ -319,6 +339,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     return {
       selectedSlideId,
       selectedId: null,
+      ringReidentifyId: null,
       drawings: slide?.content.kind === "video" ? copy(slide.content.drawings) : state.drawings,
     };
   }),
@@ -331,6 +352,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedSlideId,
       drawings: first?.content.kind === "video" ? copy(first.content.drawings) : [],
       selectedId: null,
+      ringReidentifyId: null,
       currentTime: 0,
       duration: 0,
       isPlaying: false,
@@ -439,6 +461,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   }),
   activateFavorite: (favoriteId) => set((state) => {
     const favorite = state.favorites.find((item) => item.id === favoriteId);
-    return favorite ? { activeFavoriteId: favorite.id, tool: favorite.type } : state;
+    return favorite ? { activeFavoriteId: favorite.id, tool: favorite.type, ringReidentifyId: null } : state;
   }),
 }));

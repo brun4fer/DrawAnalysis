@@ -26,7 +26,7 @@ function withFillOpacity(color: string, opacity: number) {
 }
 
 export function PropertiesPanel() {
-  const { drawings, selectedId, updateDrawing, removeDrawing, duplicateDrawing, moveDrawingLayer, saveDrawingAsFavorite, slides, selectedSlideId, updateSlide, setPlayerTrackStatus, currentTime, duration: videoDuration } = useEditorStore();
+  const { drawings, selectedId, updateDrawing, removeDrawing, duplicateDrawing, moveDrawingLayer, saveDrawingAsFavorite, slides, selectedSlideId, updateSlide, setPlayerTrackStatus, beginRingReidentify, ringReidentifyId, currentTime, duration: videoDuration } = useEditorStore();
   const [favoriteEditor, setFavoriteEditor] = useState({ drawingId: "", name: "" });
   const object = drawings.find((drawing) => drawing.id === selectedId);
   const activeSlide = slides.find((slide) => slide.id === selectedSlideId);
@@ -73,7 +73,7 @@ export function PropertiesPanel() {
     if (object.data.kind !== "playerRing" && object.data.kind !== "playerLabel") return;
     updateDrawing(object.id, { data: { ...object.data, labelOffsetY: Math.max(.03, Math.min(.55, labelOffsetY)) } });
   };
-  const updatePlayerRingAppearance = (patch: { ringDesign?: PlayerRingDesign; spinEnabled?: boolean; spinSpeed?: number; showRing?: boolean; splashEnabled?: boolean; splashSpeed?: number }) => {
+  const updatePlayerRingAppearance = (patch: { ringDesign?: PlayerRingDesign; spinEnabled?: boolean; spinSpeed?: number; showRing?: boolean; splashEnabled?: boolean; splashSpeed?: number; radiusX?: number; radiusY?: number }) => {
     if (object.data.kind !== "playerRing") return;
     updateDrawing(object.id, { data: { ...object.data, ...patch } });
   };
@@ -182,6 +182,12 @@ export function PropertiesPanel() {
         <h3>APARÊNCIA</h3>
         {object.data.kind === "playerRing" && (
           <>
+            <div className="ring-identification-actions">
+              <p>O ring usa os pés como referência. Se escolheu o jogador errado, volte a clicar nos pés sem perder o desenho atual.</p>
+              <button type="button" className="secondary-button" onClick={() => beginRingReidentify(object.id)}>
+                <LocateFixed size={14} /> {ringReidentifyId === object.id ? "A aguardar novo clique…" : "Identificar novamente"}
+              </button>
+            </div>
             <label className="toggle-row">
               <span><FieldLabel>Mostrar anel</FieldLabel><small>Identificação apenas neste fotograma</small></span>
               <input type="checkbox" checked={object.data.showRing !== false} onChange={(event) => updatePlayerRingAppearance({ showRing: event.target.checked })} />
@@ -218,6 +224,14 @@ export function PropertiesPanel() {
                 <input type="range" min={.35} max={2.5} step={.05} value={object.data.splashSpeed ?? 1} onChange={(event) => updatePlayerRingAppearance({ splashSpeed: Number(event.target.value) })} />
               </label>
             )}
+            <label className="stacked-field">
+              <span><FieldLabel>Largura do ring</FieldLabel><b>{(object.data.radiusX * 200).toFixed(1)}%</b></span>
+              <input type="range" min={.008} max={.15} step={.001} value={object.data.radiusX} onChange={(event) => updatePlayerRingAppearance({ radiusX: Number(event.target.value) })} />
+            </label>
+            <label className="stacked-field">
+              <span><FieldLabel>Profundidade do ring</FieldLabel><b>{(object.data.radiusY * 200).toFixed(1)}%</b></span>
+              <input type="range" min={.004} max={.06} step={.001} value={object.data.radiusY} onChange={(event) => updatePlayerRingAppearance({ radiusY: Number(event.target.value) })} />
+            </label>
           </>
         )}
         {supportsPatternFill && (

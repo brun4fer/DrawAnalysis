@@ -6,7 +6,7 @@ import { useEditorStore } from "@/store/useEditorStore";
 import { TOOLS } from "@/components/tools/toolDefinitions";
 
 export function ToolRail() {
-  const { tool, setTool, favorites, activeFavoriteId, activateFavorite, renameFavorite, moveFavorite, removeFavorite } = useEditorStore();
+  const { tool, setTool, favorites, activeFavoriteId, ringReidentifyId, activateFavorite, renameFavorite, moveFavorite, removeFavorite } = useEditorStore();
   const [editingFavoriteId, setEditingFavoriteId] = useState<string | null>(null);
   const [favoriteName, setFavoriteName] = useState("");
   const hint = tool === "polygon"
@@ -22,7 +22,7 @@ export function ToolRail() {
             : tool === "identifyPlayer"
               ? "Clique no jogador · guardar identidade"
               : tool === "playerRing"
-                ? "Pause e clique nos pés do jogador"
+                ? ringReidentifyId ? "Clique novamente nos pés do jogador" : "Pause e clique nos pés do jogador"
                 : tool === "ghost"
                   ? "Clique no jogador · indique a nova posição"
                   : tool === "spotlight"

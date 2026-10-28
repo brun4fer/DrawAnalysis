@@ -7,7 +7,14 @@ type BinarySegmentation = {
   width: number;
   height: number;
   data: ArrayLike<number>;
-  pose?: { score?: number };
+  pose?: {
+    score?: number;
+    keypoints?: Array<{
+      part: string;
+      score: number;
+      position: { x: number; y: number };
+    }>;
+  };
 };
 
 type BodyPixModel = {
@@ -45,8 +52,8 @@ async function loadModel() {
 }
 
 function manualPlayerBox(frame: HTMLCanvasElement, click: Point, clickAnchor: "body" | "feet"): NormalizedBox {
-  const height = clamp(.055 + click.y * .16, .06, .22);
-  const width = height * .46 * frame.height / frame.width;
+  const height = clamp(.035 + click.y * .1, .045, .15);
+  const width = height * .42 * frame.height / frame.width;
   return {
     x: clamp(click.x - width / 2, 0, 1 - width),
     y: clamp(click.y - height * (clickAnchor === "feet" ? .94 : .48), 0, 1 - height),
@@ -56,10 +63,10 @@ function manualPlayerBox(frame: HTMLCanvasElement, click: Point, clickAnchor: "b
 }
 
 function segmentationRegion(box: NormalizedBox): NormalizedBox {
-  const left = clamp(box.x - box.width * .75, 0, 1);
-  const top = clamp(box.y - box.height * .22, 0, 1);
-  const right = clamp(box.x + box.width * 1.75, 0, 1);
-  const bottom = clamp(box.y + box.height * 1.18, 0, 1);
+  const left = clamp(box.x - box.width * .55, 0, 1);
+  const top = clamp(box.y - box.height * .16, 0, 1);
+  const right = clamp(box.x + box.width * 1.55, 0, 1);
+  const bottom = clamp(box.y + box.height * 1.12, 0, 1);
   return { x: left, y: top, width: right - left, height: bottom - top };
 }
 
@@ -162,14 +169,40 @@ function connectedComponent(data: ArrayLike<number>, width: number, height: numb
   return area ? { data: component, area, minX, minY, maxX, maxY } : null;
 }
 
-function targetComponent(segmentations: BinarySegmentation[], clickX: number, clickY: number) {
+function targetComponent(segmentations: BinarySegmentation[], clickX: number, clickY: number, clickAnchor: "body" | "feet") {
   return segmentations.map((segmentation) => {
     const seed = nearestForeground(segmentation.data, segmentation.width, segmentation.height, clickX, clickY);
     if (!seed) return null;
     const component = connectedComponent(segmentation.data, segmentation.width, segmentation.height, seed.index);
-    return component ? { segmentation, component, distance: seed.distance } : null;
+    if (!component) return null;
+    const componentWidth = component.maxX - component.minX + 1;
+    const componentHeight = component.maxY - component.minY + 1;
+    const ground = (() => {
+      const bottoms: Array<{ x: number; y: number }> = [];
+      for (let x = component.minX; x <= component.maxX; x += 1) {
+        for (let y = component.maxY; y >= component.minY; y -= 1) {
+          if (!component.data[y * segmentation.width + x]) continue;
+          bottoms.push({ x, y });
+          break;
+        }
+      }
+      if (!bottoms.length) return { x: (component.minX + component.maxX) / 2, y: component.maxY };
+      const sortedY = bottoms.map((point) => point.y).sort((left, right) => left - right);
+      const robustY = sortedY[Math.min(sortedY.length - 1, Math.floor(sortedY.length * .88))];
+      const band = Math.max(2, Math.round(componentHeight * .055));
+      const support = bottoms.filter((point) => point.y >= robustY - band);
+      return {
+        x: support.reduce((total, point) => total + point.x, 0) / Math.max(1, support.length),
+        y: robustY,
+      };
+    })();
+    const seedCost = seed.distance / Math.max(6, componentHeight * .12);
+    const footCost = Math.abs(ground.x - clickX) / Math.max(6, componentWidth * .75)
+      + Math.abs(ground.y - clickY) / Math.max(6, componentHeight * .16) * 1.8;
+    const poseBonus = (segmentation.pose?.score ?? 0) * .18;
+    return { segmentation, component, distance: clickAnchor === "feet" ? footCost + seedCost * .18 - poseBonus : seedCost - poseBonus };
   }).filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate))
-    .sort((left, right) => left.distance - right.distance || right.component.area - left.component.area)[0] ?? null;
+    .sort((left, right) => left.distance - right.distance || left.component.area - right.component.area)[0] ?? null;
 }
 
 function createMaskAssets(
@@ -180,6 +213,7 @@ function createMaskAssets(
   frameTime: number,
   method: PlayerSegmentationMask["method"],
   detectionConfidence: number,
+  clickX: number,
 ) {
   const padding = Math.max(2, Math.round(Math.max(component.maxX - component.minX, component.maxY - component.minY) * .012));
   const left = Math.max(0, component.minX - padding);
@@ -252,19 +286,39 @@ function createMaskAssets(
     width: (component.maxX - component.minX + 1) / segmentation.width * region.width,
     height: (component.maxY - component.minY + 1) / segmentation.height * region.height,
   };
-  const groundStart = component.maxY - Math.max(2, Math.round((component.maxY - component.minY) * .08));
-  let groundX = 0;
-  let groundCount = 0;
-  for (let y = Math.max(component.minY, groundStart); y <= component.maxY; y += 1) {
+  const ground = (() => {
+    const bottoms: Array<{ x: number; y: number }> = [];
     for (let x = component.minX; x <= component.maxX; x += 1) {
-      if (!component.data[y * segmentation.width + x]) continue;
-      groundX += x;
-      groundCount += 1;
+      for (let y = component.maxY; y >= component.minY; y -= 1) {
+        if (!component.data[y * segmentation.width + x]) continue;
+        bottoms.push({ x, y });
+        break;
+      }
     }
-  }
+    if (!bottoms.length) return { x: (component.minX + component.maxX) / 2, y: component.maxY };
+    const sortedY = bottoms.map((point) => point.y).sort((left, right) => left - right);
+    const robustY = sortedY[Math.min(sortedY.length - 1, Math.floor(sortedY.length * .9))];
+    const band = Math.max(2, Math.round((component.maxY - component.minY + 1) * .055));
+    const nearClick = bottoms.filter((point) => point.y >= robustY - band && Math.abs(point.x - clickX) <= Math.max(8, (component.maxX - component.minX + 1) * .68));
+    const support = nearClick.length ? nearClick : bottoms.filter((point) => point.y >= robustY - band);
+    return {
+      x: support.reduce((total, point) => total + point.x, 0) / Math.max(1, support.length),
+      y: robustY,
+    };
+  })();
+  const ankles = (segmentation.pose?.keypoints ?? []).filter((keypoint) =>
+    (keypoint.part === "leftAnkle" || keypoint.part === "rightAnkle")
+    && keypoint.score >= .12
+    && keypoint.position.x >= component.minX - 3
+    && keypoint.position.x <= component.maxX + 3
+    && keypoint.position.y >= component.minY
+    && keypoint.position.y <= component.maxY + 5,
+  );
+  const ankleX = ankles.length ? ankles.reduce((total, keypoint) => total + keypoint.position.x, 0) / ankles.length : null;
+  const footX = ankleX === null ? ground.x : ground.x * .68 + ankleX * .32;
   const foot = {
-    x: clamp(region.x + (groundCount ? groundX / groundCount : (component.minX + component.maxX) / 2) / segmentation.width * region.width, 0, 1),
-    y: clamp(region.y + (component.maxY + 1) / segmentation.height * region.height, 0, 1),
+    x: clamp(region.x + footX / segmentation.width * region.width, 0, 1),
+    y: clamp(region.y + (ground.y + 1) / segmentation.height * region.height, 0, 1),
   };
   const fillRatio = component.area / Math.max(1, (component.maxX - component.minX + 1) * (component.maxY - component.minY + 1));
   const touchesBoundary = component.minX <= 1 || component.minY <= 1 || component.maxX >= segmentation.width - 2 || component.maxY >= segmentation.height - 2;
@@ -313,7 +367,7 @@ export async function segmentPlayerAtPoint(
   const shared = {
     flipHorizontal: false,
     internalResolution: "full",
-    segmentationThreshold: .56,
+    segmentationThreshold: clickAnchor === "feet" ? .6 : .56,
     maxDetections: 5,
     scoreThreshold: .12,
     nmsRadius: 18,
@@ -321,15 +375,31 @@ export async function segmentPlayerAtPoint(
     refineSteps: 15,
   };
   const instances = await model.segmentMultiPerson(input, shared);
-  let selected = targetComponent(instances, clickX, clickY);
-  let method: PlayerSegmentationMask["method"] = "bodypix-instance";
-  if (!selected) {
-    const semantic = await model.segmentPerson(input, shared);
-    selected = targetComponent([semantic], clickX, clickY);
-    method = "bodypix-semantic";
-  }
-  if (!selected) return null;
-  const result = createMaskAssets(frame, region, selected.segmentation, selected.component, frameTime, method, detectionConfidence);
-  result.mask.analysisMs = Math.round(performance.now() - startedAt);
-  return result;
+  const createPlausibleResult = (selected: ReturnType<typeof targetComponent>, method: PlayerSegmentationMask["method"]) => {
+    if (!selected) return null;
+    const result = createMaskAssets(frame, region, selected.segmentation, selected.component, frameTime, method, detectionConfidence, clickX);
+    const widthRatio = result.bbox.width / Math.max(.000001, playerBox.width);
+    const heightRatio = result.bbox.height / Math.max(.000001, playerBox.height);
+    const centerX = result.bbox.x + result.bbox.width / 2;
+    const expectedCenterX = playerBox.x + playerBox.width / 2;
+    const playerAspect = result.bbox.height * frame.height / Math.max(1, result.bbox.width * frame.width);
+    if (widthRatio > 1.7 || heightRatio > 1.42 || playerAspect < .72 || playerAspect > 7.5) return null;
+    if (Math.abs(centerX - expectedCenterX) > Math.max(playerBox.width * .9, .012)) return null;
+    if (clickAnchor === "feet") {
+      const maximumXShift = Math.max(playerBox.width * .72, 10 / frame.width);
+      const maximumYShift = Math.max(playerBox.height * .16, 7 / frame.height);
+      if (Math.abs(result.foot.x - click.x) > maximumXShift || Math.abs(result.foot.y - click.y) > maximumYShift) return null;
+      result.foot = {
+        x: click.x + clamp(result.foot.x - click.x, -maximumXShift, maximumXShift),
+        y: click.y + clamp(result.foot.y - click.y, -maximumYShift, maximumYShift),
+      };
+    }
+    result.mask.analysisMs = Math.round(performance.now() - startedAt);
+    return result;
+  };
+
+  const instanceResult = createPlausibleResult(targetComponent(instances, clickX, clickY, clickAnchor), "bodypix-instance");
+  if (instanceResult) return instanceResult;
+  const semantic = await model.segmentPerson(input, shared);
+  return createPlausibleResult(targetComponent([semantic], clickX, clickY, clickAnchor), "bodypix-semantic");
 }

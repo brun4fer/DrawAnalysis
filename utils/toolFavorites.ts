@@ -21,7 +21,7 @@ export function applyFavoriteData(base: DrawingData, favorite: ToolFavorite): Dr
     case "playerLabel":
       return base.kind === "playerLabel" ? { ...base, labelOffsetY: saved.labelOffsetY, label: structuredClone(saved.label) } : base;
     case "playerRing":
-      return base.kind === "playerRing" ? { ...base, radiusX: saved.radiusX, radiusY: saved.radiusY, occlusionWidth: saved.occlusionWidth, labelOffsetY: saved.labelOffsetY, label: saved.label ? structuredClone(saved.label) : undefined, ringDesign: saved.ringDesign, spinEnabled: saved.spinEnabled, spinSpeed: saved.spinSpeed, showRing: saved.showRing, splashEnabled: saved.splashEnabled, splashSpeed: saved.splashSpeed } : base;
+      return base.kind === "playerRing" ? { ...base, label: saved.label && base.label ? { ...structuredClone(saved.label), fontSize: base.label.fontSize } : base.label, ringDesign: saved.ringDesign, spinEnabled: saved.spinEnabled, spinSpeed: saved.spinSpeed, showRing: saved.showRing, splashEnabled: saved.splashEnabled, splashSpeed: saved.splashSpeed } : base;
     case "ghost":
       return base.kind === "ghost" ? { ...base, radiusX: saved.radiusX, radiusY: saved.radiusY, hideOriginal: saved.hideOriginal, playerOpacity: saved.playerOpacity, showArrow: saved.showArrow, showOrigin: saved.showOrigin, animateMovement: saved.animateMovement, returnToOrigin: saved.returnToOrigin, travelDuration: saved.travelDuration } : base;
     case "spotlight":

@@ -408,7 +408,7 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
             : "";
           const labelFontSize = (data.label?.fontSize ?? .032) * height;
           const labelY = Math.max(5, y - (data.labelOffsetY ?? .12) * height);
-          const labelWidth = Math.max(110, Math.min(420, labelText.length * labelFontSize * .72));
+          const labelWidth = Math.max(46, Math.min(420, labelText.length * labelFontSize * .72));
           const labelNode = data.label?.visible && labelText ? (
             <Group listening={false}>
               <Text
@@ -432,7 +432,7 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
                 points={[
                   x - Math.max(5, labelFontSize * .24), labelY + labelFontSize + 4,
                   x + Math.max(5, labelFontSize * .24), labelY + labelFontSize + 4,
-                  x, labelY + labelFontSize + Math.max(11, labelFontSize * .58),
+                  x, labelY + labelFontSize + Math.max(7, labelFontSize * .58),
                 ]}
                 closed
                 fill={data.label.color}
