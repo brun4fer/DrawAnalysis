@@ -29,7 +29,7 @@ export function PresentationMode({ onClose }: Props) {
   const initialIndex = Math.max(0, slides.findIndex((slide) => slide.id === selectedSlideId));
   const initialTime = durations.slice(0, initialIndex).reduce((total, duration) => total + duration, 0);
   const [playhead, setPlayhead] = useState(initialTime);
-  const [playing, setPlaying] = useState(true);
+  const [playing, setPlaying] = useState(slides[initialIndex]?.content.kind !== "tactical-board");
   const [tacticalAnimationEnd, setTacticalAnimationEnd] = useState<number | null>(null);
   const playheadRef = useRef(initialTime);
   const timerRef = useRef<number | null>(null);
@@ -39,6 +39,7 @@ export function PresentationMode({ onClose }: Props) {
   const active = getActiveSlide(playhead, durations);
   const slide = slides[active.index];
   const isTacticalBoard = slide?.content.kind === "tactical-board";
+  const activeSlideEnd = active.start + (durations[active.index] ?? 0);
 
   useEffect(() => {
     if (!playing || totalDuration <= 0 || (isTacticalBoard && tacticalAnimationEnd === null)) return;
@@ -50,15 +51,32 @@ export function PresentationMode({ onClose }: Props) {
       let next = playheadRef.current + delta;
       if (isTacticalBoard && tacticalAnimationEnd !== null && next >= tacticalAnimationEnd) {
         next = tacticalAnimationEnd;
+        const movementCount = slide.content.kind === "tactical-board" ? slide.content.movements?.length ?? 0 : 0;
+        const hold = slide.content.kind === "tactical-board" ? Math.max(0, slide.content.movementHoldDuration ?? .65) : 0;
+        const travel = slide.content.kind === "tactical-board" ? Math.max(.15, slide.content.movementDuration ?? 1.2) : 0;
+        const lastMovementEnd = movementCount > 0
+          ? active.start + hold + (movementCount - 1) * (travel + hold) + travel
+          : Number.POSITIVE_INFINITY;
+        if (next >= lastMovementEnd - .02 && active.index < slides.length - 1) {
+          const nextSlideStart = activeSlideEnd;
+          playheadRef.current = nextSlideStart;
+          setPlayhead(nextSlideStart);
+          setTacticalAnimationEnd(null);
+          setPlaying(slides[active.index + 1]?.content.kind !== "tactical-board");
+          return;
+        }
         playheadRef.current = next;
         setPlayhead(next);
         setTacticalAnimationEnd(null);
         setPlaying(false);
         return;
       }
-      if (next >= totalDuration) {
-        next = Math.max(0, totalDuration - .001);
+      if (next >= activeSlideEnd) {
+        next = Math.max(active.start, activeSlideEnd - .001);
+        playheadRef.current = next;
+        setPlayhead(next);
         setPlaying(false);
+        return;
       }
       playheadRef.current = next;
       startTransition(() => setPlayhead(next));
@@ -72,60 +90,70 @@ export function PresentationMode({ onClose }: Props) {
       timerRef.current = null;
       previousTickRef.current = null;
     };
-  }, [isTacticalBoard, playing, tacticalAnimationEnd, totalDuration]);
+  }, [active.index, active.start, activeSlideEnd, isTacticalBoard, playing, slide, slides, tacticalAnimationEnd, totalDuration]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const currentActive = getActiveSlide(playheadRef.current, durations);
       const currentSlide = slides[currentActive.index];
-      const currentIsTacticalBoard = currentSlide?.content.kind === "tactical-board";
+      const goToSlide = (index: number) => {
+        if (index < 0 || index >= slides.length) return;
+        const start = durations.slice(0, index).reduce((total, duration) => total + duration, 0);
+        playheadRef.current = start;
+        setPlayhead(start);
+        setTacticalAnimationEnd(null);
+        setPlaying(slides[index]?.content.kind !== "tactical-board");
+      };
       if (event.key === "Escape") { onClose(); return; }
       if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
         event.preventDefault();
-        if (currentIsTacticalBoard) return;
-        const direction = event.key === "ArrowLeft" ? -5 : 5;
-        const next = Math.max(0, Math.min(Math.max(0, totalDuration - .001), playheadRef.current + direction));
-        playheadRef.current = next;
-        setPlayhead(next);
+        if (currentSlide?.content.kind !== "tactical-board") {
+          goToSlide(currentActive.index + (event.key === "ArrowLeft" ? -1 : 1));
+          return;
+        }
+        if (tacticalAnimationEnd !== null) return;
+        const tacticalContent = currentSlide.content;
+        const movementCount = tacticalContent.movements?.length ?? 0;
+        const hold = Math.max(0, tacticalContent.movementHoldDuration ?? .65);
+        const travel = Math.max(.15, tacticalContent.movementDuration ?? 1.2);
+        const stepLength = travel + hold;
+        const completionTimes = Array.from({ length: movementCount }, (_, index) => hold + index * stepLength + travel);
+        const completedMovements = completionTimes.filter((targetTime) => currentActive.elapsed >= targetTime - .02).length;
+        if (event.key === "ArrowLeft") {
+          if (completedMovements <= 0) {
+            goToSlide(currentActive.index - 1);
+            return;
+          }
+          const previousStep = completedMovements - 1;
+          const targetElapsed = previousStep === 0 ? 0 : completionTimes[previousStep - 1];
+          const target = currentActive.start + targetElapsed;
+          playheadRef.current = target;
+          setPlayhead(target);
+          setPlaying(false);
+          return;
+        }
+        if (completedMovements < movementCount) {
+          const transitionStart = hold + completedMovements * stepLength;
+          const start = currentActive.start + transitionStart;
+          const end = start + travel;
+          playheadRef.current = start;
+          setPlayhead(start);
+          setTacticalAnimationEnd(end);
+          setPlaying(true);
+          return;
+        }
+        goToSlide(currentActive.index + 1);
         return;
       }
       if (event.code === "Space") {
         event.preventDefault();
         if (event.repeat) return;
-        if (currentSlide?.content.kind === "tactical-board") {
-          if (tacticalAnimationEnd !== null) return;
-          const movementCount = currentSlide.content.movements?.length ?? 0;
-          const hold = Math.max(0, currentSlide.content.movementHoldDuration ?? .65);
-          const travel = Math.max(.15, currentSlide.content.movementDuration ?? 1.2);
-          const stepLength = travel + hold;
-          const completedMovements = Array.from({ length: movementCount }, (_, index) => hold + index * stepLength + travel)
-            .filter((targetTime) => currentActive.elapsed >= targetTime - .02).length;
-          if (completedMovements < movementCount) {
-            const transitionStart = hold + completedMovements * stepLength;
-            const start = currentActive.start + transitionStart;
-            const end = start + travel;
-            playheadRef.current = start;
-            setPlayhead(start);
-            setTacticalAnimationEnd(end);
-            setPlaying(true);
-            return;
-          }
-          const nextSlideStart = currentActive.start + durations[currentActive.index];
-          if (currentActive.index < slides.length - 1) {
-            playheadRef.current = nextSlideStart;
-            setPlayhead(nextSlideStart);
-            setPlaying(true);
-          } else {
-            setPlaying(false);
-          }
-          return;
-        }
-        setPlaying((value) => !value);
+        if (currentSlide?.content.kind === "video") setPlaying((value) => !value);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [durations, onClose, slides, tacticalAnimationEnd, totalDuration]);
+  }, [durations, onClose, slides, tacticalAnimationEnd]);
 
   useEffect(() => {
     if (document.fullscreenElement) enteredFullscreenRef.current = true;
@@ -139,7 +167,7 @@ export function PresentationMode({ onClose }: Props) {
 
   if (!slide) return null;
   return (
-    <div className="presentation-mode presentation-builder-preview presentation-clean" aria-label="Pré-visualização em ecrã inteiro. No quadro tático, Espaço avança um movimento de cada vez.">
+    <div className="presentation-mode presentation-builder-preview presentation-clean" aria-label="Pré-visualização em ecrã inteiro. Use as setas para navegar e Espaço para reproduzir ou pausar vídeos.">
       <div className="presentation-content">
         <SlideRenderer slide={slide} interactive={false} presentationTime={active.elapsed} presentationPlaying={playing} />
       </div>

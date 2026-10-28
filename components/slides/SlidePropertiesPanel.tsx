@@ -30,7 +30,7 @@ export function SlidePropertiesPanel() {
       {slide.content.kind === "video" && <section className="property-section"><h3>VÍDEO / PLAY</h3><div className="video-slide-info"><span>{slide.content.fileName || "Nenhum vídeo carregado"}</span><small>As ferramentas de vídeo e as propriedades dos desenhos aparecem quando este slide está ativo.</small></div></section>}
       <section className="property-section">
         <h3>APRESENTAÇÃO</h3>
-        <label className="slide-prop-field"><span><Clock3 size={12} /> Duração</span><div><input type="number" min={1} max={60} step={.5} value={slide.duration} onChange={(event) => updateSlide(slide.id, { duration: Math.max(1, Number(event.target.value)) })} /><i>s</i></div></label>
+        <label className="slide-prop-field"><span><Clock3 size={12} /> Duração na exportação</span><div><input type="number" min={1} max={60} step={.5} value={slide.duration} onChange={(event) => updateSlide(slide.id, { duration: Math.max(1, Number(event.target.value)) })} /><i>s</i></div></label>
         <CaptionControls slide={slide} onChange={(patch) => updateSlide(slide.id, patch)} />
       </section>
     </aside>
@@ -239,7 +239,7 @@ function WrittenReportProperties({ content, onChange }: { content: WrittenReport
       <ColorPaletteField label="Fundo da descrição" value={content.panelColor ?? "#ffffff"} onChange={(panelColor) => onChange({ ...content, panelColor })} opacity={content.panelOpacity ?? 1} onOpacityChange={(panelOpacity) => onChange({ ...content, panelOpacity })} />
       <ColorPaletteField label="Cor do texto" value={content.textColor ?? "#101010"} onChange={(textColor) => onChange({ ...content, textColor })} />
       <ColorPaletteField label="Cor de destaque" value={content.accentColor ?? "#f04b2f"} onChange={(accentColor) => onChange({ ...content, accentColor })} />
-      <label className="stacked-field"><span><span className="field-label">Largura do campo</span><b>{Math.round((content.fieldRatio ?? .55) * 100)}%</b></span><input type="range" min={.45} max={.72} step={.01} value={content.fieldRatio ?? .55} onChange={(event) => onChange({ ...content, fieldRatio: Number(event.target.value) })} /></label>
+      <label className="stacked-field"><span><span className="field-label">Largura do campo</span><b>{Math.round((content.fieldRatio ?? .72) * 100)}%</b></span><input type="range" min={.45} max={.72} step={.01} value={content.fieldRatio ?? .72} onChange={(event) => onChange({ ...content, fieldRatio: Number(event.target.value) })} /></label>
     </Section>
     <Section title="CAMPO E EQUIPAS">
       <ColorPaletteField label="Fundo do campo" value={content.pitchColor ?? "#4f78a5"} onChange={(pitchColor) => onChange({ ...content, pitchColor })} />
@@ -383,7 +383,7 @@ function BoardProperties({ content, onChange }: { content: BoardSlideContent; on
     onChange({ ...content, players: [...content.players, player], selectedPlayerId: player.id });
   };
   const removeSelectedPlayer = () => {
-    if (!selectedPlayer || content.players.filter((player) => player.team === selectedPlayer.team).length <= 11) return;
+    if (!selectedPlayer) return;
     const players = content.players.filter((player) => player.id !== selectedPlayer.id);
     const nextMovements = movements.map((movement) => ({ ...movement, playerPositions: Object.fromEntries(Object.entries(movement.playerPositions).filter(([playerId]) => playerId !== selectedPlayer.id)) }));
     onChange({ ...content, players, movements: nextMovements, selectedPlayerId: players[0]?.id });
@@ -396,14 +396,16 @@ function BoardProperties({ content, onChange }: { content: BoardSlideContent; on
       <label className="slide-prop-field"><span>Espessura das linhas</span><div><input type="range" min={1} max={8} step={.5} value={content.pitchLineWidth ?? 4} onChange={(event) => onChange({ ...content, pitchLineWidth: Number(event.target.value) })} /><i>{content.pitchLineWidth ?? 4}px</i></div></label>
       <ColorPaletteField label="Botões equipa A" value={content.homeColor} onChange={(homeColor) => onChange({ ...content, homeColor })} />
       <ColorPaletteField label="Letras equipa A" value={content.homeTextColor ?? "#101010"} onChange={(homeTextColor) => onChange({ ...content, homeTextColor })} />
+      <label className="slide-check-field"><input type="checkbox" checked={content.showHomeTeam !== false} onChange={(event) => onChange({ ...content, showHomeTeam: event.target.checked })} /> Mostrar equipa A</label>
       <ColorPaletteField label="Botões equipa B" value={content.awayColor} onChange={(awayColor) => onChange({ ...content, awayColor })} />
       <ColorPaletteField label="Letras equipa B" value={content.awayTextColor ?? "#ffffff"} onChange={(awayTextColor) => onChange({ ...content, awayTextColor })} />
+      <label className="slide-check-field"><input type="checkbox" checked={content.showAwayTeam !== false} onChange={(event) => onChange({ ...content, showAwayTeam: event.target.checked })} /> Mostrar equipa B</label>
       <label className="slide-prop-field"><span>Tamanho dos botões</span><div><input type="range" min={.65} max={1.6} step={.05} value={content.playerSize ?? 1} onChange={(event) => onChange({ ...content, playerSize: Number(event.target.value) })} /><i>{Math.round((content.playerSize ?? 1) * 100)}%</i></div></label>
       <label className="slide-check-field"><input type="checkbox" checked={content.showBall ?? true} onChange={(event) => onChange({ ...content, showBall: event.target.checked })} /> Mostrar bola</label>
     </Section>
 
     <Section title="JOGADORES / BOTÕES">
-      <div className="board-player-actions"><select value={selectedPlayer?.id ?? ""} onChange={(event) => onChange({ ...content, selectedPlayerId: event.target.value })}>{content.players.map((player) => <option key={player.id} value={player.id}>{player.name || `Jogador ${player.number}`} · {player.team === "home" ? "A" : "B"}</option>)}</select><button type="button" onClick={addPlayer} title="Adicionar jogador"><Plus size={12} /></button><button type="button" onClick={removeSelectedPlayer} disabled={!selectedPlayer || content.players.filter((player) => player.team === selectedPlayer.team).length <= 11} title="Remover jogador"><Trash2 size={12} /></button></div>
+      <div className="board-player-actions"><select value={selectedPlayer?.id ?? ""} onChange={(event) => onChange({ ...content, selectedPlayerId: event.target.value })}>{content.players.map((player) => <option key={player.id} value={player.id}>{player.name || `Jogador ${player.number}`} · {player.team === "home" ? "A" : "B"}</option>)}</select><button type="button" onClick={addPlayer} title="Adicionar jogador"><Plus size={12} /></button><button type="button" onClick={removeSelectedPlayer} disabled={!selectedPlayer} title="Remover jogador"><Trash2 size={12} /></button></div>
       {selectedPlayer && <div className="board-selected-player">
         <div><input type="number" min={0} max={99} value={selectedPlayer.number} onChange={(event) => updatePlayer({ number: Number(event.target.value) })} /><input value={selectedPlayer.name} onChange={(event) => updatePlayer({ name: event.target.value })} /><select value={selectedPlayer.team} onChange={(event) => updatePlayer({ team: event.target.value as "home" | "away" })}><option value="home">Equipa A</option><option value="away">Equipa B</option></select></div>
         <ColorPaletteField label="Cor deste botão" value={selectedPlayer.buttonColor ?? (selectedPlayer.team === "home" ? content.homeColor : content.awayColor)} onChange={(buttonColor) => updatePlayer({ buttonColor })} />

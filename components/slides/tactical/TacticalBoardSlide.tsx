@@ -213,7 +213,9 @@ export function TacticalBoardSlide({ content, interactive = true, onChange, pres
   const state = presentationTime === undefined
     ? (interactive ? editorState(content) : playbackState(content, 0))
     : playbackState(content, presentationTime);
-  const players: SlidePlayer[] = content.players.map((player) => ({ ...player, position: state.positions[player.id] ?? player.position }));
+  const players: SlidePlayer[] = content.players
+    .filter((player) => player.team === "home" ? content.showHomeTeam !== false : content.showAwayTeam !== false)
+    .map((player) => ({ ...player, position: state.positions[player.id] ?? player.position }));
   const draggedMarks = markDrag
     ? state.marks.map((mark) => mark.id === markDrag.mark.id ? markDrag.preview : mark)
     : state.marks;

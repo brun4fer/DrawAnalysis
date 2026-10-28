@@ -325,7 +325,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
           : type === "line"
             ? { stroke: "#65d9ff", strokeWidth: 6, shadowColor: "#000000", shadowBlur: 9, shadowOpacity: .58, shadowOffsetX: 4, shadowOffsetY: 7 }
         : type === "arrow"
-          ? { stroke: "#65d9ff", strokeWidth: 7, shadowColor: "#000000", shadowBlur: 9, shadowOpacity: .58, shadowOffsetX: 4, shadowOffsetY: 7 }
+          ? { stroke: "#65d9ff", strokeWidth: 7, shadowColor: "#000000", shadowBlur: 9, shadowOpacity: .58, shadowOffsetX: 4, shadowOffsetY: 7, groundHeight: .5 }
           : type === "longBallArrow"
             ? { stroke: "#65d9ff", strokeWidth: 6, shadowColor: "#000000", shadowBlur: 12, shadowOpacity: .62, shadowOffsetX: 5, shadowOffsetY: 8 }
           : {};

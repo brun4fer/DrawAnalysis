@@ -27,6 +27,8 @@ interface Props {
   onTransformPreview?: (transform?: ObjectTransform) => void;
 }
 
+type ArrowDrawingData = Extract<DrawingData, { kind: "arrow" | "freeDraw" }>;
+
 function withAlpha(color: string, alpha: number) {
   const hex = color.match(/^#([0-9a-f]{6})/i)?.[1];
   if (!hex) return color;
@@ -181,6 +183,7 @@ function partialLineSegments(segments: number[][], progress: number) {
 export function DrawingShape({ object, width, height, currentTime, selected, canEdit, onSelect, onChange, renderMode = "all", editingPreview = false, targetOffset = { x: 0, y: 0 }, playerTracks, allDrawings, onTransformPreview }: Props) {
   const nodeRef = useRef<Konva.Group>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
+  const [arrowPreviewData, setArrowPreviewData] = useState<ArrowDrawingData | null>(null);
   const [longBallPreviewData, setLongBallPreviewData] = useState<Extract<DrawingData, { kind: "longBallArrow" }> | null>(null);
   const calculatedTemporalState = getObjectStateAtTime(object, currentTime);
   const temporalState = editingPreview
@@ -197,7 +200,7 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
       transformerRef.current.forceUpdate();
       transformerRef.current.getLayer()?.batchDraw();
     }
-  }, [selected, longBallPreviewData]);
+  }, [selected, arrowPreviewData, longBallPreviewData]);
 
   const sitsOnGround = ["ellipse", "rectangle", "arrow", "longBallArrow", "line", "triangle", "polygon", "freeDraw"].includes(object.type);
   const groundHeight = Math.max(0, Math.min(1, object.style.groundHeight ?? .08));
@@ -280,7 +283,11 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
   };
 
   const content = (() => {
-    const data = selected && object.data.kind === "longBallArrow" && longBallPreviewData ? longBallPreviewData : object.data;
+    const data = selected && object.data.kind === "arrow" && arrowPreviewData
+      ? arrowPreviewData
+      : selected && object.data.kind === "longBallArrow" && longBallPreviewData
+        ? longBallPreviewData
+        : object.data;
     if (renderMode === "playerLabel" && data.kind !== "playerRing" && data.kind !== "playerLabel") return null;
     switch (data.kind) {
       case "identifyPlayer": {
@@ -895,7 +902,11 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         );
       }
       case "arrow": {
-        const fullPoints = flattenPoints(data.points, width, height);
+        const startPoint = data.points[0];
+        const endPoint = data.points.at(-1);
+        if (!startPoint || !endPoint) return null;
+        const arrowPoints = [startPoint, endPoint];
+        const fullPoints = flattenPoints(arrowPoints, width, height);
         if (fullPoints.length < 4) return null;
         const points = partialPolylinePoints(fullPoints, drawProgress);
         if (object.style.strokeWidth <= 0) return null;
@@ -903,6 +914,22 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         if (!geometry.polygon.length) return null;
         const faceColor = solidColor(object.style.stroke, "#65d9ff");
         const shadowColor = solidColor(object.style.shadowColor, "#000000");
+        const renderScale = Math.max(.45, Math.min(3, Math.min(width / 960, height / 540)));
+        const updateEndpoint = (index: 0 | 1, commit = false) => (event: Konva.KonvaEventObject<DragEvent>) => {
+          event.cancelBubble = true;
+          const point = {
+            x: Math.max(0, Math.min(1, event.target.x() / width)),
+            y: Math.max(0, Math.min(1, event.target.y() / height)),
+          };
+          const nextPoints: [Point, Point] = index === 0 ? [point, endPoint] : [startPoint, point];
+          const nextData: ArrowDrawingData = { ...data, kind: "arrow", points: nextPoints };
+          if (commit) {
+            onChange({ data: nextData });
+            setArrowPreviewData(null);
+          } else {
+            setArrowPreviewData(nextData);
+          }
+        };
         return (
           <Group opacity={temporalState.opacity}>
             <Line
@@ -916,6 +943,29 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
               listening={false}
             />
             <Line points={geometry.polygon} closed fill={faceColor} lineJoin="round" />
+            {selected && canEdit && renderMode !== "playerLabel" && (
+              <Group name="selection-transformer">
+                {arrowPoints.map((point, index) => (
+                  <Circle
+                    key={index === 0 ? "arrow-start" : "arrow-end"}
+                    x={point.x * width}
+                    y={point.y * height}
+                    radius={6.5 * renderScale}
+                    fill="#a3ff12"
+                    stroke="#10130d"
+                    strokeWidth={2 * renderScale}
+                    shadowColor="#000000"
+                    shadowBlur={4 * renderScale}
+                    shadowOpacity={.7}
+                    draggable
+                    onPointerDown={(event) => { event.cancelBubble = true; }}
+                    onDragStart={(event) => { event.cancelBubble = true; }}
+                    onDragMove={updateEndpoint(index as 0 | 1)}
+                    onDragEnd={updateEndpoint(index as 0 | 1, true)}
+                  />
+                ))}
+              </Group>
+            )}
           </Group>
         );
       }
@@ -1300,7 +1350,12 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         scaleX={object.data.kind === "ghost" ? 1 : transform.scaleX}
         scaleY={object.data.kind === "ghost" ? 1 : transform.scaleY}
         draggable={canEdit}
-        onPointerDown={(event) => { event.cancelBubble = true; if (object.data.kind === "longBallArrow") setLongBallPreviewData(null); onSelect(); }}
+        onPointerDown={(event) => {
+          event.cancelBubble = true;
+          if (object.data.kind === "arrow") setArrowPreviewData(null);
+          if (object.data.kind === "longBallArrow") setLongBallPreviewData(null);
+          onSelect();
+        }}
         onClick={(event) => { event.cancelBubble = true; onSelect(); }}
         onTap={(event) => { event.cancelBubble = true; onSelect(); }}
         onDragMove={(event) => {
@@ -1344,7 +1399,7 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         {content}
         {actionLabelNode}
       </Group>
-      {selected && canEdit && (
+      {selected && canEdit && object.data.kind !== "arrow" && (
         <Transformer
           ref={transformerRef}
           name="selection-transformer"

@@ -112,7 +112,7 @@ export function WrittenReportSlide({ content, interactive = true, onChange }: Pr
   const subtitle = content.subtitle ?? content.submoment ?? "DESCRIÇÃO";
   const accentColor = content.accentColor ?? "#f04b2f";
   const style = {
-    "--report-field-width": `${Math.round((content.fieldRatio ?? .55) * 100)}%`,
+    "--report-field-width": `${Math.round((content.fieldRatio ?? .72) * 100)}%`,
     "--report-panel-color": content.panelColor ?? (design === "dark-right" ? "#10161a" : "#ffffff"),
     "--report-panel-opacity": content.panelOpacity ?? 1,
     "--report-text-color": content.textColor ?? (design === "dark-right" ? "#ffffff" : "#101010"),

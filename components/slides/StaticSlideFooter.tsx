@@ -10,7 +10,7 @@ export function StaticSlideFooter() {
   return (
     <section className="static-slide-footer">
       <div className="static-footer-title"><span>SLIDE SETTINGS</span><strong>{slide.name}</strong></div>
-      <label><Clock3 size={15} /><span>Duração no preview</span><input type="number" min={1} max={60} step={.5} value={slide.duration} onChange={(event) => updateSlide(slide.id, { duration: Math.max(1, Number(event.target.value)) })} /><i>segundos</i></label>
+      <label><Clock3 size={15} /><span>Duração na exportação</span><input type="number" min={1} max={60} step={.5} value={slide.duration} onChange={(event) => updateSlide(slide.id, { duration: Math.max(1, Number(event.target.value)) })} /><i>segundos</i></label>
       <label className="static-caption"><MessageSquareText size={15} /><span>Legenda</span><input placeholder="Mensagem no fundo da imagem" value={slide.caption} onChange={(event) => updateSlide(slide.id, { caption: event.target.value, captionSegments: undefined })} /></label>
       <div className="static-duration-track"><i style={{ width: `${Math.min(100, slide.duration / 10 * 100)}%` }} /></div>
     </section>

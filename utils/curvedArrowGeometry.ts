@@ -164,13 +164,22 @@ export function buildPolylineArrowGeometry(points: number[], bodyWidth: number):
     const next = bodyCenters[Math.min(bodyCenters.length - 1, index + 1)];
     return normalizedVector(next.x - previous.x, next.y - previous.y, tangent);
   };
+  const taperedHalfWidth = (point: CanvasPoint & { length: number }) => {
+    const progress = bodyEndLength > .001 ? clamp(point.length / bodyEndLength, 0, 1) : 1;
+    // A broadcast arrow reads better on the pitch when it grows towards its
+    // destination. Keep the tail narrow and join the head at the requested
+    // property width without introducing a separate visual segment.
+    return halfBody * (.3 + .7 * Math.pow(progress, .82));
+  };
   const leftEdge = bodyCenters.map((point, index) => {
     const direction = tangentAt(index);
-    return { x: point.x - direction.y * halfBody, y: point.y + direction.x * halfBody };
+    const localHalfWidth = taperedHalfWidth(point);
+    return { x: point.x - direction.y * localHalfWidth, y: point.y + direction.x * localHalfWidth };
   });
   const rightEdge = bodyCenters.map((point, index) => {
     const direction = tangentAt(index);
-    return { x: point.x + direction.y * halfBody, y: point.y - direction.x * halfBody };
+    const localHalfWidth = taperedHalfWidth(point);
+    return { x: point.x + direction.y * localHalfWidth, y: point.y - direction.x * localHalfWidth };
   });
   const headBaseLeft = { x: bodyEnd.x + normal.x * headWidth / 2, y: bodyEnd.y + normal.y * headWidth / 2 };
   const headBaseRight = { x: bodyEnd.x - normal.x * headWidth / 2, y: bodyEnd.y - normal.y * headWidth / 2 };
@@ -237,25 +246,30 @@ export function buildCurvedArrowGeometry({
   bodySamples.push(bodyEnd);
 
   const halfBody = scaledBodyWidth / 2;
+  const taperedHalfWidth = (sample: CurveSample) => {
+    const taperProgress = bodyEndLength > .001 ? clamp(sample.length / bodyEndLength, 0, 1) : 1;
+    return halfBody * (.3 + .7 * Math.pow(taperProgress, .82));
+  };
   const leftEdge = bodySamples.map((sample) => ({
-    x: sample.x - sample.tangentY * halfBody,
-    y: sample.y + sample.tangentX * halfBody,
+    x: sample.x - sample.tangentY * taperedHalfWidth(sample),
+    y: sample.y + sample.tangentX * taperedHalfWidth(sample),
   }));
   const rightEdge = bodySamples.map((sample) => ({
-    x: sample.x + sample.tangentY * halfBody,
-    y: sample.y - sample.tangentX * halfBody,
+    x: sample.x + sample.tangentY * taperedHalfWidth(sample),
+    y: sample.y - sample.tangentX * taperedHalfWidth(sample),
   }));
 
   const headBaseLeft = { x: bodyEnd.x + normal.x * headWidth / 2, y: bodyEnd.y + normal.y * headWidth / 2 };
   const headBaseRight = { x: bodyEnd.x - normal.x * headWidth / 2, y: bodyEnd.y - normal.y * headWidth / 2 };
   const tip = { x: tipSample.x, y: tipSample.y };
   const firstSample = bodySamples[0];
+  const startHalfBody = taperedHalfWidth(firstSample);
   const startAngle = Math.atan2(firstSample.tangentY, firstSample.tangentX);
   const startCap = Array.from({ length: 5 }, (_, index) => {
     const angle = startAngle - Math.PI / 2 - Math.PI * (index + 1) / 6;
     return {
-      x: firstSample.x + Math.cos(angle) * halfBody,
-      y: firstSample.y + Math.sin(angle) * halfBody,
+      x: firstSample.x + Math.cos(angle) * startHalfBody,
+      y: firstSample.y + Math.sin(angle) * startHalfBody,
     };
   });
 

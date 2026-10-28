@@ -271,6 +271,8 @@ export interface BoardSlideContent {
   boardObjects: DrawingObject[];
   homeTextColor?: string;
   awayTextColor?: string;
+  showHomeTeam?: boolean;
+  showAwayTeam?: boolean;
   pitchColor?: string;
   pitchLineColor?: string;
   pitchLineWidth?: number;
