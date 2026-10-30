@@ -100,6 +100,34 @@ button:disabled { opacity: .3; cursor: default; }
 .drawing-stage { position: relative; z-index: 1; }
 .drawing-stage:not(.tool-select) canvas { cursor: crosshair; }
 .player-occlusion-canvas { position: absolute; inset: 0; z-index: 2; display: block; width: 100%; height: 100%; pointer-events: none; }
+.manual-player-mask-editor { position: absolute; inset: 0; z-index: 30; overflow: visible; }
+.manual-player-mask-canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
+.manual-mask-toolbar { position: absolute; left: 50%; top: 10px; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 7px; width: min(980px, calc(100% - 20px)); min-height: 48px; padding: 7px 9px; transform: translateX(-50%); border: 1px solid #a3ff126b; border-radius: 8px; background: #08100eef; box-shadow: 0 10px 34px #000c; color: #eaf5e9; font-size: 10px; pointer-events: auto; }
+.manual-mask-title { display: grid; gap: 2px; max-width: 250px; padding-right: 5px; }
+.manual-mask-title strong { color: #a3ff12; font-size: 10px; letter-spacing: .08em; }
+.manual-mask-title small { color: #9ca9a4; font-size: 8px; line-height: 1.25; }
+.manual-mask-name { display: grid; gap: 2px; color: #91a099; font-size: 8px; text-transform: uppercase; }
+.manual-mask-name input { width: 112px; height: 28px; padding: 0 8px; border: 1px solid #33413b; border-radius: 4px; outline: 0; background: #111a17; color: #fff; font-size: 10px; }
+.manual-mask-name input:focus { border-color: #a3ff12; }
+.manual-mask-button-group { display: flex; overflow: hidden; border: 1px solid #303d38; border-radius: 5px; }
+.manual-mask-button-group button, .manual-mask-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-height: 29px; padding: 0 8px; border: 0; border-right: 1px solid #303d38; background: #121b18; color: #b8c4bf; font: inherit; cursor: pointer; white-space: nowrap; }
+.manual-mask-button-group button:last-child { border-right: 0; }
+.manual-mask-button-group button:hover:not(:disabled), .manual-mask-actions button:hover:not(:disabled) { background: #213027; color: #fff; }
+.manual-mask-button-group button.active { background: #263c20; color: #cfff86; }
+.manual-mask-button-group button.active.remove { background: #421f24; color: #ff9ba4; }
+.manual-mask-button-group button:disabled { opacity: .35; cursor: default; }
+.manual-mask-button-group.compact button { width: 29px; padding: 0; }
+.manual-mask-brush { display: grid; gap: 2px; width: 94px; color: #aeb9b4; font-size: 8px; }
+.manual-mask-brush span { display: flex; justify-content: space-between; }
+.manual-mask-brush input { width: 94px; accent-color: #a3ff12; }
+.manual-mask-actions { display: flex; gap: 5px; margin-left: 2px; }
+.manual-mask-actions button { border: 1px solid #34413c; border-radius: 5px; }
+.manual-mask-actions button.primary { border-color: #7bbf17; background: #33520d; color: #dfffaa; font-weight: 700; }
+.manual-mask-close-polygon { display: inline-flex; align-items: center; gap: 4px; min-height: 29px; padding: 0 8px; border: 1px solid #7bbf17; border-radius: 5px; background: #263c20; color: #dfffaa; font: inherit; cursor: pointer; }
+@media (max-width: 1180px) {
+  .manual-mask-toolbar { align-items: stretch; width: min(720px, calc(100% - 16px)); }
+  .manual-mask-title { flex-basis: 100%; max-width: none; text-align: center; }
+}
 .zoom-lens-canvas { position: absolute; inset: 0; z-index: 3; display: block; width: 100%; height: 100%; pointer-events: none; }
 .player-label-stage { position: absolute !important; inset: 0; z-index: 4 !important; pointer-events: none; }
 .drawing-stage.is-detecting canvas { cursor: wait; }

@@ -10,7 +10,7 @@ const bounds = { x: 0.1, y: 0.2, width: 0.05, height: 0.2 };
 slide.content.playerTracks = [{
   id: "track-1",
   name: "Jogador 1",
-  source: "automatic",
+  source: "manual",
   status: "ready",
   samples: [{
     time: 1,
@@ -25,7 +25,7 @@ slide.content.playerTracks = [{
       height: 80,
       frameTime: 1,
       quality: 0.75,
-      method: "bodypix-instance",
+      method: "manual",
     },
   }],
 }];
@@ -37,5 +37,6 @@ if (storedSlide.content.kind !== "video") process.exit(1);
 const storedMask = storedSlide.content.playerTracks?.[0]?.samples[0]?.mask;
 assert.equal(storedMask?.maskDataUrl, "data:image/png;base64,MASK");
 assert.equal(storedMask.cutoutDataUrl, "data:image/png;base64,CUTOUT");
+assert.equal(storedMask.method, "manual");
 
 console.log("Player mask persistence: OK");

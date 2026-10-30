@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowDown, ArrowUp, Copy, LocateFixed, Star, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, LocateFixed, Pencil, Star, Trash2 } from "lucide-react";
 import { useEditorStore } from "@/store/useEditorStore";
 import type { ActionLabel, LineDesign, PlayerLabel, PlayerRingDesign, TextDesign, ZoneDesign } from "@/types/drawing";
 import type { AnalysisSlide, VideoSlideContent } from "@/types/slide";
@@ -26,7 +26,7 @@ function withFillOpacity(color: string, opacity: number) {
 }
 
 export function PropertiesPanel() {
-  const { drawings, selectedId, updateDrawing, removeDrawing, duplicateDrawing, moveDrawingLayer, saveDrawingAsFavorite, slides, selectedSlideId, updateSlide, setPlayerTrackStatus, beginRingReidentify, ringReidentifyId, currentTime, duration: videoDuration } = useEditorStore();
+  const { drawings, selectedId, updateDrawing, removeDrawing, duplicateDrawing, moveDrawingLayer, saveDrawingAsFavorite, slides, selectedSlideId, updateSlide, setPlayerTrackStatus, beginRingReidentify, beginPlayerMaskEdit, ringReidentifyId, currentTime, duration: videoDuration } = useEditorStore();
   const [favoriteEditor, setFavoriteEditor] = useState({ drawingId: "", name: "" });
   const object = drawings.find((drawing) => drawing.id === selectedId);
   const activeSlide = slides.find((slide) => slide.id === selectedSlideId);
@@ -180,6 +180,14 @@ export function PropertiesPanel() {
 
       <section className="property-section">
         <h3>APARÊNCIA</h3>
+        {playerTrack && (
+          <div className="ring-identification-actions">
+            <p>A mesma máscara é reutilizada pelo Anel e pelo Ghost neste fotograma.</p>
+            <button type="button" className="secondary-button" onClick={() => beginPlayerMaskEdit(playerTrack.id)}>
+              <Pencil size={14} /> {playerMask ? "Editar máscara do jogador" : "Criar máscara manual"}
+            </button>
+          </div>
+        )}
         {object.data.kind === "playerRing" && (
           <>
             <div className="ring-identification-actions">

@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test:player-mask": "tsx scripts/check-player-mask-persistence.ts",
+    "test:manual-mask": "tsx scripts/check-player-manual-mask.ts",
     "diagnose:cloud-cors": "tsx scripts/diagnose-cloud-cors.ts",
     "configure:cloud-cors": "tsx scripts/configure-cloud-cors.ts",
     "diagnose:production-cloud": "tsx scripts/diagnose-production-cloud.ts",

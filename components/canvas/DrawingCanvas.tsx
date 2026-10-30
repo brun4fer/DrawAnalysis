@@ -3,8 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Konva from "konva";
 import { Arc, Ellipse, Group, Layer, Line, Rect, Stage, Text } from "react-konva";
-import { detectPlayers } from "@/lib/playerDetector";
-import { segmentPlayerAtPoint } from "@/lib/playerSegmentation";
 import { useEditorStore } from "@/store/useEditorStore";
 import type { DrawingData, DrawingObject, DrawingTarget, NormalizedBox, ObjectTransform, PlayerTrack, Point, Tool } from "@/types/drawing";
 import { DEFAULT_STYLE, DEFAULT_TRANSFORM } from "@/types/drawing";
@@ -15,8 +13,10 @@ import { defaultDrawingAnimationFor, getObjectStateAtTime } from "@/utils/tempor
 import { timelineTimeToSource } from "@/utils/videoTimeline";
 import { playerGroundPoint, samplePlayerTrackAtTime, targetOffsetAtTime } from "@/utils/playerTracking";
 import { playerRingDimensions } from "@/utils/playerRing";
+import { buildManualPlayerSample, pointHitsPlayerMask } from "@/utils/playerManualMask";
 import { applyFavoriteData } from "@/utils/toolFavorites";
 import { DrawingShape } from "./DrawingShape";
+import { ManualPlayerMaskEditor } from "./ManualPlayerMaskEditor";
 import { PlayerOcclusionCanvas } from "./PlayerOcclusionCanvas";
 import { PlayerLabelOverlay } from "./PlayerLabelOverlay";
 import { ZoomLensCanvas } from "./ZoomLensCanvas";
@@ -31,6 +31,12 @@ interface Props {
 interface Draft { tool: Tool; start: Point; points: Point[]; current: Point; startTarget?: DrawingTarget; pointTargets?: Array<DrawingTarget | null> }
 interface DetectionEffect { phase: "scanning" | "locked" | "failed"; click: Point; box?: NormalizedBox; score?: number }
 interface IdentifiedPlayer { track: PlayerTrack; sample: PlayerTrack["samples"][number] }
+interface ManualMaskSession {
+  frame: HTMLCanvasElement;
+  frameTime: number;
+  track?: PlayerTrack;
+  initialName: string;
+}
 
 const labelFor = (kind: DrawingObject["type"]) => ({
   identifyPlayer: "Jogador", playerLabel: "Etiqueta", playerRing: "Ring", ghost: "Ghost", spotlight: "Spotlight", zoom: "Zoom", ellipse: "Círculo", arrow: "Seta", longBallArrow: "Bola longa", line: "Linha", glimpse: "Visão", triangle: "Triângulo",
@@ -38,6 +44,20 @@ const labelFor = (kind: DrawingObject["type"]) => ({
 })[kind];
 
 const clamp = (value: number, minimum: number, maximum: number) => Math.max(minimum, Math.min(maximum, value));
+
+// Kept only for opening legacy projects that already contain automatic tracks.
+// The manual identification, Ring, Ghost and Spotlight paths never call these
+// lazy modules, so the AI models are not loaded during the new workflow.
+type DetectPlayers = typeof import("@/lib/playerDetector")["detectPlayers"];
+const detectPlayers = async (...args: Parameters<DetectPlayers>): Promise<Awaited<ReturnType<DetectPlayers>>> => {
+  const detector = await import("@/lib/playerDetector");
+  return detector.detectPlayers(...args);
+};
+type SegmentPlayerAtPoint = typeof import("@/lib/playerSegmentation")["segmentPlayerAtPoint"];
+const segmentPlayerAtPoint = async (...args: Parameters<SegmentPlayerAtPoint>): Promise<Awaited<ReturnType<SegmentPlayerAtPoint>>> => {
+  const segmentation = await import("@/lib/playerSegmentation");
+  return segmentation.segmentPlayerAtPoint(...args);
+};
 
 function containsPoint(box: NormalizedBox, point: Point) {
   const paddingX = Math.min(0.006, box.width * 0.12);
@@ -250,9 +270,9 @@ async function detectPlayerAtPoint(frame: HTMLCanvasElement, click: Point, click
 
 export function DrawingCanvas({ width, height, registerCapture, getVideoElement }: Props) {
   const {
-    tool, drawings, selectedId, currentTime, duration, isPlaying, slides, selectedSlideId, favorites, activeFavoriteId, ringReidentifyId,
-    addDrawing, addPlayerTrack, appendPlayerTrackingSample, setPlayerTrackStatus,
-    updateDrawing, setSelectedId, setTool, cancelRingReidentify,
+    tool, drawings, selectedId, currentTime, duration, isPlaying, slides, selectedSlideId, favorites, activeFavoriteId, ringReidentifyId, maskEditTrackId,
+    addDrawing, addPlayerTrack, updatePlayerTrackSample, appendPlayerTrackingSample, setPlayerTrackStatus,
+    updateDrawing, setSelectedId, setTool, cancelRingReidentify, cancelPlayerMaskEdit,
   } = useEditorStore();
   const [draft, setDraft] = useState<Draft | null>(null);
   const [detectionMessage, setDetectionMessage] = useState<string | null>(null);
@@ -260,6 +280,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
   const [detectionEffect, setDetectionEffect] = useState<DetectionEffect | null>(null);
   const [detectingPlayer, setDetectingPlayer] = useState(false);
   const [pendingGhost, setPendingGhost] = useState<IdentifiedPlayer | null>(null);
+  const [manualMaskSession, setManualMaskSession] = useState<ManualMaskSession | null>(null);
   const [ghostTransformPreview, setGhostTransformPreview] = useState<Record<string, ObjectTransform>>({});
   const [trackingQuality, setTrackingQuality] = useState<"tracking" | "reacquiring" | null>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -274,6 +295,39 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
   const activeFreezeFramesRef = useRef(activeFreezeFrames);
 
   useEffect(() => { activeFreezeFramesRef.current = activeFreezeFrames; }, [activeFreezeFrames]);
+
+  useEffect(() => {
+    if (tool !== "identifyPlayer") {
+      if (!manualMaskSession) return;
+      const animationFrame = window.requestAnimationFrame(() => setManualMaskSession(null));
+      return () => window.cancelAnimationFrame(animationFrame);
+    }
+    if (manualMaskSession) return;
+    const video = getVideoElement?.();
+    if (!video || !video.videoWidth || !video.videoHeight || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      const messageTimer = window.setTimeout(() => setDetectionMessage("O fotograma do vídeo ainda não está pronto."), 0);
+      const closeTimer = window.setTimeout(() => { setDetectionMessage(null); setTool("select"); }, 2400);
+      return () => { window.clearTimeout(messageTimer); window.clearTimeout(closeTimer); };
+    }
+    video.pause();
+    try {
+      const track = maskEditTrackId
+        ? activeVideoContent?.playerTracks?.find((candidate) => candidate.id === maskEditTrackId)
+        : undefined;
+      const frame = captureVideoFrame(video);
+      const animationFrame = window.requestAnimationFrame(() => setManualMaskSession({
+        frame,
+        frameTime: currentTime,
+        track,
+        initialName: track?.name ?? `Jogador ${(activeVideoContent?.playerTracks?.length ?? 0) + 1}`,
+      }));
+      return () => window.cancelAnimationFrame(animationFrame);
+    } catch {
+      const messageTimer = window.setTimeout(() => setDetectionMessage("Não foi possível capturar este fotograma para edição."), 0);
+      const closeTimer = window.setTimeout(() => { setDetectionMessage(null); setTool("select"); }, 2600);
+      return () => { window.clearTimeout(messageTimer); window.clearTimeout(closeTimer); };
+    }
+  }, [activeVideoContent?.playerTracks, currentTime, getVideoElement, manualMaskSession, maskEditTrackId, setTool, tool]);
 
   useEffect(() => {
     const capture = () => {
@@ -307,7 +361,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     const count = drawings.filter((item) => item.type === type).length + 1;
     const actionCount = drawings.filter((item) => ["line", "arrow", "longBallArrow"].includes(item.type)).length + 1;
     const effectStyle = type === "identifyPlayer"
-      ? { stroke: "#a3ff12", fill: "#a3ff1210", strokeWidth: 2, shadowColor: "#a3ff12", shadowBlur: 9, shadowOpacity: .5 }
+      ? { stroke: "#a3ff12", fill: "#00000000", strokeWidth: 0, shadowColor: "#000000", shadowBlur: 0, shadowOpacity: 0 }
       : type === "playerLabel"
       ? { stroke: "#ffffff", fill: "#ffffff", strokeWidth: 2, shadowColor: "#000000", shadowBlur: 6, shadowOpacity: .65 }
       : type === "playerRing"
@@ -411,6 +465,90 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     cancelRingReidentify();
     setTool("select");
     return true;
+  };
+
+  const findSavedPlayerAtPoint = async (
+    point: Point,
+    anchor: "body" | "feet",
+    excludedTrackId?: string | null,
+  ): Promise<IdentifiedPlayer | null> => {
+    const candidates = (activeVideoContent?.playerTracks ?? [])
+      .filter((track) => track.id !== excludedTrackId && track.samples.length)
+      .map((track) => ({ track, sample: samplePlayerTrackAtTime(track, currentTime) }))
+      .filter(({ sample }) => Math.abs(sample.time - currentTime) < .05 && Boolean(sample.mask));
+    const exact: Array<IdentifiedPlayer & { distance: number }> = [];
+    for (const candidate of candidates) {
+      const hit = candidate.sample.mask ? await pointHitsPlayerMask(candidate.sample.mask, point) : false;
+      if (!hit) continue;
+      exact.push({
+        ...candidate,
+        distance: Math.hypot((candidate.sample.foot.x - point.x) * width, (candidate.sample.foot.y - point.y) * height),
+      });
+    }
+    if (exact.length) {
+      const selected = exact.sort((left, right) => left.distance - right.distance)[0];
+      return { track: selected.track, sample: selected.sample };
+    }
+    if (anchor === "body") return null;
+    const nearFeet = candidates
+      .map((candidate) => ({
+        ...candidate,
+        distance: Math.hypot((candidate.sample.foot.x - point.x) * width, (candidate.sample.foot.y - point.y) * height),
+        tolerance: Math.max(9, Math.min(42, candidate.sample.bbox.height * height * .18)),
+      }))
+      .filter((candidate) => candidate.distance <= candidate.tolerance)
+      .sort((left, right) => left.distance - right.distance)[0];
+    return nearFeet ? { track: nearFeet.track, sample: nearFeet.sample } : null;
+  };
+
+  const selectSavedPlayerAtClick = async (click: Point, mode: "ring" | "ringReidentify" | "ghost" | "spotlight") => {
+    const replacingRingId = mode === "ringReidentify" ? ringReidentifyId : null;
+    const replacedTrackId = replacingRingId ? drawings.find((drawing) => drawing.id === replacingRingId)?.target?.trackId : null;
+    const identified = await findSavedPlayerAtPoint(click, mode === "ring" || mode === "ringReidentify" ? "feet" : "body", replacedTrackId);
+    if (!identified) {
+      setDetectionMessage("Este jogador ainda não tem uma máscara neste fotograma. Use primeiro Identificar jogador.");
+      window.setTimeout(() => setDetectionMessage(null), 3600);
+      return null;
+    }
+    setDetectionMessage(`${identified.track.name} · máscara reutilizada`);
+    window.setTimeout(() => setDetectionMessage(null), 1500);
+    if (mode === "ring") createRingForPlayer(identified);
+    if (mode === "ringReidentify" && replacingRingId) replaceRingPlayer(replacingRingId, identified);
+    return identified;
+  };
+
+  const saveManualMask = (maskCanvas: HTMLCanvasElement, requestedName: string) => {
+    if (!manualMaskSession) return;
+    const sample = buildManualPlayerSample(manualMaskSession.frame, maskCanvas, manualMaskSession.frameTime);
+    if (!sample) {
+      setDetectionMessage("A máscara está vazia. Contorne pelo menos uma zona do jogador antes de guardar.");
+      window.setTimeout(() => setDetectionMessage(null), 3200);
+      return;
+    }
+    if (manualMaskSession.track) {
+      updatePlayerTrackSample(manualMaskSession.track.id, sample, requestedName);
+      setDetectionMessage(`${manualMaskSession.track.name} · máscara atualizada`);
+    } else {
+      const track: PlayerTrack = {
+        id: createId(),
+        name: requestedName.trim() || manualMaskSession.initialName,
+        source: "manual",
+        status: "ready",
+        samples: [sample],
+      };
+      addPlayerTrack(track);
+      const dimensions = playerRingDimensions(sample.bbox, width, height);
+      makeDrawing(
+        "identifyPlayer",
+        { kind: "identifyPlayer", center: sample.foot, radiusX: dimensions.radiusX, radiusY: dimensions.radiusY },
+        { target: { kind: "player", trackId: track.id, anchor: "feet", referenceFoot: sample.foot }, trackingEnabled: false },
+      );
+      setDetectionMessage(`${track.name} · máscara manual guardada`);
+    }
+    setManualMaskSession(null);
+    cancelPlayerMaskEdit();
+    setTool("select");
+    window.setTimeout(() => setDetectionMessage(null), 1800);
   };
 
   const createApproximateRingForPlayer = (foot: Point, replacementId?: string) => {
@@ -659,7 +797,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
   };
 
   const placeSpotlightOnPlayer = async (click: Point) => {
-    const identified = await identifyPlayerAtClick(click, "identify");
+    const identified = await selectSavedPlayerAtClick(click, "spotlight");
     if (!identified) return;
     const { track, sample } = identified;
     makeDrawing("spotlight", {
@@ -694,7 +832,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       setPendingGhost(null);
       return;
     }
-    const identified = await identifyPlayerAtClick(point, "identifyKeepTool");
+    const identified = await selectSavedPlayerAtClick(point, "ghost");
     if (!identified) return;
     setPendingGhost(identified);
     setDetectionMessage("Jogador recortado · clique na nova posição");
@@ -920,11 +1058,10 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     if (!point) return;
     if (tool === "select") { setSelectedId(null); return; }
     if (tool === "identifyPlayer") {
-      void identifyPlayerAtClick(point, "identify");
       return;
     }
     if (tool === "playerRing") {
-      void identifyPlayerAtClick(point, ringReidentifyId ? "ringReidentify" : "ring");
+      void selectSavedPlayerAtClick(point, ringReidentifyId ? "ringReidentify" : "ring");
       return;
     }
     if (tool === "ghost") {
@@ -1168,6 +1305,22 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     />
     <ZoomLensCanvas ref={zoomCanvasRef} drawings={drawings} currentTime={currentTime} width={width} height={height} getVideoElement={getVideoElement} editingPreview={!isPlaying} />
     <PlayerLabelOverlay drawings={drawings} playerTracks={activeVideoContent?.playerTracks} currentTime={currentTime} width={width} height={height} editingPreview={!isPlaying} />
+    {tool === "identifyPlayer" && manualMaskSession && (
+      <ManualPlayerMaskEditor
+        width={width}
+        height={height}
+        frameWidth={manualMaskSession.frame.width}
+        frameHeight={manualMaskSession.frame.height}
+        initialMask={manualMaskSession.track?.samples.find((sample) => Math.abs(sample.time - manualMaskSession.frameTime) < .05)?.mask}
+        initialName={manualMaskSession.initialName}
+        onCancel={() => {
+          setManualMaskSession(null);
+          cancelPlayerMaskEdit();
+          setTool("select");
+        }}
+        onConfirm={saveManualMask}
+      />
+    )}
     {detectionEffect && (
       <div className={`player-identification-effect phase-${detectionEffect.phase}`} aria-hidden="true">
         {detectionEffect.phase !== "locked" && (

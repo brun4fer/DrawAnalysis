@@ -26,16 +26,20 @@ interface EditorState {
   favorites: ToolFavorite[];
   activeFavoriteId: string | null;
   ringReidentifyId: string | null;
+  maskEditTrackId: string | null;
   favoriteStorageKey: string;
   setTool: (tool: Tool) => void;
   beginRingReidentify: (drawingId: string) => void;
   cancelRingReidentify: () => void;
+  beginPlayerMaskEdit: (trackId: string) => void;
+  cancelPlayerMaskEdit: () => void;
   setSelectedId: (id: string | null) => void;
   setCurrentTime: (time: number) => void;
   setDuration: (duration: number) => void;
   setIsPlaying: (playing: boolean) => void;
   addDrawing: (drawing: DrawingObject) => void;
   addPlayerTrack: (track: PlayerTrack) => void;
+  updatePlayerTrackSample: (trackId: string, sample: PlayerTrackSample, name?: string) => void;
   appendPlayerTrackingSample: (drawingId: string, trackId: string, sample: PlayerTrackSample, keyframe: DrawingKeyframe) => void;
   setPlayerTrackStatus: (trackId: string, status: PlayerTrack["status"]) => void;
   updateDrawing: (id: string, patch: Partial<DrawingObject>) => void;
@@ -101,11 +105,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   favorites: [],
   activeFavoriteId: null,
   ringReidentifyId: null,
+  maskEditTrackId: null,
   favoriteStorageKey: DEFAULT_FAVORITES_KEY,
   setTool: (tool) => set((state) => ({
     tool,
     activeFavoriteId: null,
     ringReidentifyId: tool === "playerRing" ? state.ringReidentifyId : null,
+    maskEditTrackId: tool === "identifyPlayer" ? state.maskEditTrackId : null,
   })),
   beginRingReidentify: (drawingId) => set((state) => {
     const drawing = state.drawings.find((item) => item.id === drawingId);
@@ -113,6 +119,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     return { tool: "playerRing", activeFavoriteId: null, selectedId: drawingId, ringReidentifyId: drawingId };
   }),
   cancelRingReidentify: () => set({ ringReidentifyId: null }),
+  beginPlayerMaskEdit: (trackId) => set({
+    tool: "identifyPlayer",
+    activeFavoriteId: null,
+    ringReidentifyId: null,
+    maskEditTrackId: trackId,
+  }),
+  cancelPlayerMaskEdit: () => set({ maskEditTrackId: null }),
   setSelectedId: (selectedId) => set({ selectedId }),
   setCurrentTime: (currentTime) => set({ currentTime }),
   setDuration: (duration) => set({ duration }),
@@ -130,6 +143,33 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     slides: state.slides.map((slide) => slide.id === state.selectedSlideId && slide.content.kind === "video"
       ? { ...slide, content: { ...slide.content, playerTracks: [...(slide.content.playerTracks ?? []), track] } }
       : slide),
+  })),
+  updatePlayerTrackSample: (trackId, sample, requestedName) => set((state) => ({
+    history: [...state.history, { drawings: copy(state.drawings), slides: copySlides(state.slides) }].slice(-80),
+    future: [],
+    slides: state.slides.map((slide) => slide.id === state.selectedSlideId && slide.content.kind === "video"
+      ? {
+          ...slide,
+          content: {
+            ...slide.content,
+            playerTracks: (slide.content.playerTracks ?? []).map((track) => {
+              if (track.id !== trackId) return track;
+              const nearbyIndex = track.samples.findIndex((item) => Math.abs(item.time - sample.time) < .05);
+              const samples = nearbyIndex >= 0
+                ? track.samples.map((item, index) => index === nearbyIndex ? sample : item)
+                : [...track.samples, sample].sort((left, right) => left.time - right.time);
+              return {
+                ...track,
+                name: requestedName?.trim().slice(0, 42) || track.name,
+                source: "manual" as const,
+                status: "ready" as const,
+                samples,
+              };
+            }),
+          },
+        }
+      : slide),
+    maskEditTrackId: null,
   })),
   appendPlayerTrackingSample: (drawingId, trackId, sample, keyframe) => set((state) => {
     const drawings = state.drawings.map((drawing) => {
@@ -241,6 +281,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedId: previous.drawings.some((item) => item.id === state.selectedId) ? state.selectedId : null,
       selectedSlideId,
       ringReidentifyId: null,
+      maskEditTrackId: null,
     };
   }),
   redo: () => set((state) => {
@@ -257,6 +298,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedId: next.drawings.some((item) => item.id === state.selectedId) ? state.selectedId : null,
       selectedSlideId,
       ringReidentifyId: null,
+      maskEditTrackId: null,
     };
   }),
   reset: () => set((state) => ({
@@ -266,6 +308,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     slides: withVideoDrawings(state.slides, state.selectedSlideId, []),
     selectedId: null,
     ringReidentifyId: null,
+    maskEditTrackId: null,
     currentTime: 0,
   })),
   addSlide: (slide) => set((state) => ({
@@ -275,6 +318,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     selectedSlideId: slide.id,
     selectedId: null,
     ringReidentifyId: null,
+    maskEditTrackId: null,
     drawings: slide.content.kind === "video" ? copy(slide.content.drawings) : state.drawings,
   })),
   updateSlide: (id, patch) => set((state) => ({
@@ -308,6 +352,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       future: [], slides, selectedSlideId: duplicate.id,
       selectedId: null,
       ringReidentifyId: null,
+      maskEditTrackId: null,
       drawings: duplicate.content.kind === "video" ? copy(duplicate.content.drawings) : state.drawings,
     });
   },
@@ -340,6 +385,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedSlideId,
       selectedId: null,
       ringReidentifyId: null,
+      maskEditTrackId: null,
       drawings: slide?.content.kind === "video" ? copy(slide.content.drawings) : state.drawings,
     };
   }),
@@ -353,6 +399,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       drawings: first?.content.kind === "video" ? copy(first.content.drawings) : [],
       selectedId: null,
       ringReidentifyId: null,
+      maskEditTrackId: null,
       currentTime: 0,
       duration: 0,
       isPlaying: false,
@@ -461,6 +508,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   }),
   activateFavorite: (favoriteId) => set((state) => {
     const favorite = state.favorites.find((item) => item.id === favoriteId);
-    return favorite ? { activeFavoriteId: favorite.id, tool: favorite.type, ringReidentifyId: null } : state;
+    return favorite ? { activeFavoriteId: favorite.id, tool: favorite.type, ringReidentifyId: null, maskEditTrackId: null } : state;
   }),
 }));

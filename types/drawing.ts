@@ -41,7 +41,7 @@ export interface PlayerSegmentationMask {
   quality: number;
   /** Local segmentation time, including first-use model initialization. */
   analysisMs?: number;
-  method: "bodypix-instance" | "bodypix-semantic";
+  method: "bodypix-instance" | "bodypix-semantic" | "manual";
 }
 
 export interface PlayerTrackSample {
