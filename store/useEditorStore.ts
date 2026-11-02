@@ -8,7 +8,7 @@ import { createSlide } from "@/utils/slideFactory";
 import { sourceTimeToTimeline } from "@/utils/videoTimeline";
 import { normalizePresentationSlides } from "@/utils/presentationData";
 import { favoriteFromDrawing, isToolFavorite } from "@/utils/toolFavorites";
-import { APP_PRODUCT } from "@/lib/product";
+import { APP_PRODUCT, supportsPlayerProfile } from "@/lib/product";
 
 interface Snapshot { drawings: DrawingObject[]; slides: AnalysisSlide[] }
 
@@ -70,9 +70,11 @@ interface EditorState {
 
 const copy = (drawings: DrawingObject[]) => structuredClone(drawings);
 const copySlides = (slides: AnalysisSlide[]) => structuredClone(slides);
-const initialSlide = APP_PRODUCT.variant === "written-report"
-  ? { ...createSlide("written-report", 0), id: "initial-written-report-slide" }
-  : { ...createSlide("video", 0), id: "initial-video-slide", name: "Vídeo / Jogada" };
+const initialSlide = supportsPlayerProfile(APP_PRODUCT.variant)
+  ? { ...createSlide("player-profile", 0), id: "initial-player-profile-slide" }
+  : APP_PRODUCT.variant === "written-report"
+    ? { ...createSlide("written-report", 0), id: "initial-written-report-slide" }
+    : { ...createSlide("video", 0), id: "initial-video-slide", name: "Vídeo / Jogada" };
 const DEFAULT_FAVORITES_KEY = `${APP_PRODUCT.variant}:tool-favorites`;
 
 function persistFavorites(storageKey: string, favorites: ToolFavorite[]) {

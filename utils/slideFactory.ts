@@ -7,15 +7,33 @@ const FORMATIONS: Record<string, Array<[number, number]>> = {
   "4-4-2": [[.08,.5],[.25,.12],[.23,.37],[.23,.63],[.25,.88],[.52,.12],[.48,.38],[.48,.62],[.52,.88],[.78,.36],[.78,.64]],
   "3-4-3": [[.08,.5],[.25,.24],[.22,.5],[.25,.76],[.5,.1],[.46,.38],[.46,.62],[.5,.9],[.76,.18],[.82,.5],[.76,.82]],
   "3-5-2": [[.08,.5],[.25,.24],[.22,.5],[.25,.76],[.5,.08],[.47,.3],[.43,.5],[.47,.7],[.5,.92],[.78,.35],[.78,.65]],
+  "5-3-2": [[.08,.5],[.25,.08],[.22,.28],[.2,.5],[.22,.72],[.25,.92],[.5,.24],[.45,.5],[.5,.76],[.78,.35],[.78,.65]],
+  "5-4-1": [[.08,.5],[.25,.08],[.22,.28],[.2,.5],[.22,.72],[.25,.92],[.53,.12],[.48,.38],[.48,.62],[.53,.88],[.82,.5]],
+};
+
+const FORMATION_LABELS: Record<string, string[]> = {
+  "4-3-3": ["GK", "LB", "LCB", "RCB", "RB", "LCM", "CM", "RCM", "LW", "ST", "RW"],
+  "4-2-3-1": ["GK", "LB", "LCB", "RCB", "RB", "LDM", "RDM", "LW", "AM", "RW", "ST"],
+  "4-4-2": ["GK", "LB", "LCB", "RCB", "RB", "LM", "LCM", "RCM", "RM", "LST", "RST"],
+  "3-4-3": ["GK", "LCB", "CB", "RCB", "LWB", "LCM", "RCM", "RWB", "LW", "ST", "RW"],
+  "3-5-2": ["GK", "LCB", "CB", "RCB", "LWB", "LCM", "CM", "RCM", "RWB", "LST", "RST"],
+  "5-3-2": ["GK", "LWB", "LCB", "CB", "RCB", "RWB", "LCM", "CM", "RCM", "LST", "RST"],
+  "5-4-1": ["GK", "LWB", "LCB", "CB", "RCB", "RWB", "LM", "LCM", "RCM", "RM", "ST"],
 };
 
 export const formationNames = Object.keys(FORMATIONS);
 
-export function playersForFormation(formation: string): SlidePlayer[] {
+export function formationSlots(formation: string) {
   const positions = FORMATIONS[formation] ?? FORMATIONS["4-3-3"];
-  return positions.map(([x, y], index) => ({
+  const labels = FORMATION_LABELS[formation] ?? FORMATION_LABELS["4-3-3"];
+  return positions.map(([x, y], index) => ({ label: labels[index] ?? `P${index + 1}`, position: { x, y } }));
+}
+
+export function playersForFormation(formation: string): SlidePlayer[] {
+  const positions = formationSlots(formation);
+  return positions.map(({ position }, index) => ({
     id: createId(), number: index + 1, name: index === 0 ? "GR" : `Jogador ${index + 1}`,
-    team: "home", position: { x, y },
+    team: "home", position: { ...position },
   }));
 }
 
@@ -109,6 +127,35 @@ export function createSlide(type: SlideType, index: number): AnalysisSlide {
         playerSize: .82,
         ballPosition: { x: .5, y: .5 },
         showBall: true,
+      },
+    };
+    case "player-profile": return {
+      ...base,
+      name: "Player profile",
+      duration: 7,
+      content: {
+        kind: "player-profile",
+        shirtNumber: "10",
+        firstName: "FIRST",
+        lastName: "LAST NAME",
+        position: "WINGER",
+        otherPosition: "FORWARD",
+        strongFoot: "Right",
+        clubName: "CURRENT CLUB",
+        heightCm: "180",
+        weightKg: "75",
+        leagueGames: "0",
+        totalMinutes: "0",
+        yellowCards: "0",
+        goals: "0",
+        assists: "0",
+        formation: "4-3-3",
+        selectedFormationSlot: 9,
+        playerPosition: { ...formationSlots("4-3-3")[9].position },
+        accentColor: "#8d111c",
+        panelColor: "#24080b",
+        pitchColor: "#111416",
+        pitchLineColor: "#f5f2ed",
       },
     };
     case "video": return { ...base, name: "Vídeo / Jogada", duration: 8, content: { kind: "video", fileName: "", startTime: 0, drawings: [], playerTracks: [] } };

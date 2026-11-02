@@ -46,7 +46,7 @@ export function Editor() {
   const [videoExportOpen, setVideoExportOpen] = useState(false);
   const [pdfExportOpen, setPdfExportOpen] = useState(false);
   const [projectId, setProjectId] = useState<string | null>(null);
-  const [projectName, setProjectName] = useState(APP_PRODUCT.defaultProjectName);
+  const [projectName, setProjectName] = useState<string>(APP_PRODUCT.defaultProjectName);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [account, setAccount] = useState<Account | null>(null);
   const [notice, setNotice] = useState("");

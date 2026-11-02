@@ -6,6 +6,8 @@ const defaults = [
   "https://draw-analysis.vercel.app",
   "https://ap-gameplan.vercel.app",
   "https://ap-written-report.vercel.app",
+  "https://ap-individual-written-report.vercel.app",
+  "https://ap-opponent-player-video-analysis.vercel.app",
 ];
 const configured = process.env.MEDIA_ALLOWED_ORIGINS?.split(",") ?? [];
 const commandLine = process.argv.slice(2);

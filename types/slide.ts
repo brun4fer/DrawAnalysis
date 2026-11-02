@@ -1,6 +1,6 @@
 import type { DrawingObject, PlayerTrack, Point } from "./drawing";
 
-export type SlideType = "title" | "text" | "lineup" | "team-overview" | "written-report" | "video" | "kickoff" | "tactical-board" | "image";
+export type SlideType = "title" | "text" | "lineup" | "team-overview" | "written-report" | "player-profile" | "video" | "kickoff" | "tactical-board" | "image";
 export type SlideAlignment = "left" | "center" | "right";
 export type SlideBackgroundMediaType = "image" | "video";
 export type CrestCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
@@ -207,6 +207,33 @@ export interface TeamOverviewSlideContent {
   valueFontSize?: number;
 }
 
+export interface PlayerProfileSlideContent {
+  kind: "player-profile";
+  shirtNumber: string;
+  playerPhoto?: string;
+  firstName: string;
+  lastName: string;
+  position: string;
+  otherPosition: string;
+  strongFoot: "Right" | "Left" | "Both" | "";
+  clubName: string;
+  clubCrest?: string;
+  heightCm: string;
+  weightKg: string;
+  leagueGames: string;
+  totalMinutes: string;
+  yellowCards: string;
+  goals: string;
+  assists: string;
+  formation: string;
+  selectedFormationSlot: number;
+  playerPosition: Point;
+  accentColor?: string;
+  panelColor?: string;
+  pitchColor?: string;
+  pitchLineColor?: string;
+}
+
 export interface VideoSlideContent {
   kind: "video";
   fileName: string;
@@ -305,7 +332,7 @@ export interface ImageSlideContent {
   drawings: DrawingObject[];
 }
 
-export type SlideContent = TitleSlideContent | TextSlideContent | LineupSlideContent | TeamOverviewSlideContent | WrittenReportSlideContent | VideoSlideContent | MatchPresentationSlideContent | BoardSlideContent | ImageSlideContent;
+export type SlideContent = TitleSlideContent | TextSlideContent | LineupSlideContent | TeamOverviewSlideContent | WrittenReportSlideContent | PlayerProfileSlideContent | VideoSlideContent | MatchPresentationSlideContent | BoardSlideContent | ImageSlideContent;
 
 export interface AnalysisSlide {
   id: string;

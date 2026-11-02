@@ -1,12 +1,13 @@
-# Opponent Video Analysis / GamePlan / Relatório Escrito
+# Opponent Video Analysis / GamePlan / Written Reports
 
 Construtor local de apresentações de análise de futebol, construído com Next.js,
 React, TypeScript, Zustand e react-konva. Uma apresentação pode combinar slides
 estáticos, campos táticos, imagens e jogadas em vídeo.
 
-O mesmo código pode ser publicado como **Opponent Video Analysis**, **GamePlan** ou
-**Relatório Escrito**. As três variantes usam as mesmas contas e a mesma
-biblioteca cloud, mas mantêm listas de apresentações independentes.
+O mesmo código pode ser publicado como **Opponent Video Analysis**, **GamePlan**,
+**Relatório Escrito**, **Individual Written Report** ou
+**Opponent Player Video Analysis**. As cinco variantes usam as mesmas contas e
+a mesma biblioteca cloud, mas mantêm listas de apresentações independentes.
 
 ## Arranque
 
@@ -25,6 +26,9 @@ um URL local do browser e nunca é enviado para um servidor.
 - escalação com 4-3-3, 4-2-3-1, 4-4-2, 3-4-3 e 3-5-2;
 - relatório escrito com identificação do jogo, dados gerais, vários esquemas
   táticos, momento/submomento, campo desenhável e descrição;
+- perfil individual exclusivo das variantes de jogador, com fotografia e
+  emblema carregados manualmente, formação selecionável, posição arrastável e
+  estatísticas da liga;
 - vídeo / jogada com o editor temporal;
 - pontapé de saída;
 - quadro tático;
@@ -102,12 +106,12 @@ as consultas e alterações de projetos são filtradas pelo `workspaceId` da ses
 Use **Projetos** para guardar, abrir ou eliminar apresentações. `Ctrl+S` guarda o
 projeto aberto.
 
-### Separação entre Opponent Video Analysis, GamePlan e Relatório Escrito
+### Separação entre as variantes do produto
 
 Cada projeto tem um `productVariant`. Os registos já existentes recebem
 automaticamente `tactidraw`, por isso continuam disponíveis no Opponent Video Analysis e não
-aparecem no GamePlan nem no Relatório Escrito. As rotas de listar, abrir,
-guardar e eliminar validam este campo no servidor.
+aparecem nas outras quatro variantes. As rotas de listar, abrir, guardar e
+eliminar validam este campo no servidor.
 
 Para preparar uma base de dados existente, crie primeiro um branch/backup no
 Neon e execute apenas uma vez:
@@ -119,22 +123,26 @@ npm run db:migrate:product-variant
 O script apenas acrescenta a coluna e o índice necessários, confirma a contagem
 de projetos antes e depois e pode ser repetido sem duplicar dados.
 
-Na Vercel, publique o mesmo repositório em três projetos:
+Na Vercel, publique o mesmo repositório em cinco projetos:
 
 - Opponent Video Analysis: `APP_VARIANT=tactidraw` e `NEXT_PUBLIC_APP_VARIANT=tactidraw`;
 - GamePlan: `APP_VARIANT=gameplan` e `NEXT_PUBLIC_APP_VARIANT=gameplan`.
 - Relatório Escrito: `APP_VARIANT=written-report` e
   `NEXT_PUBLIC_APP_VARIANT=written-report`.
+- Individual Written Report: `APP_VARIANT=individual-written-report` e
+  `NEXT_PUBLIC_APP_VARIANT=individual-written-report`.
+- Opponent Player Video Analysis: `APP_VARIANT=opponent-player-video-analysis` e
+  `NEXT_PUBLIC_APP_VARIANT=opponent-player-video-analysis`.
 
-Os três deployments devem usar os mesmos `DATABASE_URL`, `DIRECT_URL`,
+Os cinco deployments devem usar os mesmos `DATABASE_URL`, `DIRECT_URL`,
 `AUTH_SECRET`, `MEDIA_DATABASE_URL` e valores `MEDIA_R2_*`. Assim, as contas e
 os vídeos são comuns, enquanto as apresentações ficam separadas.
 
 Os URLs temporários não são enviados para a base de dados. Os vídeos locais podem
 ser carregados diretamente para a biblioteca cloud partilhada; as apresentações
 guardam apenas o identificador permanente do vídeo. As
-imagens usadas nos novos slides de Título / Momento e Onze provável são reduzidas
-no browser e ficam incorporadas no projeto; os desenhos, cortes, ordem dos slides
+imagens usadas nos slides de Título / Momento, Onze provável e Player profile são
+reduzidas no browser e ficam incorporadas no projeto; os desenhos, cortes, ordem dos slides
 e referências a vídeos cloud ficam guardados no Neon.
 
 ## Biblioteca cloud partilhada
@@ -160,7 +168,9 @@ ao browser. Exemplo de política CORS:
       "http://localhost:3001",
       "https://draw-analysis.vercel.app",
       "https://ap-gameplan.vercel.app",
-      "https://ap-written-report.vercel.app"
+      "https://ap-written-report.vercel.app",
+      "https://ap-individual-written-report.vercel.app",
+      "https://ap-opponent-player-video-analysis.vercel.app"
     ],
     "AllowedMethods": ["GET", "HEAD", "PUT"],
     "AllowedHeaders": ["*"],
@@ -188,8 +198,9 @@ Copie `.env.example` para um ficheiro local ignorado pelo Git e configure:
 - `DATABASE_URL`: ligação pooled da base Neon exclusiva do DrawAnalysis;
 - `DIRECT_URL`: ligação direta da mesma base para alterações de schema;
 - `AUTH_SECRET`: segredo aleatório longo para assinar sessões;
-- `APP_VARIANT` e `NEXT_PUBLIC_APP_VARIANT`: `tactidraw`, `gameplan` ou
-  `written-report`;
+- `APP_VARIANT` e `NEXT_PUBLIC_APP_VARIANT`: `tactidraw`, `gameplan`,
+  `written-report`, `individual-written-report` ou
+  `opponent-player-video-analysis`;
 - `INITIAL_ADMIN_*`: conta inicial opcional;
 - `MEDIA_DATABASE_URL` e `MEDIA_DIRECT_URL`: catálogo partilhado;
 - `MEDIA_R2_*`: credenciais R2 usadas para leitura e autorização de uploads multipart;

@@ -2,8 +2,8 @@
 
 import { Clock3, Film, ImagePlus, Layers3, Plus, Trash2, X } from "lucide-react";
 import { useEditorStore } from "@/store/useEditorStore";
-import type { AnalysisSlide, BoardSlideContent, ImageSlideContent, LineupSlideContent, MatchPresentationSlideContent, SlideAlignment, SlideContent, TeamOverviewSlideContent, TextSlideContent, TitleSlideContent, WrittenReportSlideContent } from "@/types/slide";
-import { formationNames, playersForFormation } from "@/utils/slideFactory";
+import type { AnalysisSlide, BoardSlideContent, ImageSlideContent, LineupSlideContent, MatchPresentationSlideContent, PlayerProfileSlideContent, SlideAlignment, SlideContent, TeamOverviewSlideContent, TextSlideContent, TitleSlideContent, WrittenReportSlideContent } from "@/types/slide";
+import { formationNames, formationSlots, playersForFormation } from "@/utils/slideFactory";
 import { createId } from "@/utils/id";
 import { CaptionControls } from "./CaptionControls";
 import { ColorPalettePicker } from "@/components/ui/ColorPalettePicker";
@@ -13,7 +13,7 @@ export function SlidePropertiesPanel() {
   const slide = slides.find((item) => item.id === selectedSlideId);
   if (!slide) return <aside className="properties-panel"><div className="no-selection"><Layers3 size={26} /><strong>Adicione um slide</strong></div></aside>;
   const setContent = (content: SlideContent) => updateSlide(slide.id, { content });
-  const slideTypeLabel = slide.type === "text" ? "Conclusão" : slide.type === "team-overview" ? "Dados gerais da equipa" : slide.type === "written-report" ? "Esquema tático + descrição" : slide.type === "kickoff" ? "Apresentação de jogo" : slide.type;
+  const slideTypeLabel = slide.type === "text" ? "Conclusão" : slide.type === "team-overview" ? "Dados gerais da equipa" : slide.type === "written-report" ? "Esquema tático + descrição" : slide.type === "player-profile" ? "Player profile" : slide.type === "kickoff" ? "Apresentação de jogo" : slide.type;
 
   return (
     <aside className="properties-panel slide-properties">
@@ -24,6 +24,7 @@ export function SlidePropertiesPanel() {
       {slide.content.kind === "lineup" && <LineupProperties content={slide.content} onChange={setContent} />}
       {slide.content.kind === "team-overview" && <TeamOverviewProperties content={slide.content} onChange={setContent} />}
       {slide.content.kind === "written-report" && <WrittenReportProperties content={slide.content} onChange={setContent} />}
+      {slide.content.kind === "player-profile" && <PlayerProfileProperties content={slide.content} onChange={setContent} />}
       {slide.content.kind === "kickoff" && <MatchPresentationProperties content={slide.content} onChange={setContent} />}
       {slide.content.kind === "tactical-board" && <BoardProperties content={slide.content} onChange={setContent} />}
       {slide.content.kind === "image" && <ImageProperties content={slide.content} onChange={setContent} />}
@@ -196,6 +197,60 @@ function TeamOverviewProperties({ content, onChange }: { content: TeamOverviewSl
       <ColorPaletteField label="Destaque" value={content.accentColor ?? "#a3ff12"} onChange={(accentColor) => onChange({ ...content, accentColor })} />
       <label className="stacked-field"><span><span className="field-label">Nome da equipa</span><b>{content.teamFontSize ?? 54}px</b></span><input type="range" min={30} max={76} step={1} value={content.teamFontSize ?? 54} onChange={(event) => onChange({ ...content, teamFontSize: Number(event.target.value) })} /></label>
       <label className="stacked-field"><span><span className="field-label">Valores</span><b>{content.valueFontSize ?? 20}px</b></span><input type="range" min={13} max={30} step={1} value={content.valueFontSize ?? 20} onChange={(event) => onChange({ ...content, valueFontSize: Number(event.target.value) })} /></label>
+    </Section>
+  </>;
+}
+
+function PlayerProfileProperties({ content, onChange }: { content: PlayerProfileSlideContent; onChange: (value: PlayerProfileSlideContent) => void }) {
+  const slots = formationSlots(content.formation);
+  const selectedSlot = Math.min(Math.max(0, content.selectedFormationSlot), slots.length - 1);
+  const updateFormation = (formation: string) => {
+    const nextSlots = formationSlots(formation);
+    const nextSelectedSlot = Math.min(selectedSlot, nextSlots.length - 1);
+    onChange({
+      ...content,
+      formation,
+      selectedFormationSlot: nextSelectedSlot,
+      playerPosition: { ...nextSlots[nextSelectedSlot].position },
+    });
+  };
+  const updateSlot = (selectedFormationSlot: number) => onChange({
+    ...content,
+    selectedFormationSlot,
+    playerPosition: { ...slots[selectedFormationSlot].position },
+  });
+
+  return <>
+    <Section title="PLAYER IDENTITY">
+      <ImageAssetUpload label="Player photo" value={content.playerPhoto} maxDimension={1000} onLoad={(playerPhoto) => onChange({ ...content, playerPhoto })} onClear={() => onChange({ ...content, playerPhoto: undefined })} />
+      <div className="report-property-pair"><label><span>First name</span><input value={content.firstName} onChange={(event) => onChange({ ...content, firstName: event.target.value })} /></label><label><span>Last name</span><input value={content.lastName} onChange={(event) => onChange({ ...content, lastName: event.target.value })} /></label></div>
+      <label className="slide-prop-field vertical"><span>Shirt number</span><input inputMode="numeric" value={content.shirtNumber} onChange={(event) => onChange({ ...content, shirtNumber: event.target.value.slice(0, 3) })} /></label>
+      <label className="slide-prop-field vertical"><span>Position</span><input value={content.position} onChange={(event) => onChange({ ...content, position: event.target.value })} /></label>
+      <label className="slide-prop-field vertical"><span>Other position</span><input value={content.otherPosition} onChange={(event) => onChange({ ...content, otherPosition: event.target.value })} /></label>
+      <label className="slide-prop-field"><span>Strong foot</span><select value={content.strongFoot} onChange={(event) => onChange({ ...content, strongFoot: event.target.value as PlayerProfileSlideContent["strongFoot"] })}><option value="">Not defined</option><option value="Right">Right</option><option value="Left">Left</option><option value="Both">Both</option></select></label>
+    </Section>
+    <Section title="CLUB">
+      <label className="slide-prop-field vertical"><span>Actual club</span><input value={content.clubName} onChange={(event) => onChange({ ...content, clubName: event.target.value })} /></label>
+      <ImageAssetUpload label="Upload club crest" value={content.clubCrest} maxDimension={500} onLoad={(clubCrest) => onChange({ ...content, clubCrest })} onClear={() => onChange({ ...content, clubCrest: undefined })} />
+    </Section>
+    <Section title="PHYSICAL DATA">
+      <div className="report-property-pair"><label><span>Height (cm)</span><input type="number" min={0} max={260} value={content.heightCm} onChange={(event) => onChange({ ...content, heightCm: event.target.value })} /></label><label><span>Weight (kg)</span><input type="number" min={0} max={250} value={content.weightKg} onChange={(event) => onChange({ ...content, weightKg: event.target.value })} /></label></div>
+    </Section>
+    <Section title="LEAGUE STATISTICS">
+      <div className="report-property-pair"><label><span>Games</span><input type="number" min={0} value={content.leagueGames} onChange={(event) => onChange({ ...content, leagueGames: event.target.value })} /></label><label><span>Total minutes</span><input type="number" min={0} value={content.totalMinutes} onChange={(event) => onChange({ ...content, totalMinutes: event.target.value })} /></label></div>
+      <div className="report-property-pair"><label><span>Yellow cards</span><input type="number" min={0} value={content.yellowCards} onChange={(event) => onChange({ ...content, yellowCards: event.target.value })} /></label><label><span>Goals</span><input type="number" min={0} value={content.goals} onChange={(event) => onChange({ ...content, goals: event.target.value })} /></label></div>
+      <label className="slide-prop-field vertical"><span>Assists</span><input type="number" min={0} value={content.assists} onChange={(event) => onChange({ ...content, assists: event.target.value })} /></label>
+    </Section>
+    <Section title="POSITION MAP">
+      <label className="slide-prop-field"><span>Formation</span><select value={content.formation} onChange={(event) => updateFormation(event.target.value)}>{formationNames.map((formation) => <option key={formation} value={formation}>{formation}</option>)}</select></label>
+      <label className="slide-prop-field"><span>Player position</span><select value={selectedSlot} onChange={(event) => updateSlot(Number(event.target.value))}>{slots.map((slot, index) => <option key={`${slot.label}-${index}`} value={index}>{slot.label}</option>)}</select></label>
+      <p className="property-help">Select one of the 11 positions, click a position on the pitch or drag the highlighted player freely.</p>
+    </Section>
+    <Section title="DESIGN">
+      <ColorPaletteField label="Accent" value={content.accentColor ?? "#8d111c"} onChange={(accentColor) => onChange({ ...content, accentColor })} />
+      <ColorPaletteField label="Side panels" value={content.panelColor ?? "#24080b"} onChange={(panelColor) => onChange({ ...content, panelColor })} />
+      <ColorPaletteField label="Pitch" value={content.pitchColor ?? "#111416"} onChange={(pitchColor) => onChange({ ...content, pitchColor })} />
+      <ColorPaletteField label="Pitch lines" value={content.pitchLineColor ?? "#f5f2ed"} onChange={(pitchLineColor) => onChange({ ...content, pitchLineColor })} />
     </Section>
   </>;
 }

@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "test": "tsx --test lib/*.test.ts utils/*.test.ts",
     "test:player-mask": "tsx scripts/check-player-mask-persistence.ts",
     "test:manual-mask": "tsx scripts/check-player-manual-mask.ts",
     "diagnose:cloud-cors": "tsx scripts/diagnose-cloud-cors.ts",

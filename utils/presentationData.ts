@@ -1,5 +1,6 @@
 import type { DrawingObject } from "@/types/drawing";
 import type { AnalysisSlide, SlidePlayer } from "@/types/slide";
+import { formationSlots } from "@/utils/slideFactory";
 
 const withoutEmbeddedData = (value?: string) => value?.startsWith("data:") || value?.startsWith("blob:") ? undefined : value;
 
@@ -135,6 +136,35 @@ export function normalizePresentationSlides(slides: AnalysisSlide[]) {
         imageRatio: normalized.content.imageRatio ?? .58,
         teamFontSize: normalized.content.teamFontSize ?? 54,
         valueFontSize: normalized.content.valueFontSize ?? 20,
+      };
+    }
+    if (normalized.content.kind === "player-profile") {
+      const formation = normalized.content.formation || "4-3-3";
+      const slots = formationSlots(formation);
+      const selectedFormationSlot = Math.min(Math.max(0, normalized.content.selectedFormationSlot ?? 9), slots.length - 1);
+      normalized.content = {
+        ...normalized.content,
+        shirtNumber: normalized.content.shirtNumber ?? "",
+        firstName: normalized.content.firstName ?? "",
+        lastName: normalized.content.lastName ?? "",
+        position: normalized.content.position ?? "",
+        otherPosition: normalized.content.otherPosition ?? "",
+        strongFoot: normalized.content.strongFoot ?? "",
+        clubName: normalized.content.clubName ?? "",
+        heightCm: normalized.content.heightCm ?? "",
+        weightKg: normalized.content.weightKg ?? "",
+        leagueGames: normalized.content.leagueGames ?? "",
+        totalMinutes: normalized.content.totalMinutes ?? "",
+        yellowCards: normalized.content.yellowCards ?? "",
+        goals: normalized.content.goals ?? "",
+        assists: normalized.content.assists ?? "",
+        formation,
+        selectedFormationSlot,
+        playerPosition: normalized.content.playerPosition ?? { ...slots[selectedFormationSlot].position },
+        accentColor: normalized.content.accentColor ?? "#8d111c",
+        panelColor: normalized.content.panelColor ?? "#24080b",
+        pitchColor: normalized.content.pitchColor ?? "#111416",
+        pitchLineColor: normalized.content.pitchLineColor ?? "#f5f2ed",
       };
     }
     if (normalized.content.kind === "written-report") {
