@@ -147,6 +147,7 @@ export function createSlide(type: SlideType, index: number): AnalysisSlide {
         leagueGames: "0",
         totalMinutes: "0",
         yellowCards: "0",
+        redCards: "0",
         goals: "0",
         assists: "0",
         formation: "4-3-3",

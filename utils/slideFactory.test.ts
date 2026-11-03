@@ -12,5 +12,6 @@ test("creates a complete editable player profile", () => {
   assert.equal(slide.content.kind, "player-profile");
   if (slide.content.kind !== "player-profile") return;
   assert.equal(slide.content.formation, "4-3-3");
+  assert.equal(slide.content.redCards, "0");
   assert.deepEqual(slide.content.playerPosition, formationSlots("4-3-3")[9].position);
 });

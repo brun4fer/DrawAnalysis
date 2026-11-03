@@ -36,6 +36,7 @@ export function PlayerProfileSlide({ content, interactive = true, onChange }: Pr
     ["GAMES IN THE LEAGUE", content.leagueGames],
     ["TOTAL MINUTES", content.totalMinutes],
     ["YELLOW CARDS", content.yellowCards],
+    ["RED CARDS", content.redCards],
     ["GOALS", content.goals],
     ["ASSISTS", content.assists],
   ] as const;

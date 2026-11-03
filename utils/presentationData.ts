@@ -156,6 +156,7 @@ export function normalizePresentationSlides(slides: AnalysisSlide[]) {
         leagueGames: normalized.content.leagueGames ?? "",
         totalMinutes: normalized.content.totalMinutes ?? "",
         yellowCards: normalized.content.yellowCards ?? "",
+        redCards: normalized.content.redCards ?? "0",
         goals: normalized.content.goals ?? "",
         assists: normalized.content.assists ?? "",
         formation,

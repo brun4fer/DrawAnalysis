@@ -223,6 +223,7 @@ export interface PlayerProfileSlideContent {
   leagueGames: string;
   totalMinutes: string;
   yellowCards: string;
+  redCards: string;
   goals: string;
   assists: string;
   formation: string;
