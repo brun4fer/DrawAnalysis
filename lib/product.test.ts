@@ -9,10 +9,16 @@ test("normalizes both opponent-player variants", () => {
   assert.equal(normalizeProductVariant("player-video-analysis"), "opponent-player-video-analysis");
 });
 
+test("normalizes the game review deployment aliases", () => {
+  assert.equal(normalizeProductVariant("game-review"), "game-review");
+  assert.equal(normalizeProductVariant("match-review"), "game-review");
+});
+
 test("only player products expose the player-profile slide", () => {
   assert.equal(supportsPlayerProfile("individual-written-report"), true);
   assert.equal(supportsPlayerProfile("opponent-player-video-analysis"), true);
   assert.equal(supportsPlayerProfile("tactidraw"), false);
   assert.equal(supportsPlayerProfile("gameplan"), false);
+  assert.equal(supportsPlayerProfile("game-review"), false);
   assert.equal(supportsPlayerProfile("written-report"), false);
 });

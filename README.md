@@ -123,10 +123,12 @@ npm run db:migrate:product-variant
 O script apenas acrescenta a coluna e o índice necessários, confirma a contagem
 de projetos antes e depois e pode ser repetido sem duplicar dados.
 
-Na Vercel, publique o mesmo repositório em cinco projetos:
+Na Vercel, publique o mesmo repositório em seis projetos:
 
 - Opponent Video Analysis: `APP_VARIANT=tactidraw` e `NEXT_PUBLIC_APP_VARIANT=tactidraw`;
 - GamePlan: `APP_VARIANT=gameplan` e `NEXT_PUBLIC_APP_VARIANT=gameplan`.
+- Game Review: `APP_VARIANT=game-review` e
+  `NEXT_PUBLIC_APP_VARIANT=game-review`.
 - Relatório Escrito: `APP_VARIANT=written-report` e
   `NEXT_PUBLIC_APP_VARIANT=written-report`.
 - Individual Written Report: `APP_VARIANT=individual-written-report` e
@@ -134,7 +136,7 @@ Na Vercel, publique o mesmo repositório em cinco projetos:
 - Opponent Player Video Analysis: `APP_VARIANT=opponent-player-video-analysis` e
   `NEXT_PUBLIC_APP_VARIANT=opponent-player-video-analysis`.
 
-Os cinco deployments devem usar os mesmos `DATABASE_URL`, `DIRECT_URL`,
+Os seis deployments devem usar os mesmos `DATABASE_URL`, `DIRECT_URL`,
 `AUTH_SECRET`, `MEDIA_DATABASE_URL` e valores `MEDIA_R2_*`. Assim, as contas e
 os vídeos são comuns, enquanto as apresentações ficam separadas.
 
@@ -168,6 +170,7 @@ ao browser. Exemplo de política CORS:
       "http://localhost:3001",
       "https://draw-analysis.vercel.app",
       "https://ap-gameplan.vercel.app",
+      "https://ap-game-review.vercel.app",
       "https://ap-written-report.vercel.app",
       "https://ap-individual-written-report.vercel.app",
       "https://ap-opponent-player-video-analysis.vercel.app"
@@ -198,7 +201,7 @@ Copie `.env.example` para um ficheiro local ignorado pelo Git e configure:
 - `DATABASE_URL`: ligação pooled da base Neon exclusiva do DrawAnalysis;
 - `DIRECT_URL`: ligação direta da mesma base para alterações de schema;
 - `AUTH_SECRET`: segredo aleatório longo para assinar sessões;
-- `APP_VARIANT` e `NEXT_PUBLIC_APP_VARIANT`: `tactidraw`, `gameplan`,
+- `APP_VARIANT` e `NEXT_PUBLIC_APP_VARIANT`: `tactidraw`, `gameplan`, `game-review`,
   `written-report`, `individual-written-report` ou
   `opponent-player-video-analysis`;
 - `INITIAL_ADMIN_*`: conta inicial opcional;

@@ -1,6 +1,7 @@
 export type ProductVariant =
   | "tactidraw"
   | "gameplan"
+  | "game-review"
   | "written-report"
   | "individual-written-report"
   | "opponent-player-video-analysis";
@@ -8,6 +9,7 @@ export type ProductVariant =
 export function normalizeProductVariant(value?: string): ProductVariant {
   const normalized = value?.trim().toLowerCase();
   if (normalized === "gameplan") return "gameplan";
+  if (["game-review", "game-review-analysis", "match-review"].includes(normalized ?? "")) return "game-review";
   if (["written-report", "report", "relatorio-escrito"].includes(normalized ?? "")) return "written-report";
   if (["individual-written-report", "individual-report", "opponent-player-written-report"].includes(normalized ?? "")) return "individual-written-report";
   if (["opponent-player-video-analysis", "player-video-analysis", "opponent-players-video-analysis"].includes(normalized ?? "")) return "opponent-player-video-analysis";
@@ -40,6 +42,16 @@ const PRODUCTS = {
     iconPath: "/gameplan-icon.svg",
     description: "Planeamento de jogo, desenhos táticos e apresentações de futebol.",
     defaultProjectName: "Plano de jogo sem título",
+  },
+  "game-review": {
+    variant: "game-review",
+    name: "Game Review",
+    brandLead: "Game ",
+    brandStrong: "Review",
+    mark: "GR",
+    iconPath: "/tactidraw-icon.svg",
+    description: "Complete match review with video, tactical drawings and presentations.",
+    defaultProjectName: "Untitled game review",
   },
   "written-report": {
     variant: "written-report",

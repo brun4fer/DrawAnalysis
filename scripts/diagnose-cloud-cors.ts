@@ -8,6 +8,7 @@ const origins = configuredOrigins.length ? configuredOrigins : [
   "http://localhost:3001",
   "https://draw-analysis.vercel.app",
   "https://ap-gameplan.vercel.app",
+  "https://ap-game-review.vercel.app",
   "https://ap-written-report.vercel.app",
   "https://ap-individual-written-report.vercel.app",
   "https://ap-opponent-player-video-analysis.vercel.app",
