@@ -14,8 +14,8 @@ const origins = configuredOrigins.length ? configuredOrigins : [
   "https://ap-opponent-player-video-analysis.vercel.app",
   "https://ap-our-player-performance-report.vercel.app",
   "https://ap-our-player-video-analysis.vercel.app",
-  "https://ap-collective-training-video-analysis.vercel.app",
-  "https://ap-individual-training-video-analysis.vercel.app",
+  "https://ap-collective-training-video-analys.vercel.app",
+  "https://ap-individual-training-video-analys.vercel.app",
 ];
 
 async function probe(url: string, origin: string, method: "GET" | "OPTIONS") {

@@ -184,8 +184,8 @@ ao browser. Exemplo de política CORS:
       "https://ap-opponent-player-video-analysis.vercel.app",
       "https://ap-our-player-performance-report.vercel.app",
       "https://ap-our-player-video-analysis.vercel.app",
-      "https://ap-collective-training-video-analysis.vercel.app",
-      "https://ap-individual-training-video-analysis.vercel.app"
+      "https://ap-collective-training-video-analys.vercel.app",
+      "https://ap-individual-training-video-analys.vercel.app"
     ],
     "AllowedMethods": ["GET", "HEAD", "PUT"],
     "AllowedHeaders": ["*"],

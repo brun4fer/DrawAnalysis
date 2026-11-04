@@ -11,8 +11,8 @@ const defaults = [
   "https://ap-opponent-player-video-analysis.vercel.app",
   "https://ap-our-player-performance-report.vercel.app",
   "https://ap-our-player-video-analysis.vercel.app",
-  "https://ap-collective-training-video-analysis.vercel.app",
-  "https://ap-individual-training-video-analysis.vercel.app",
+  "https://ap-collective-training-video-analys.vercel.app",
+  "https://ap-individual-training-video-analys.vercel.app",
 ];
 const configured = process.env.MEDIA_ALLOWED_ORIGINS?.split(",") ?? [];
 const commandLine = process.argv.slice(2);
