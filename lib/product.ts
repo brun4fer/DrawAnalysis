@@ -4,7 +4,11 @@ export type ProductVariant =
   | "game-review"
   | "written-report"
   | "individual-written-report"
-  | "opponent-player-video-analysis";
+  | "opponent-player-video-analysis"
+  | "our-player-performance-report"
+  | "our-player-video-analysis"
+  | "collective-training-video-analysis"
+  | "individual-training-video-analysis";
 
 export function normalizeProductVariant(value?: string): ProductVariant {
   const normalized = value?.trim().toLowerCase();
@@ -13,11 +17,19 @@ export function normalizeProductVariant(value?: string): ProductVariant {
   if (["written-report", "report", "relatorio-escrito"].includes(normalized ?? "")) return "written-report";
   if (["individual-written-report", "individual-report", "opponent-player-written-report"].includes(normalized ?? "")) return "individual-written-report";
   if (["opponent-player-video-analysis", "player-video-analysis", "opponent-players-video-analysis"].includes(normalized ?? "")) return "opponent-player-video-analysis";
+  if (["our-player-performance-report", "our-players-performance-report", "player-performance-report"].includes(normalized ?? "")) return "our-player-performance-report";
+  if (["our-player-video-analysis", "our-players-video-analysis"].includes(normalized ?? "")) return "our-player-video-analysis";
+  if (["collective-training-video-analysis", "training-collective-video-analysis"].includes(normalized ?? "")) return "collective-training-video-analysis";
+  if (["individual-training-video-analysis", "training-individual-video-analysis"].includes(normalized ?? "")) return "individual-training-video-analysis";
   return "tactidraw";
 }
 
 export function supportsPlayerProfile(variant: ProductVariant) {
-  return variant === "individual-written-report" || variant === "opponent-player-video-analysis";
+  return variant === "individual-written-report"
+    || variant === "opponent-player-video-analysis"
+    || variant === "our-player-performance-report"
+    || variant === "our-player-video-analysis"
+    || variant === "individual-training-video-analysis";
 }
 
 export const APP_VARIANT = normalizeProductVariant(process.env.NEXT_PUBLIC_APP_VARIANT);
@@ -82,6 +94,46 @@ const PRODUCTS = {
     iconPath: "/tactidraw-icon.svg",
     description: "Análise individual em vídeo dos jogadores adversários.",
     defaultProjectName: "Player video analysis sem título",
+  },
+  "our-player-performance-report": {
+    variant: "our-player-performance-report",
+    name: "Our Player Performance Report",
+    brandLead: "Our Player ",
+    brandStrong: "Performance Report",
+    mark: "PR",
+    iconPath: "/written-report-icon.svg",
+    description: "Individual performance reports and presentations for our players.",
+    defaultProjectName: "Untitled player performance report",
+  },
+  "our-player-video-analysis": {
+    variant: "our-player-video-analysis",
+    name: "Our Player Video Analysis",
+    brandLead: "Our Player ",
+    brandStrong: "Video Analysis",
+    mark: "PV",
+    iconPath: "/tactidraw-icon.svg",
+    description: "Individual match video analysis and presentations for our players.",
+    defaultProjectName: "Untitled player video analysis",
+  },
+  "collective-training-video-analysis": {
+    variant: "collective-training-video-analysis",
+    name: "Collective Training Video Analysis",
+    brandLead: "Collective Training ",
+    brandStrong: "Video Analysis",
+    mark: "CT",
+    iconPath: "/tactidraw-icon.svg",
+    description: "Collective training video analysis, tactical drawings and presentations.",
+    defaultProjectName: "Untitled collective training analysis",
+  },
+  "individual-training-video-analysis": {
+    variant: "individual-training-video-analysis",
+    name: "Individual Training Video Analysis",
+    brandLead: "Individual Training ",
+    brandStrong: "Video Analysis",
+    mark: "IT",
+    iconPath: "/tactidraw-icon.svg",
+    description: "Individual training video analysis and presentations for our players.",
+    defaultProjectName: "Untitled individual training analysis",
   },
 } as const satisfies Record<ProductVariant, {
   variant: ProductVariant;
