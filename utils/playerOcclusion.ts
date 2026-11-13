@@ -1,4 +1,4 @@
-import type { DrawingStyle, NormalizedBox, PlayerSegmentationMask, Point } from "@/types/drawing";
+import type { DrawingObject, DrawingStyle, NormalizedBox, PlayerSegmentationMask, Point } from "@/types/drawing";
 
 interface CachedImage {
   image: HTMLImageElement;
@@ -94,6 +94,30 @@ function clamp01(value: number) {
 
 function clampSigned(value: number, limit: number) {
   return Math.max(-limit, Math.min(limit, value));
+}
+
+function drawingNeedsPlayerForeground(drawing: DrawingObject, trackId: string) {
+  if (drawing.target?.kind === "player" && drawing.target.trackId === trackId) {
+    return drawing.data.kind !== "identifyPlayer" && drawing.data.kind !== "spotlight";
+  }
+  if (drawing.data.kind !== "line") return false;
+  return [drawing.data.startTarget, drawing.data.endTarget, ...(drawing.data.pointTargets ?? [])]
+    .some((target) => target?.trackId === trackId);
+}
+
+/**
+ * A confirmed SAM identification is metadata, not a visual effect. Leaving the
+ * original video visible avoids downsampling a static cutout into the editor
+ * overlay. Effects that need foreground occlusion still opt into composition.
+ * Non-SAM masks deliberately keep their existing rendering behaviour.
+ */
+export function shouldCompositePlayerForeground(
+  activeDrawings: DrawingObject[],
+  trackId: string,
+  segmentation?: PlayerSegmentationMask,
+) {
+  if (segmentation?.method !== "sam-3.1") return true;
+  return activeDrawings.some((drawing) => drawingNeedsPlayerForeground(drawing, trackId));
 }
 
 function addPlayerSilhouettePath(

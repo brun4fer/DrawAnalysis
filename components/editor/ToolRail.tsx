@@ -21,6 +21,8 @@ export function ToolRail() {
             ? "Clique para inserir"
             : tool === "identifyPlayer"
               ? "Contorne o jogador · guarde a máscara"
+              : tool === "sam31"
+                ? "Clique no jogador · confirme a máscara SAM 3.1"
               : tool === "playerRing"
                 ? ringReidentifyId ? "Clique nos pés de outro jogador identificado" : "Clique nos pés de um jogador identificado"
                 : tool === "ghost"

@@ -14,9 +14,12 @@ import { timelineTimeToSource } from "@/utils/videoTimeline";
 import { playerGroundPoint, samplePlayerTrackAtTime, targetOffsetAtTime } from "@/utils/playerTracking";
 import { playerRingDimensions } from "@/utils/playerRing";
 import { buildManualPlayerSample, pointHitsPlayerMask } from "@/utils/playerManualMask";
+import { buildSamPlayerSample } from "@/utils/samPlayerMask";
+import { SamClientError, segmentFrameAtPoint } from "@/lib/samClient";
 import { applyFavoriteData } from "@/utils/toolFavorites";
 import { DrawingShape } from "./DrawingShape";
 import { ManualPlayerMaskEditor } from "./ManualPlayerMaskEditor";
+import { SamMaskReview } from "./SamMaskReview";
 import { PlayerOcclusionCanvas } from "./PlayerOcclusionCanvas";
 import { PlayerLabelOverlay } from "./PlayerLabelOverlay";
 import { ZoomLensCanvas } from "./ZoomLensCanvas";
@@ -36,6 +39,14 @@ interface ManualMaskSession {
   frameTime: number;
   track?: PlayerTrack;
   initialName: string;
+}
+interface SamMaskSession {
+  phase: "loading" | "review" | "error";
+  click: Point;
+  frame: HTMLCanvasElement;
+  sample?: PlayerTrack["samples"][number];
+  message?: string;
+  retryable?: boolean;
 }
 
 const labelFor = (kind: DrawingObject["type"]) => ({
@@ -281,6 +292,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
   const [detectingPlayer, setDetectingPlayer] = useState(false);
   const [pendingGhost, setPendingGhost] = useState<IdentifiedPlayer | null>(null);
   const [manualMaskSession, setManualMaskSession] = useState<ManualMaskSession | null>(null);
+  const [samMaskSession, setSamMaskSession] = useState<SamMaskSession | null>(null);
   const [ghostTransformPreview, setGhostTransformPreview] = useState<Record<string, ObjectTransform>>({});
   const [trackingQuality, setTrackingQuality] = useState<"tracking" | "reacquiring" | null>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -289,12 +301,22 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
   const trackingBusyRef = useRef(false);
   const lastTrackingFrameRef = useRef<Record<string, number>>({});
   const trackingMissesRef = useRef<Record<string, number>>({});
+  const samAbortRef = useRef<AbortController | null>(null);
   const activeSlide = slides.find((slide) => slide.id === selectedSlideId);
   const activeVideoContent = activeSlide?.content.kind === "video" ? activeSlide.content : null;
   const activeFreezeFrames = activeVideoContent?.freezeFrames;
   const activeFreezeFramesRef = useRef(activeFreezeFrames);
 
   useEffect(() => { activeFreezeFramesRef.current = activeFreezeFrames; }, [activeFreezeFrames]);
+
+  useEffect(() => {
+    if (tool === "sam31") return;
+    samAbortRef.current?.abort();
+    samAbortRef.current = null;
+    if (!samMaskSession) return;
+    const animationFrame = window.requestAnimationFrame(() => setSamMaskSession(null));
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [samMaskSession, tool]);
 
   useEffect(() => {
     if (tool !== "identifyPlayer") {
@@ -548,6 +570,101 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     setManualMaskSession(null);
     cancelPlayerMaskEdit();
     setTool("select");
+    window.setTimeout(() => setDetectionMessage(null), 1800);
+  };
+
+  const cancelSamIdentification = () => {
+    samAbortRef.current?.abort();
+    samAbortRef.current = null;
+    setSamMaskSession(null);
+    setTool("select");
+  };
+
+  const repeatSamIdentification = () => {
+    samAbortRef.current?.abort();
+    samAbortRef.current = null;
+    setSamMaskSession(null);
+    setDetectionMessage("SAM 3.1 pronto · clique novamente no centro do jogador");
+    window.setTimeout(() => setDetectionMessage(null), 2200);
+  };
+
+  const startSamIdentification = async (click: Point) => {
+    if (samMaskSession?.phase === "loading") return;
+    const video = getVideoElement?.();
+    if (!video || !video.videoWidth || !video.videoHeight || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      setDetectionMessage("O fotograma do vídeo ainda não está pronto.");
+      window.setTimeout(() => setDetectionMessage(null), 2600);
+      return;
+    }
+    video.pause();
+    let frame: HTMLCanvasElement;
+    try {
+      frame = captureVideoFrame(video);
+    } catch {
+      setDetectionMessage("Não foi possível ler este fotograma. Confirme o CORS do vídeo Cloudflare R2 e tente novamente.");
+      window.setTimeout(() => setDetectionMessage(null), 4200);
+      return;
+    }
+    const controller = new AbortController();
+    samAbortRef.current?.abort();
+    samAbortRef.current = controller;
+    setSamMaskSession({ phase: "loading", click, frame });
+    const startedAt = performance.now();
+    try {
+      const result = await segmentFrameAtPoint(frame, click, controller.signal);
+      if (samAbortRef.current !== controller) return;
+      const sample = buildSamPlayerSample(frame, result, currentTime, performance.now() - startedAt);
+      if (!sample?.mask) throw new SamClientError("A máscara recebida está vazia ou desalinhada.", "INVALID_MASK", true);
+      setSamMaskSession({
+        phase: "review",
+        click,
+        frame,
+        sample,
+        message: `Máscara alinhada · confiança ${Math.round(sample.confidence * 100)}% · confirme antes de guardar`,
+      });
+    } catch (error) {
+      if (controller.signal.aborted || samAbortRef.current !== controller) return;
+      const clientError = error instanceof SamClientError
+        ? error
+        : new SamClientError("Não foi possível concluir a identificação SAM 3.1.", "SAM_REQUEST_FAILED", true);
+      setSamMaskSession({
+        phase: "error",
+        click,
+        frame,
+        message: clientError.message,
+        retryable: clientError.retryable,
+      });
+    } finally {
+      if (samAbortRef.current === controller) samAbortRef.current = null;
+    }
+  };
+
+  const confirmSamIdentification = () => {
+    const session = samMaskSession;
+    const sample = session?.sample;
+    if (!session || !sample?.mask || session.phase !== "review") return;
+    const track: PlayerTrack = {
+      id: createId(),
+      name: `Jogador ${(activeVideoContent?.playerTracks?.length ?? 0) + 1}`,
+      source: "automatic",
+      status: "ready",
+      appearanceColor: sampleJerseyColor(session.frame, [
+        sample.bbox.x * session.frame.width,
+        sample.bbox.y * session.frame.height,
+        sample.bbox.width * session.frame.width,
+        sample.bbox.height * session.frame.height,
+      ]),
+      samples: [sample],
+    };
+    addPlayerTrack(track);
+    const dimensions = playerRingDimensions(sample.bbox, width, height);
+    makeDrawing(
+      "identifyPlayer",
+      { kind: "identifyPlayer", center: sample.foot, radiusX: dimensions.radiusX, radiusY: dimensions.radiusY },
+      { target: { kind: "player", trackId: track.id, anchor: "feet", referenceFoot: sample.foot }, trackingEnabled: false },
+    );
+    setSamMaskSession(null);
+    setDetectionMessage(`${track.name} · máscara SAM 3.1 guardada`);
     window.setTimeout(() => setDetectionMessage(null), 1800);
   };
 
@@ -1060,6 +1177,10 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     if (tool === "identifyPlayer") {
       return;
     }
+    if (tool === "sam31") {
+      void startSamIdentification(point);
+      return;
+    }
     if (tool === "playerRing") {
       void selectSavedPlayerAtClick(point, ringReidentifyId ? "ringReidentify" : "ring");
       return;
@@ -1319,6 +1440,18 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
           setTool("select");
         }}
         onConfirm={saveManualMask}
+      />
+    )}
+    {tool === "sam31" && samMaskSession && (
+      <SamMaskReview
+        phase={samMaskSession.phase}
+        click={samMaskSession.click}
+        sample={samMaskSession.sample}
+        message={samMaskSession.message}
+        retryable={samMaskSession.retryable}
+        onConfirm={confirmSamIdentification}
+        onCancel={cancelSamIdentification}
+        onRepeat={repeatSamIdentification}
       />
     )}
     {detectionEffect && (

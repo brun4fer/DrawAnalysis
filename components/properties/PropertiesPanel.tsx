@@ -484,7 +484,7 @@ export function PropertiesPanel() {
         <h3>SEGMENTAÇÃO DO FOTOGRAMA</h3>
         <p className="property-help">A identificação pertence apenas ao fotograma clicado. Não existe tracking nem processamento contínuo do vídeo.</p>
         <div className="keyframe-count">{playerMask
-          ? `Máscara individual · qualidade ${Math.round(playerMask.quality * 100)}% · ${playerMask.method === "bodypix-instance" ? "instância" : "refinamento local"}${playerMask.analysisMs ? ` · ${(playerMask.analysisMs / 1000).toFixed(1)} s` : ""}`
+          ? `Máscara individual · qualidade ${Math.round(playerMask.quality * 100)}% · ${playerMask.method === "sam-3.1" ? "SAM 3.1" : playerMask.method === "bodypix-instance" ? "instância" : "refinamento local"}${playerMask.analysisMs ? ` · ${(playerMask.analysisMs / 1000).toFixed(1)} s` : ""}`
           : `Contorno aproximado · confiança ${Math.round((playerTrack.samples[0]?.confidence ?? 0) * 100)}%`}</div>
       </section>}
 

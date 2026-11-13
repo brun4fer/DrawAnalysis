@@ -89,6 +89,12 @@ export function buildManualPlayerSample(
   frame: HTMLCanvasElement,
   fullFrameMask: HTMLCanvasElement,
   frameTime: number,
+  options: {
+    confidence?: number;
+    quality?: number;
+    analysisMs?: number;
+    method?: PlayerSegmentationMask["method"];
+  } = {},
 ): PlayerTrackSample | null {
   if (!frame.width || !frame.height || frame.width !== fullFrameMask.width || frame.height !== fullFrameMask.height) return null;
   const maskContext = fullFrameMask.getContext("2d", { willReadFrequently: true });
@@ -119,10 +125,11 @@ export function buildManualPlayerSample(
     width,
     height,
     frameTime,
-    quality: 1,
-    method: "manual",
+    quality: options.quality ?? 1,
+    analysisMs: options.analysisMs,
+    method: options.method ?? "manual",
   };
-  return { time: frameTime, bbox: analysis.bbox, foot: analysis.foot, confidence: 1, mask };
+  return { time: frameTime, bbox: analysis.bbox, foot: analysis.foot, confidence: options.confidence ?? 1, mask };
 }
 
 interface CachedMask {

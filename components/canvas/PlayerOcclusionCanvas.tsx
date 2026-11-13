@@ -2,7 +2,7 @@
 
 import { forwardRef, useCallback, useEffect, useState } from "react";
 import type { DrawingObject, ObjectTransform, PlayerTrack } from "@/types/drawing";
-import { drawMovedPlayer, drawPlayerForeground, hidePlayerOriginal } from "@/utils/playerOcclusion";
+import { drawMovedPlayer, drawPlayerForeground, hidePlayerOriginal, shouldCompositePlayerForeground } from "@/utils/playerOcclusion";
 import { samplePlayerTrackAtTime } from "@/utils/playerTracking";
 import { getObjectStateAtTime } from "@/utils/temporalRenderer";
 
@@ -106,6 +106,7 @@ export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(functi
       const track = playerTracks?.find((item) => item.id === trackId);
       if (!track?.samples.length) continue;
       const sample = samplePlayerTrackAtTime(track, currentTime);
+      if (!shouldCompositePlayerForeground(activeTargets, trackId, sample.mask)) continue;
       const identification = activeTargets.find((drawing) => drawing.data.kind === "identifyPlayer" && drawing.target?.trackId === trackId);
       const effectOpacity = identification
         ? editingPreview ? identification.style.opacity : getObjectStateAtTime(identification, currentTime).opacity

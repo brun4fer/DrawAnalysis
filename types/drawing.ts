@@ -1,6 +1,7 @@
 export type Tool =
   | "select"
   | "identifyPlayer"
+  | "sam31"
   | "playerLabel"
   | "playerRing"
   | "ghost"
@@ -17,7 +18,8 @@ export type Tool =
   | "text"
   | "freeDraw";
 
-export type DrawingType = Exclude<Tool, "select">;
+/** Workflow tools do not become persisted drawing object types. */
+export type DrawingType = Exclude<Tool, "select" | "sam31">;
 
 export interface Point { x: number; y: number }
 
@@ -41,7 +43,7 @@ export interface PlayerSegmentationMask {
   quality: number;
   /** Local segmentation time, including first-use model initialization. */
   analysisMs?: number;
-  method: "bodypix-instance" | "bodypix-semantic" | "manual";
+  method: "bodypix-instance" | "bodypix-semantic" | "manual" | "sam-3.1";
 }
 
 export interface PlayerTrackSample {
