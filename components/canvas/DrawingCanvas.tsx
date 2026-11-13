@@ -16,10 +16,14 @@ import { playerRingDimensions } from "@/utils/playerRing";
 import { buildManualPlayerSample, pointHitsPlayerMask } from "@/utils/playerManualMask";
 import { buildSamPlayerSample } from "@/utils/samPlayerMask";
 import { SamClientError, segmentFrameAtPoint } from "@/lib/samClient";
+import { recordSamTrackingClip } from "@/lib/samClipRecorder";
+import { trackSamPlayer } from "@/lib/samTrackingClient";
+import { buildSamPlayerTracking } from "@/utils/samTracking";
 import { applyFavoriteData } from "@/utils/toolFavorites";
 import { DrawingShape } from "./DrawingShape";
 import { ManualPlayerMaskEditor } from "./ManualPlayerMaskEditor";
 import { SamMaskReview } from "./SamMaskReview";
+import { SamTrackingOverlayCanvas } from "./SamTrackingOverlayCanvas";
 import { PlayerOcclusionCanvas } from "./PlayerOcclusionCanvas";
 import { PlayerLabelOverlay } from "./PlayerLabelOverlay";
 import { ZoomLensCanvas } from "./ZoomLensCanvas";
@@ -41,10 +45,12 @@ interface ManualMaskSession {
   initialName: string;
 }
 interface SamMaskSession {
-  phase: "loading" | "review" | "error";
+  phase: "loading" | "review" | "error" | "confirmed" | "tracking" | "tracked";
   click: Point;
   frame: HTMLCanvasElement;
   sample?: PlayerTrack["samples"][number];
+  trackId?: string;
+  trackingDuration?: 2 | 3;
   message?: string;
   retryable?: boolean;
 }
@@ -282,7 +288,7 @@ async function detectPlayerAtPoint(frame: HTMLCanvasElement, click: Point, click
 export function DrawingCanvas({ width, height, registerCapture, getVideoElement }: Props) {
   const {
     tool, drawings, selectedId, currentTime, duration, isPlaying, slides, selectedSlideId, favorites, activeFavoriteId, ringReidentifyId, maskEditTrackId,
-    addDrawing, addPlayerTrack, updatePlayerTrackSample, appendPlayerTrackingSample, setPlayerTrackStatus,
+    addDrawing, addPlayerTrack, updatePlayerTrackSample, appendPlayerTrackingSample, setPlayerTrackStatus, setPlayerSamTracking,
     updateDrawing, setSelectedId, setTool, cancelRingReidentify, cancelPlayerMaskEdit,
   } = useEditorStore();
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -580,6 +586,14 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     setTool("select");
   };
 
+  const cancelSamTracking = () => {
+    samAbortRef.current?.abort();
+    samAbortRef.current = null;
+    setSamMaskSession((session) => session?.trackId && session.sample
+      ? { ...session, phase: "confirmed", message: "Identificação guardada · escolha 2 ou 3 segundos para tentar novamente" }
+      : null);
+  };
+
   const repeatSamIdentification = () => {
     samAbortRef.current?.abort();
     samAbortRef.current = null;
@@ -661,11 +675,71 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     makeDrawing(
       "identifyPlayer",
       { kind: "identifyPlayer", center: sample.foot, radiusX: dimensions.radiusX, radiusY: dimensions.radiusY },
-      { target: { kind: "player", trackId: track.id, anchor: "feet", referenceFoot: sample.foot }, trackingEnabled: false },
+      { target: { kind: "player", trackId: track.id, anchor: "feet", referenceFoot: sample.foot }, trackingEnabled: false, keepTool: true },
     );
-    setSamMaskSession(null);
-    setDetectionMessage(`${track.name} · máscara SAM 3.1 guardada`);
-    window.setTimeout(() => setDetectionMessage(null), 1800);
+    setSamMaskSession({ ...session, phase: "confirmed", trackId: track.id, message: `${track.name} · máscara guardada · tracking opcional` });
+  };
+
+  const startSamTracking = async (trackingDuration: 2 | 3) => {
+    const session = samMaskSession;
+    const sample = session?.sample;
+    const trackId = session?.trackId;
+    const video = getVideoElement?.();
+    if (!session || !sample?.mask || !trackId || !video || session.phase === "tracking") return;
+    const existing = activeVideoContent?.playerTracks?.find((track) => track.id === trackId)?.samTracking;
+    const sourceStart = timelineTimeToSource(sample.time, activeFreezeFrames).sourceTime;
+    if (existing && existing.duration === trackingDuration && Math.abs(existing.sourceStartTime - sourceStart) < .04) {
+      setSamMaskSession({ ...session, phase: "tracked", trackingDuration, message: `${existing.frames.length} máscaras reutilizadas · sem novo pedido à API` });
+      return;
+    }
+    const controller = new AbortController();
+    samAbortRef.current?.abort();
+    samAbortRef.current = controller;
+    setSamMaskSession({ ...session, phase: "tracking", trackingDuration, message: `A preparar e analisar ${trackingDuration} segundos na resolução original…` });
+    try {
+      video.pause();
+      const clip = await recordSamTrackingClip(video, trackingDuration, sourceStart, controller.signal);
+      const bounds = sample.mask.bounds;
+      const result = await trackSamPlayer(clip, {
+        point: {
+          x: Math.max(0, Math.min(clip.width - 1, Math.floor(session.click.x * clip.width))),
+          y: Math.max(0, Math.min(clip.height - 1, Math.floor(session.click.y * clip.height))),
+        },
+        bounds: {
+          left: Math.max(0, Math.floor(bounds.x * clip.width)),
+          top: Math.max(0, Math.floor(bounds.y * clip.height)),
+          right: Math.min(clip.width, Math.ceil((bounds.x + bounds.width) * clip.width)),
+          bottom: Math.min(clip.height, Math.ceil((bounds.y + bounds.height) * clip.height)),
+        },
+      }, controller.signal);
+      if (samAbortRef.current !== controller) return;
+      const tracking = buildSamPlayerTracking(result, clip.sourceStartTime, sample.bbox, activeFreezeFrames);
+      if (!tracking.frames.length) throw new SamClientError("O jogador perdeu a identidade logo no início do intervalo. Repita a identificação noutro ponto do corpo.", "IDENTITY_LOST", true);
+      setPlayerSamTracking(trackId, tracking);
+      setSamMaskSession({ ...session, phase: "tracked", trackingDuration, message: `${tracking.frames.length} máscaras sincronizadas · resultado pronto a reproduzir` });
+    } catch (error) {
+      if (controller.signal.aborted || samAbortRef.current !== controller) return;
+      const message = error instanceof Error ? error.message : "Não foi possível concluir o tracking SAM 3.1.";
+      setSamMaskSession({ ...session, phase: "confirmed", trackingDuration, message });
+    } finally {
+      if (samAbortRef.current === controller) samAbortRef.current = null;
+    }
+  };
+
+  const playSamTracking = async () => {
+    const trackId = samMaskSession?.trackId;
+    const video = getVideoElement?.();
+    const tracking = activeVideoContent?.playerTracks?.find((track) => track.id === trackId)?.samTracking;
+    if (!video || !tracking) return;
+    video.currentTime = tracking.sourceStartTime;
+    const stopAtEnd = () => {
+      if (video.currentTime < tracking.sourceStartTime + tracking.duration - .01) return;
+      video.pause();
+      video.removeEventListener("timeupdate", stopAtEnd);
+    };
+    video.addEventListener("timeupdate", stopAtEnd);
+    try { await video.play(); }
+    catch { setDetectionMessage("O browser bloqueou a reprodução automática. Prima Play no vídeo."); }
   };
 
   const createApproximateRingForPlayer = (foot: Point, replacementId?: string) => {
@@ -1424,6 +1498,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       transformOverrides={ghostTransformPreview}
       editingPreview={!isPlaying}
     />
+    <SamTrackingOverlayCanvas playerTracks={activeVideoContent?.playerTracks} currentTime={currentTime} width={width} height={height} />
     <ZoomLensCanvas ref={zoomCanvasRef} drawings={drawings} currentTime={currentTime} width={width} height={height} getVideoElement={getVideoElement} editingPreview={!isPlaying} />
     <PlayerLabelOverlay drawings={drawings} playerTracks={activeVideoContent?.playerTracks} currentTime={currentTime} width={width} height={height} editingPreview={!isPlaying} />
     {tool === "identifyPlayer" && manualMaskSession && (
@@ -1451,7 +1526,10 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         retryable={samMaskSession.retryable}
         onConfirm={confirmSamIdentification}
         onCancel={cancelSamIdentification}
+        onCancelTracking={cancelSamTracking}
         onRepeat={repeatSamIdentification}
+        onTrack={startSamTracking}
+        onPlay={playSamTracking}
       />
     )}
     {detectionEffect && (

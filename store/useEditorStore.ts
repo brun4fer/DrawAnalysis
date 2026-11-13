@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import type { DrawingKeyframe, DrawingObject, PlayerTrack, PlayerTrackSample, Tool, ToolFavorite } from "@/types/drawing";
+import type { DrawingKeyframe, DrawingObject, PlayerTrack, PlayerTrackSample, SamPlayerTracking, Tool, ToolFavorite } from "@/types/drawing";
 import type { AnalysisSlide, FreezeFrame } from "@/types/slide";
 import { createId } from "@/utils/id";
 import { createSlide } from "@/utils/slideFactory";
@@ -42,6 +42,7 @@ interface EditorState {
   updatePlayerTrackSample: (trackId: string, sample: PlayerTrackSample, name?: string) => void;
   appendPlayerTrackingSample: (drawingId: string, trackId: string, sample: PlayerTrackSample, keyframe: DrawingKeyframe) => void;
   setPlayerTrackStatus: (trackId: string, status: PlayerTrack["status"]) => void;
+  setPlayerSamTracking: (trackId: string, tracking: SamPlayerTracking) => void;
   updateDrawing: (id: string, patch: Partial<DrawingObject>) => void;
   removeDrawing: (id: string) => void;
   duplicateDrawing: (id: string) => void;
@@ -216,6 +217,28 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         }
       : slide),
   })),
+  setPlayerSamTracking: (trackId, tracking) => set((state) => {
+    const drawings = state.drawings.map((drawing) => drawing.target?.trackId === trackId && drawing.type === "identifyPlayer"
+      ? { ...drawing, endTime: Math.max(drawing.endTime, tracking.endTime) }
+      : drawing);
+    return {
+      history: [...state.history, { drawings: copy(state.drawings), slides: copySlides(state.slides) }].slice(-80),
+      future: [],
+      drawings,
+      slides: state.slides.map((slide) => slide.id === state.selectedSlideId && slide.content.kind === "video"
+        ? {
+            ...slide,
+            content: {
+              ...slide.content,
+              drawings,
+              playerTracks: (slide.content.playerTracks ?? []).map((track) => track.id === trackId
+                ? { ...track, status: "ready" as const, samTracking: tracking }
+                : track),
+            },
+          }
+        : slide),
+    };
+  }),
   updateDrawing: (id, patch) => set((state) => {
     const drawings = state.drawings.map((drawing) => drawing.id === id ? { ...drawing, ...patch } : drawing);
     return {

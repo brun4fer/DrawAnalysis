@@ -8,7 +8,7 @@ import {
 import type { SamSegmentRequest, SamSegmentResult } from "@/types/sam";
 
 export const MAX_SAM_IMAGE_DATA_URL_LENGTH = 3_900_000;
-const META_RESPONSES_URL = "https://api.meta.ai/v1/responses";
+export const META_RESPONSES_URL = "https://api.meta.ai/v1/responses";
 
 export class MetaSamError extends Error {
   constructor(
@@ -100,7 +100,7 @@ export async function* parseMetaSamEventStream(body: ReadableStream<Uint8Array>)
   }
 }
 
-async function providerError(response: Response, requestId?: string): Promise<MetaSamError> {
+export async function providerError(response: Response, requestId?: string): Promise<MetaSamError> {
   let providerMessage = "";
   try {
     const value: unknown = await response.json();

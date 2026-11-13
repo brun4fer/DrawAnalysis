@@ -54,6 +54,31 @@ export interface PlayerTrackSample {
   mask?: PlayerSegmentationMask;
 }
 
+export interface SamTrackingFrame {
+  frameIndex: number;
+  /** Editor timeline time represented by this returned source frame. */
+  time: number;
+  bounds: NormalizedBox;
+  mask: {
+    encoding: "lossless" | "one_bit";
+    payload: string;
+    width: number;
+    height: number;
+  };
+  confidence?: number;
+}
+
+export interface SamPlayerTracking {
+  sourceStartTime: number;
+  startTime: number;
+  endTime: number;
+  duration: 2 | 3;
+  frameRate: number;
+  sourceWidth: number;
+  sourceHeight: number;
+  frames: SamTrackingFrame[];
+}
+
 export interface PlayerTrack {
   id: string;
   name: string;
@@ -61,6 +86,8 @@ export interface PlayerTrack {
   status: "seeded" | "processing" | "ready" | "needs-review";
   appearanceColor?: [number, number, number];
   samples: PlayerTrackSample[];
+  /** Optional compact SAM video masks. Older projects simply omit this field. */
+  samTracking?: SamPlayerTracking;
 }
 
 export interface DrawingTarget {
