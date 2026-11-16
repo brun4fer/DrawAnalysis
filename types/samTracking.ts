@@ -23,4 +23,63 @@ export interface SamTrackResult {
   duration: 2 | 3;
   frames: SamTrackFrameResult[];
   requestId?: string;
+  timings?: SamTrackServerTimings;
+}
+
+export interface SamTrackServerTimings {
+  requestParseMs: number;
+  metaUploadMs: number;
+  metaProcessingMs: number;
+  firstMaskMs?: number;
+  maskConversionMs: number;
+  serverTotalMs: number;
+  inputBytes: number;
+  framesReceived: number;
+}
+
+export type SamTrackingProgressStage =
+  | "request-received"
+  | "meta-upload"
+  | "meta-processing"
+  | "mask-conversion";
+
+export interface SamTrackingProgress {
+  stage: SamTrackingProgressStage;
+  elapsedMs: number;
+  framesReceived?: number;
+  expectedFrames?: number;
+}
+
+export interface SamTrackClientTimings {
+  browserUploadMs: number;
+  responseStreamMs: number;
+  apiRoundTripMs: number;
+}
+
+export interface SamTrackingExecution {
+  result: SamTrackResult;
+  timings: SamTrackClientTimings;
+}
+
+export type SamTrackingStreamEvent =
+  | { type: "progress"; progress: SamTrackingProgress }
+  | { type: "result"; result: SamTrackResult }
+  | { type: "error"; error: { code: string; message: string; retryable: boolean; requestId?: string } };
+
+export interface SamTrackingPerformanceReport {
+  totalMs: number;
+  clipPreparationMs: number;
+  clipCaptureMs: number;
+  clipFinalizeMs: number;
+  clipRestoreMs: number;
+  browserTransferMs: number;
+  requestParseMs: number;
+  metaUploadMs: number;
+  metaProcessingMs: number;
+  maskConversionMs: number;
+  clientConversionMs: number;
+  previewPreparationMs: number;
+  responseOverheadMs: number;
+  reusedClip: boolean;
+  reusedTracking: boolean;
 }

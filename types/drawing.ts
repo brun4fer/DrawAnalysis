@@ -58,6 +58,8 @@ export interface SamTrackingFrame {
   frameIndex: number;
   /** Editor timeline time represented by this returned source frame. */
   time: number;
+  /** Exact mediaTime reported for the original video frame copied into the SAM clip. */
+  sourceTime?: number;
   bounds: NormalizedBox;
   mask: {
     encoding: "lossless" | "one_bit";
@@ -74,6 +76,8 @@ export interface SamPlayerTracking {
   endTime: number;
   duration: 2 | 3;
   frameRate: number;
+  /** Exact timeline times of every encoded frame, including frames for which SAM returned no mask. */
+  frameTimes?: number[];
   sourceWidth: number;
   sourceHeight: number;
   frames: SamTrackingFrame[];

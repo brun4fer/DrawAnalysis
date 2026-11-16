@@ -1,7 +1,9 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import { Check, LoaderCircle, Play, RotateCcw, ScanSearch, Timer, X } from "lucide-react";
 import type { PlayerTrackSample, Point } from "@/types/drawing";
+import type { SamTrackingPerformanceReport } from "@/types/samTracking";
 
 interface Props {
   phase: "loading" | "review" | "error" | "confirmed" | "tracking" | "tracked";
@@ -15,10 +17,32 @@ interface Props {
   onRepeat: () => void;
   onTrack: (duration: 2 | 3) => void;
   onPlay: () => void;
+  performance?: SamTrackingPerformanceReport;
 }
 
-export function SamMaskReview({ phase, click, sample, message, retryable, onConfirm, onCancel, onCancelTracking, onRepeat, onTrack, onPlay }: Props) {
+function formatDuration(value: number) {
+  return value >= 1_000 ? `${(value / 1_000).toFixed(2)} s` : `${Math.round(value)} ms`;
+}
+
+const subscribeToDebugMode = () => () => undefined;
+const performanceDebugSnapshot = () => new URLSearchParams(window.location.search).has("samTrackingTimings");
+
+export function SamMaskReview({ phase, click, sample, message, retryable, onConfirm, onCancel, onCancelTracking, onRepeat, onTrack, onPlay, performance }: Props) {
+  const showPerformanceDebug = useSyncExternalStore(subscribeToDebugMode, performanceDebugSnapshot, () => false);
   const mask = sample?.mask;
+  const performanceRows = performance ? [
+    ["Preparação", performance.clipPreparationMs],
+    ["Captura + MP4", performance.clipCaptureMs + performance.clipFinalizeMs],
+    ["Reposição do vídeo", performance.clipRestoreMs],
+    ["Browser → Vercel", performance.browserTransferMs],
+    ["Leitura na Vercel", performance.requestParseMs],
+    ["Vercel → Meta", performance.metaUploadMs],
+    ["Processamento Meta", performance.metaProcessingMs],
+    ["Validação das máscaras", performance.maskConversionMs],
+    ["Resultado + rede", performance.responseOverheadMs],
+    ["Conversão e armazenamento", performance.clientConversionMs],
+    ["Preparação da pré-visualização", performance.previewPreparationMs],
+  ] as const : [];
   const title = phase === "loading" ? <><LoaderCircle size={14} className="sam-spinner" /> SAM 3.1 A IDENTIFICAR</>
     : phase === "review" ? "CONFIRMAR MÁSCARA SAM 3.1"
       : phase === "confirmed" ? "IDENTIFICAÇÃO GUARDADA · TRACKING OPCIONAL"
@@ -64,6 +88,19 @@ export function SamMaskReview({ phase, click, sample, message, retryable, onConf
             : <button type="button" onClick={onCancel}><X size={14} /> Fechar</button>}
         </div>
       </div>
+      {phase === "tracked" && performance && showPerformanceDebug && (
+        <div className="sam-tracking-performance" onPointerDown={(event) => event.stopPropagation()}>
+          <div><strong>Tempo real por etapa</strong><span>Total {formatDuration(performance.totalMs)}</span></div>
+          {performanceRows.filter(([, milliseconds]) => milliseconds > 0).map(([label, milliseconds]) => (
+            <p key={label}>
+              <span>{label}</span>
+              <b>{formatDuration(milliseconds)}</b>
+              <em>{performance.totalMs > 0 ? `${Math.min(100, milliseconds / performance.totalMs * 100).toFixed(1)}%` : "0%"}</em>
+            </p>
+          ))}
+          {(performance.reusedTracking || performance.reusedClip) && <small>{performance.reusedTracking ? "Tracking reutilizado sem novo pedido à Meta." : "Excerto MP4 reutilizado; manteve resolução e fotogramas."}</small>}
+        </div>
+      )}
     </div>
   );
 }

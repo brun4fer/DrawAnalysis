@@ -5,20 +5,21 @@ import Konva from "konva";
 import { Arc, Ellipse, Group, Layer, Line, Rect, Stage, Text } from "react-konva";
 import { useEditorStore } from "@/store/useEditorStore";
 import type { DrawingData, DrawingObject, DrawingTarget, NormalizedBox, ObjectTransform, PlayerTrack, Point, Tool } from "@/types/drawing";
+import type { SamTrackingPerformanceReport, SamTrackingProgress } from "@/types/samTracking";
 import { DEFAULT_STYLE, DEFAULT_TRANSFORM } from "@/types/drawing";
 import { flattenPoints, toNormalized } from "@/utils/coordinates";
 import { automaticLongBallControl, buildCurvedArrowGeometry, buildPolylineArrowGeometry } from "@/utils/curvedArrowGeometry";
 import { createId } from "@/utils/id";
 import { defaultDrawingAnimationFor, getObjectStateAtTime } from "@/utils/temporalRenderer";
-import { timelineTimeToSource } from "@/utils/videoTimeline";
+import { sourceTimeToTimeline, timelineTimeToSource } from "@/utils/videoTimeline";
 import { playerGroundPoint, samplePlayerTrackAtTime, targetOffsetAtTime } from "@/utils/playerTracking";
 import { playerRingDimensions } from "@/utils/playerRing";
 import { buildManualPlayerSample, pointHitsPlayerMask } from "@/utils/playerManualMask";
 import { buildSamPlayerSample } from "@/utils/samPlayerMask";
 import { SamClientError, segmentFrameAtPoint, segmentFrameInBox } from "@/lib/samClient";
-import { recordSamTrackingClip } from "@/lib/samClipRecorder";
+import { prepareSamTrackingClip } from "@/lib/samClipRecorder";
 import { trackSamPlayer } from "@/lib/samTrackingClient";
-import { buildSamPlayerTracking } from "@/utils/samTracking";
+import { buildSamPlayerTracking, trimSamPlayerTracking } from "@/utils/samTracking";
 import { applyFavoriteData } from "@/utils/toolFavorites";
 import { DrawingShape } from "./DrawingShape";
 import { ManualPlayerMaskEditor } from "./ManualPlayerMaskEditor";
@@ -54,6 +55,7 @@ interface SamMaskSession {
   message?: string;
   retryable?: boolean;
   selectionMode?: "point" | "box";
+  performance?: SamTrackingPerformanceReport;
 }
 
 const labelFor = (kind: DrawingObject["type"]) => ({
@@ -62,6 +64,16 @@ const labelFor = (kind: DrawingObject["type"]) => ({
 })[kind];
 
 const clamp = (value: number, minimum: number, maximum: number) => Math.max(minimum, Math.min(maximum, value));
+
+function trackingProgressMessage(progress: SamTrackingProgress) {
+  if (progress.stage === "request-received") return "Excerto recebido pela função segura da Vercel…";
+  if (progress.stage === "meta-upload") return "A enviar o excerto para a Meta…";
+  if (progress.stage === "mask-conversion") return "A validar e preparar as máscaras recebidas…";
+  if (progress.framesReceived !== undefined && progress.expectedFrames) {
+    return `SAM 3.1 a processar · ${progress.framesReceived}/${progress.expectedFrames} fotogramas recebidos`;
+  }
+  return "SAM 3.1 a processar o tracking…";
+}
 
 // Kept only for opening legacy projects that already contain automatic tracks.
 // The manual identification, Ring, Ghost and Spotlight paths never call these
@@ -756,19 +768,40 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     if (!session || !sample?.mask || !trackId || !video || session.phase === "tracking") return;
     const existing = activeVideoContent?.playerTracks?.find((track) => track.id === trackId)?.samTracking;
     const sourceStart = timelineTimeToSource(sample.time, activeFreezeFrames).sourceTime;
-    if (existing && existing.duration === trackingDuration && Math.abs(existing.sourceStartTime - sourceStart) < .04) {
-      setSamMaskSession({ ...session, phase: "tracked", trackingDuration, message: `${existing.frames.length} máscaras reutilizadas · sem novo pedido à API` });
+    if (existing?.frameTimes?.length && existing.duration >= trackingDuration && Math.abs(existing.sourceStartTime - sourceStart) < .04) {
+      const startedAt = performance.now();
+      const reused = existing.duration === trackingDuration
+        ? existing
+        : trimSamPlayerTracking(existing, trackingDuration, sourceTimeToTimeline(sourceStart + trackingDuration, activeFreezeFrames));
+      if (reused !== existing) setPlayerSamTracking(trackId, reused);
+      setSamMaskSession({
+        ...session,
+        phase: "tracked",
+        trackingDuration,
+        message: `${reused.frames.length} máscaras reutilizadas · sem preparar vídeo nem chamar a API`,
+        performance: {
+          totalMs: performance.now() - startedAt,
+          clipPreparationMs: 0, clipCaptureMs: 0, clipFinalizeMs: 0, clipRestoreMs: 0,
+          browserTransferMs: 0, requestParseMs: 0, metaUploadMs: 0, metaProcessingMs: 0,
+          maskConversionMs: 0, clientConversionMs: 0, previewPreparationMs: 0, responseOverheadMs: 0,
+          reusedClip: false, reusedTracking: true,
+        },
+      });
       return;
     }
     const controller = new AbortController();
     samAbortRef.current?.abort();
     samAbortRef.current = controller;
     setSamMaskSession({ ...session, phase: "tracking", trackingDuration, message: `A preparar e analisar ${trackingDuration} segundos na resolução original…` });
+    const trackingStartedAt = performance.now();
     try {
       video.pause();
-      const clip = await recordSamTrackingClip(video, trackingDuration, sourceStart, controller.signal);
+      const clip = await prepareSamTrackingClip(video, trackingDuration, sourceStart, controller.signal);
+      setSamMaskSession((current) => current?.trackId === trackId && current.phase === "tracking"
+        ? { ...current, message: clip.timings.reused ? "Excerto MP4 reutilizado · a iniciar pedido seguro…" : `Excerto preparado em ${(clip.timings.totalMs / 1_000).toFixed(2)} s · a enviar…` }
+        : current);
       const bounds = sample.mask.bounds;
-      const result = await trackSamPlayer(clip, {
+      const execution = await trackSamPlayer(clip, {
         point: {
           x: Math.max(0, Math.min(clip.width - 1, Math.floor(session.click.x * clip.width))),
           y: Math.max(0, Math.min(clip.height - 1, Math.floor(session.click.y * clip.height))),
@@ -779,12 +812,45 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
           right: Math.min(clip.width, Math.ceil((bounds.x + bounds.width) * clip.width)),
           bottom: Math.min(clip.height, Math.ceil((bounds.y + bounds.height) * clip.height)),
         },
-      }, controller.signal);
+      }, {
+        signal: controller.signal,
+        onProgress: (progress) => setSamMaskSession((current) => current?.trackId === trackId && current.phase === "tracking"
+          ? { ...current, message: trackingProgressMessage(progress) }
+          : current),
+      });
       if (samAbortRef.current !== controller) return;
-      const tracking = buildSamPlayerTracking(result, clip.sourceStartTime, sample.bbox, activeFreezeFrames);
+      const conversionStartedAt = performance.now();
+      const result = execution.result;
+      const tracking = buildSamPlayerTracking(result, clip.sourceStartTime, sample.bbox, activeFreezeFrames, clip.sourceFrameTimes);
       if (!tracking.frames.length) throw new SamClientError("O jogador perdeu a identidade logo no início do intervalo. Repita a identificação noutro ponto do corpo.", "IDENTITY_LOST", true);
       setPlayerSamTracking(trackId, tracking);
-      setSamMaskSession({ ...session, phase: "tracked", trackingDuration, message: `${tracking.frames.length} máscaras sincronizadas · resultado pronto a reproduzir` });
+      const clientConversionMs = performance.now() - conversionStartedAt;
+      const server = result.timings;
+      const requestParseMs = server?.requestParseMs ?? 0;
+      const serverStreamMs = (server?.metaUploadMs ?? 0) + (server?.metaProcessingMs ?? 0) + (server?.maskConversionMs ?? 0);
+      setSamMaskSession({
+        ...session,
+        phase: "tracked",
+        trackingDuration,
+        message: `${tracking.frames.length} máscaras sincronizadas · resultado pronto a reproduzir`,
+        performance: {
+          totalMs: performance.now() - trackingStartedAt,
+          clipPreparationMs: clip.timings.preparationMs,
+          clipCaptureMs: clip.timings.captureMs,
+          clipFinalizeMs: clip.timings.finalizeMs,
+          clipRestoreMs: clip.timings.restoreMs,
+          browserTransferMs: Math.max(0, execution.timings.browserUploadMs - requestParseMs),
+          requestParseMs,
+          metaUploadMs: server?.metaUploadMs ?? 0,
+          metaProcessingMs: server?.metaProcessingMs ?? 0,
+          maskConversionMs: server?.maskConversionMs ?? 0,
+          clientConversionMs,
+          previewPreparationMs: 0,
+          responseOverheadMs: Math.max(0, execution.timings.responseStreamMs - serverStreamMs),
+          reusedClip: clip.timings.reused,
+          reusedTracking: false,
+        },
+      });
     } catch (error) {
       if (controller.signal.aborted || samAbortRef.current !== controller) return;
       const message = error instanceof Error ? error.message : "Não foi possível concluir o tracking SAM 3.1.";
@@ -1467,6 +1533,20 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     }
   };
 
+  const handleSamPreviewPrepared = useCallback((metrics: { durationMs: number; frameCount: number }) => {
+    setSamMaskSession((current) => {
+      if (current?.phase !== "tracked" || !current.performance || current.performance.previewPreparationMs > 0) return current;
+      return {
+        ...current,
+        performance: {
+          ...current.performance,
+          previewPreparationMs: metrics.durationMs,
+          totalMs: current.performance.totalMs + metrics.durationMs,
+        },
+      };
+    });
+  }, []);
+
   const preview = (() => {
     if (!draft || draft.tool !== tool) return null;
     const style = { stroke: DEFAULT_STYLE.stroke, strokeWidth: DEFAULT_STYLE.strokeWidth, dash: [7, 6], opacity: 0.9 };
@@ -1610,7 +1690,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       transformOverrides={ghostTransformPreview}
       editingPreview={!isPlaying}
     />
-    <SamTrackingOverlayCanvas playerTracks={activeVideoContent?.playerTracks} currentTime={currentTime} width={width} height={height} />
+    <SamTrackingOverlayCanvas playerTracks={activeVideoContent?.playerTracks} currentTime={currentTime} width={width} height={height} getVideoElement={getVideoElement} freezeFrames={activeFreezeFrames} onPrepared={handleSamPreviewPrepared} />
     <ZoomLensCanvas ref={zoomCanvasRef} drawings={drawings} currentTime={currentTime} width={width} height={height} getVideoElement={getVideoElement} editingPreview={!isPlaying} />
     <PlayerLabelOverlay drawings={drawings} playerTracks={activeVideoContent?.playerTracks} currentTime={currentTime} width={width} height={height} editingPreview={!isPlaying} />
     {tool === "sam31" && !samMaskSession && (
@@ -1656,6 +1736,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         sample={samMaskSession.sample}
         message={samMaskSession.message}
         retryable={samMaskSession.retryable}
+        performance={samMaskSession.performance}
         onConfirm={confirmSamIdentification}
         onCancel={cancelSamIdentification}
         onCancelTracking={cancelSamTracking}
