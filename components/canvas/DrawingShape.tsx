@@ -5,9 +5,12 @@ import type { ReactNode } from "react";
 import Konva from "konva";
 import { Arc, Circle, Ellipse, Group, Line, Rect, Text, Transformer } from "react-konva";
 import type { DrawingData, DrawingObject, ObjectTransform, PlayerTrack, Point } from "@/types/drawing";
+import { useEditorStore } from "@/store/useEditorStore";
 import { flattenPoints } from "@/utils/coordinates";
 import { automaticLongBallControl, buildCurvedArrowGeometry, buildPolylineArrowGeometry, quadraticPointAt } from "@/utils/curvedArrowGeometry";
-import { playerGroundPoint, samplePlayerTrackAtTime } from "@/utils/playerTracking";
+import { playerGroundPoint, samplePlayerTrackAtTime, targetAvailableAtTime, targetOffsetAtTime } from "@/utils/playerTracking";
+import { samTrackedPlayerFrameStateAtTime, samTrackedPlayerMaskRuns } from "@/utils/samTrackedPlayer";
+import type { SamTrackedPlayerMaskRun } from "@/utils/samTrackedPlayer";
 import { getObjectStateAtTime, resolvedDrawingAnimation } from "@/utils/temporalRenderer";
 
 interface Props {
@@ -183,6 +186,7 @@ function partialLineSegments(segments: number[][], progress: number) {
 export function DrawingShape({ object, width, height, currentTime, selected, canEdit, onSelect, onChange, renderMode = "all", editingPreview = false, targetOffset = { x: 0, y: 0 }, playerTracks, allDrawings, onTransformPreview }: Props) {
   const nodeRef = useRef<Konva.Group>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
+  const samRingMaskRunsRef = useRef<SamTrackedPlayerMaskRun[]>([]);
   const [arrowPreviewData, setArrowPreviewData] = useState<ArrowDrawingData | null>(null);
   const [longBallPreviewData, setLongBallPreviewData] = useState<Extract<DrawingData, { kind: "longBallArrow" }> | null>(null);
   const calculatedTemporalState = getObjectStateAtTime(object, currentTime);
@@ -201,6 +205,70 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
       transformerRef.current.getLayer()?.batchDraw();
     }
   }, [selected, arrowPreviewData, longBallPreviewData]);
+
+  useEffect(() => {
+    if (!object.target?.followSamTracking || !playerTracks?.length) return;
+    const updateTrackedPosition = (time: number) => {
+      const node = nodeRef.current;
+      if (!node) return;
+      const temporal = getObjectStateAtTime(object, time);
+      const available = temporal.visible && targetAvailableAtTime(object, playerTracks, time);
+      node.visible(available);
+      if (available) {
+        const offset = targetOffsetAtTime(object, playerTracks, time);
+        const liveTransform = editingPreview ? object.transform : temporal.transform;
+        node.position({
+          x: (liveTransform.x + offset.x) * width,
+          y: (liveTransform.y + offset.y) * height,
+        });
+        if (object.data.kind === "playerRing" && object.target?.kind === "player") {
+          const track = playerTracks.find((candidate) => candidate.id === object.target?.trackId);
+          const state = track ? samTrackedPlayerFrameStateAtTime(track, time) : undefined;
+          samRingMaskRunsRef.current = state ? samTrackedPlayerMaskRuns(state) : [];
+        }
+      } else if (object.data.kind === "playerRing") {
+        samRingMaskRunsRef.current = [];
+      }
+      node.getLayer()?.batchDraw();
+    };
+    updateTrackedPosition(useEditorStore.getState().currentTime);
+    return useEditorStore.subscribe((state, previous) => {
+      if (state.currentTime !== previous.currentTime) updateTrackedPosition(state.currentTime);
+    });
+  }, [editingPreview, height, object, playerTracks, width]);
+
+  const samRingClipFunc = object.data.kind === "playerRing"
+    && object.target?.kind === "player"
+    && object.target.followSamTracking
+    && renderMode === "base"
+    ? (context: Konva.Context, container: Konva.Container): [CanvasFillRule] => {
+      const inverse = container.getTransform().copy().invert();
+      const appendStageRectangle = (left: number, top: number, right: number, bottom: number) => {
+        const corners = [
+          inverse.point({ x: left, y: top }),
+          inverse.point({ x: right, y: top }),
+          inverse.point({ x: right, y: bottom }),
+          inverse.point({ x: left, y: bottom }),
+        ];
+        context.moveTo(corners[0].x, corners[0].y);
+        corners.slice(1).forEach((point) => context.lineTo(point.x, point.y));
+        context.closePath();
+      };
+
+      // The first polygon keeps the complete Ring drawable. Every following
+      // polygon is a binary SAM foreground run; even-odd clipping turns those
+      // runs into holes, so the untouched video player naturally stays above
+      // the Ring without any duplicated player pixels.
+      appendStageRectangle(-width, -height, width * 2, height * 2);
+      samRingMaskRunsRef.current.forEach((run) => appendStageRectangle(
+        run.x * width,
+        run.y * height,
+        (run.x + run.width) * width,
+        (run.y + run.height) * height,
+      ));
+      return ["evenodd"];
+    }
+    : undefined;
 
   const sitsOnGround = ["ellipse", "rectangle", "arrow", "longBallArrow", "line", "triangle", "polygon", "freeDraw"].includes(object.type);
   const groundHeight = Math.max(0, Math.min(1, object.style.groundHeight ?? .08));
@@ -1343,6 +1411,7 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
       <Group
         ref={nodeRef}
         id={object.id}
+        clipFunc={samRingClipFunc}
         listening={canEdit}
         x={(transform.x + targetX) * width}
         y={(transform.y + targetY) * height}

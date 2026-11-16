@@ -99,6 +99,8 @@ export interface DrawingTarget {
   trackId: string;
   anchor: "feet";
   referenceFoot?: Point;
+  /** Opt-in for effects created from an already confirmed SAM video track. */
+  followSamTracking?: boolean;
 }
 
 export interface PlayerLabel {

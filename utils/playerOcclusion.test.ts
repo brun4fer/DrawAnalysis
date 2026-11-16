@@ -79,3 +79,32 @@ test("does not composite for Spotlight, which intentionally leaves the target in
   });
   assert.equal(shouldCompositePlayerForeground([identification, spotlight], trackId, mask("sam-3.1")), false);
 });
+
+test("does not redraw a SAM player for an explicitly following Ring", () => {
+  const ring = drawing({
+    kind: "playerRing",
+    center: { x: .15, y: .4 },
+    radiusX: .03,
+    radiusY: .01,
+  });
+  ring.target = { ...ring.target!, followSamTracking: true };
+  assert.equal(shouldCompositePlayerForeground([identification, ring], trackId, mask("sam-3.1")), false);
+});
+
+test("leaves old Rings and Ghost composition unchanged", () => {
+  const ring = drawing({
+    kind: "playerRing",
+    center: { x: .15, y: .4 },
+    radiusX: .03,
+    radiusY: .01,
+  });
+  const ghost = drawing({
+    kind: "ghost",
+    origin: { x: .15, y: .4 },
+    destination: { x: .4, y: .4 },
+    radiusX: .03,
+    radiusY: .01,
+  });
+  assert.equal(shouldCompositePlayerForeground([identification, ring], trackId, mask("sam-3.1")), true);
+  assert.equal(shouldCompositePlayerForeground([identification, ghost], trackId, mask("sam-3.1")), true);
+});

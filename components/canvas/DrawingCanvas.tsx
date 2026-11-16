@@ -12,7 +12,8 @@ import { automaticLongBallControl, buildCurvedArrowGeometry, buildPolylineArrowG
 import { createId } from "@/utils/id";
 import { defaultDrawingAnimationFor, getObjectStateAtTime } from "@/utils/temporalRenderer";
 import { sourceTimeToTimeline, timelineTimeToSource } from "@/utils/videoTimeline";
-import { playerGroundPoint, samplePlayerTrackAtTime, targetOffsetAtTime } from "@/utils/playerTracking";
+import { playerGroundPoint, samplePlayerTrackAtTime, targetAvailableAtTime, targetOffsetAtTime } from "@/utils/playerTracking";
+import { pointHitsSamTrackedPlayerMask, samTrackedPlayerStateAtTime } from "@/utils/samTrackedPlayer";
 import { playerRingDimensions } from "@/utils/playerRing";
 import { buildManualPlayerSample, pointHitsPlayerMask } from "@/utils/playerManualMask";
 import { buildSamPlayerSample } from "@/utils/samPlayerMask";
@@ -405,7 +406,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
   const makeDrawing = useCallback((
     type: DrawingObject["type"],
     data: DrawingData,
-    options?: { target?: DrawingObject["target"]; trackingEnabled?: boolean; keepTool?: boolean },
+    options?: { target?: DrawingObject["target"]; trackingEnabled?: boolean; keepTool?: boolean; startTime?: number; endTime?: number },
   ) => {
     const count = drawings.filter((item) => item.type === type).length + 1;
     const actionCount = drawings.filter((item) => ["line", "arrow", "longBallArrow"].includes(item.type)).length + 1;
@@ -434,13 +435,13 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
           : {};
     const timelinePoint = timelineTimeToSource(currentTime, activeFreezeFramesRef.current);
     const isFreezeDrawing = Boolean(timelinePoint.freeze && timelinePoint.freezeStart !== undefined && timelinePoint.freezeEnd !== undefined);
-    const drawingStartTime = isFreezeDrawing ? timelinePoint.freezeStart! : currentTime;
+    const drawingStartTime = options?.startTime ?? (isFreezeDrawing ? timelinePoint.freezeStart! : currentTime);
     const defaultEndTime = type === "playerRing" ? currentTime + 4 : currentTime + 3;
-    const drawingEndTime = isFreezeDrawing
+    const drawingEndTime = options?.endTime ?? (isFreezeDrawing
       ? timelinePoint.freezeEnd!
       : options?.trackingEnabled
         ? Math.max(currentTime + .04, duration || defaultEndTime)
-        : Math.min(duration || defaultEndTime, defaultEndTime);
+        : Math.min(duration || defaultEndTime, defaultEndTime));
     const favorite = favorites.find((item) => item.id === activeFavoriteId && item.type === type);
     const defaultActionLabel = ["line", "arrow", "longBallArrow"].includes(type)
       ? { visible: false, value: String(actionCount), position: .5, color: effectStyle.stroke ?? DEFAULT_STYLE.stroke, backgroundColor: "#174ea6", fontSize: .022 }
@@ -468,10 +469,13 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     return object;
   }, [activeFavoriteId, addDrawing, currentTime, drawings, duration, favorites, setTool]);
 
-  const createRingForPlayer = ({ track, sample }: IdentifiedPlayer) => {
+  const createRingForPlayer = (
+    { track, sample }: IdentifiedPlayer,
+    tracking?: { followSamTracking: true; startTime: number; endTime: number },
+  ) => {
     const { radiusX, radiusY } = playerRingDimensions(sample.bbox, width, height);
     const labelFontSize = clamp(sample.bbox.height * .2, .012, .032);
-    makeDrawing(
+    return makeDrawing(
       "playerRing",
       {
         kind: "playerRing",
@@ -488,7 +492,20 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         splashEnabled: false,
         splashSpeed: 1,
       },
-      { target: { kind: "player", trackId: track.id, anchor: "feet", referenceFoot: sample.foot }, trackingEnabled: false },
+      {
+        target: {
+          kind: "player",
+          trackId: track.id,
+          anchor: "feet",
+          referenceFoot: sample.foot,
+          followSamTracking: tracking?.followSamTracking,
+        },
+        // SAM-following is driven by the persisted mask timeline, not by the
+        // legacy live/keyframe tracker represented by trackingEnabled.
+        trackingEnabled: false,
+        startTime: tracking?.startTime,
+        endTime: tracking?.endTime,
+      },
     );
   };
 
@@ -523,11 +540,27 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
   ): Promise<IdentifiedPlayer | null> => {
     const candidates = (activeVideoContent?.playerTracks ?? [])
       .filter((track) => track.id !== excludedTrackId && track.samples.length)
-      .map((track) => ({ track, sample: samplePlayerTrackAtTime(track, currentTime) }))
-      .filter(({ sample }) => Math.abs(sample.time - currentTime) < .05 && Boolean(sample.mask));
+      .map((track) => {
+        const trackedState = samTrackedPlayerStateAtTime(track, currentTime);
+        const savedSample = samplePlayerTrackAtTime(track, currentTime);
+        return {
+          track,
+          trackedState,
+          sample: trackedState ? {
+            ...savedSample,
+            time: currentTime,
+            bbox: trackedState.bounds,
+            foot: trackedState.foot,
+            confidence: trackedState.frame.confidence ?? savedSample.confidence,
+          } : savedSample,
+        };
+      })
+      .filter(({ sample, trackedState }) => Boolean(trackedState) || (Math.abs(sample.time - currentTime) < .05 && Boolean(sample.mask)));
     const exact: Array<IdentifiedPlayer & { distance: number }> = [];
     for (const candidate of candidates) {
-      const hit = candidate.sample.mask ? await pointHitsPlayerMask(candidate.sample.mask, point) : false;
+      const hit = candidate.trackedState
+        ? pointHitsSamTrackedPlayerMask(candidate.trackedState, point)
+        : candidate.sample.mask ? await pointHitsPlayerMask(candidate.sample.mask, point) : false;
       if (!hit) continue;
       exact.push({
         ...candidate,
@@ -561,7 +594,19 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     }
     setDetectionMessage(`${identified.track.name} · máscara reutilizada`);
     window.setTimeout(() => setDetectionMessage(null), 1500);
-    if (mode === "ring") createRingForPlayer(identified);
+    if (mode === "ring") {
+      const tracking = identified.track.samTracking;
+      if (tracking && samTrackedPlayerStateAtTime(identified.track, currentTime)) {
+        createRingForPlayer(identified, {
+          followSamTracking: true,
+          startTime: tracking.startTime,
+          endTime: tracking.endTime,
+        });
+        setDetectionMessage(`${identified.track.name} Â· Anel associado ao tracking SAM`);
+      } else {
+        createRingForPlayer(identified);
+      }
+    }
     if (mode === "ringReidentify" && replacingRingId) replaceRingPlayer(replacingRingId, identified);
     return identified;
   };
@@ -1595,7 +1640,8 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     return null;
   })();
 
-  const visible = drawings.filter((drawing) => getObjectStateAtTime(drawing, currentTime).visible);
+  const visible = drawings.filter((drawing) => getObjectStateAtTime(drawing, currentTime).visible
+    && targetAvailableAtTime(drawing, activeVideoContent?.playerTracks, currentTime));
 
   return (
     <>
@@ -1683,14 +1729,13 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       ref={occlusionCanvasRef}
       drawings={drawings}
       playerTracks={activeSlide?.content.kind === "video" ? activeSlide.content.playerTracks : undefined}
-      currentTime={currentTime}
       width={width}
       height={height}
       getVideoElement={getVideoElement}
       transformOverrides={ghostTransformPreview}
       editingPreview={!isPlaying}
     />
-    <SamTrackingOverlayCanvas playerTracks={activeVideoContent?.playerTracks} currentTime={currentTime} width={width} height={height} getVideoElement={getVideoElement} freezeFrames={activeFreezeFrames} onPrepared={handleSamPreviewPrepared} />
+    <SamTrackingOverlayCanvas playerTracks={activeVideoContent?.playerTracks} width={width} height={height} getVideoElement={getVideoElement} onPrepared={handleSamPreviewPrepared} />
     <ZoomLensCanvas ref={zoomCanvasRef} drawings={drawings} currentTime={currentTime} width={width} height={height} getVideoElement={getVideoElement} editingPreview={!isPlaying} />
     <PlayerLabelOverlay drawings={drawings} playerTracks={activeVideoContent?.playerTracks} currentTime={currentTime} width={width} height={height} editingPreview={!isPlaying} />
     {tool === "sam31" && !samMaskSession && (

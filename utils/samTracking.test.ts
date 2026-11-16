@@ -45,6 +45,20 @@ test("uses the exact captured mediaTime map instead of assuming 25 FPS", () => {
   assert.equal(samTrackingFrameAtTime(tracking, 10.1022)?.frameIndex, 3);
 });
 
+test("accepts a presented frame using the interval on the correct side in variable-frame-rate video", () => {
+  const sourceFrameTimes = [0, .01, .05, .09];
+  const tracking = buildSamPlayerTracking(
+    { ...result(), frameRate: 30 },
+    0,
+    { x: .1, y: .2, width: .1, height: .4 },
+    undefined,
+    sourceFrameTimes,
+  );
+  const resolution = resolveSamTrackingFrameAtTime(tracking, .029);
+  assert.equal(resolution.mode, "exact");
+  assert.equal(resolution.frame?.frameIndex, 1);
+});
+
 test("keeps frame correspondence at common 24, 30, 50 and 60 FPS rates", () => {
   for (const fps of [24, 30, 50, 60]) {
     const sourceFrameTimes = Array.from({ length: 4 }, (_value, index) => 7 + index / fps);

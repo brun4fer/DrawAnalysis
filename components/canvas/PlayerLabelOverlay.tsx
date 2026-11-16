@@ -5,7 +5,7 @@ import Konva from "konva";
 import { Layer, Stage } from "react-konva";
 import type { DrawingObject, PlayerTrack } from "@/types/drawing";
 import { getObjectStateAtTime } from "@/utils/temporalRenderer";
-import { targetOffsetAtTime } from "@/utils/playerTracking";
+import { targetAvailableAtTime, targetOffsetAtTime } from "@/utils/playerTracking";
 import { DrawingShape } from "./DrawingShape";
 
 interface Props {
@@ -18,7 +18,9 @@ interface Props {
 }
 
 export const PlayerLabelOverlay = forwardRef<Konva.Stage, Props>(function PlayerLabelOverlay({ drawings, playerTracks, currentTime, width, height, editingPreview = false }, ref) {
-  const labels = drawings.filter((drawing) => (drawing.type === "playerRing" || drawing.type === "playerLabel") && getObjectStateAtTime(drawing, currentTime).visible);
+  const labels = drawings.filter((drawing) => (drawing.type === "playerRing" || drawing.type === "playerLabel")
+    && getObjectStateAtTime(drawing, currentTime).visible
+    && targetAvailableAtTime(drawing, playerTracks, currentTime));
 
   return (
     <Stage ref={ref} width={width} height={height} listening={false} className="drawing-stage player-label-stage">
@@ -37,6 +39,7 @@ export const PlayerLabelOverlay = forwardRef<Konva.Stage, Props>(function Player
             renderMode="playerLabel"
             editingPreview={editingPreview}
             targetOffset={targetOffsetAtTime(drawing, playerTracks, currentTime)}
+            playerTracks={playerTracks}
             allDrawings={drawings}
           />
         ))}

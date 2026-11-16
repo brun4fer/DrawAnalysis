@@ -91,12 +91,17 @@ export function resolveSamTrackingFrameAtTime(tracking: SamPlayerTracking | unde
       const distance = Math.abs(frameTime - time);
       if (distance < expectedDistance) { expectedIndex = index; expectedDistance = distance; }
     });
+    const expectedTime = tracking.frameTimes[expectedIndex];
     const previousTime = tracking.frameTimes[expectedIndex - 1];
     const nextTime = tracking.frameTimes[expectedIndex + 1];
-    const localInterval = Math.min(
-      previousTime === undefined ? Number.POSITIVE_INFINITY : Math.abs(tracking.frameTimes[expectedIndex] - previousTime),
-      nextTime === undefined ? Number.POSITIVE_INFINITY : Math.abs(nextTime - tracking.frameTimes[expectedIndex]),
-    );
+    // Use the interval on the side where the presented time lies. Taking the
+    // smaller adjacent interval rejects valid frames in variable-frame-rate
+    // video whenever the interval on the other side happens to be shorter.
+    const directionalNeighbour = time < expectedTime ? previousTime : nextTime;
+    const fallbackNeighbour = time < expectedTime ? nextTime : previousTime;
+    const localInterval = directionalNeighbour === undefined
+      ? fallbackNeighbour === undefined ? Number.POSITIVE_INFINITY : Math.abs(fallbackNeighbour - expectedTime)
+      : Math.abs(directionalNeighbour - expectedTime);
     const tolerance = Number.isFinite(localInterval) ? localInterval * .55 : .75 / tracking.frameRate;
     if (expectedDistance > tolerance + .001) return { mode: "outside", expectedFrameIndex: expectedIndex };
     const exact = tracking.frames.find((frame) => frame.frameIndex === expectedIndex);
@@ -107,7 +112,6 @@ export function resolveSamTrackingFrameAtTime(tracking: SamPlayerTracking | unde
     if (!canInterpolateShortGap(before, after)) {
       return { mode: "unsafe-gap", expectedFrameIndex: expectedIndex, beforeFrameIndex: before.frameIndex, afterFrameIndex: after.frameIndex };
     }
-    const expectedTime = tracking.frameTimes[expectedIndex];
     const beforeTime = tracking.frameTimes[before.frameIndex];
     const afterTime = tracking.frameTimes[after.frameIndex];
     if (![expectedTime, beforeTime, afterTime].every(Number.isFinite) || afterTime <= beforeTime) {

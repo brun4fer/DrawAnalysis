@@ -24,7 +24,7 @@ export function ToolRail() {
               : tool === "sam31"
                 ? "Clique no jogador · confirme a máscara SAM 3.1"
               : tool === "playerRing"
-                ? ringReidentifyId ? "Clique nos pés de outro jogador identificado" : "Clique nos pés de um jogador identificado"
+                ? ringReidentifyId ? "Clique nos pés de outro jogador identificado" : "Clique na máscara SAM ou nos pés do jogador"
                 : tool === "ghost"
                   ? "Clique numa máscara guardada · indique o destino"
                   : tool === "spotlight"

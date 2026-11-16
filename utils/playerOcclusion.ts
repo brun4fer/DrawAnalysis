@@ -98,6 +98,7 @@ function clampSigned(value: number, limit: number) {
 
 function drawingNeedsPlayerForeground(drawing: DrawingObject, trackId: string) {
   if (drawing.target?.kind === "player" && drawing.target.trackId === trackId) {
+    if (drawing.data.kind === "playerRing" && drawing.target.followSamTracking) return false;
     return drawing.data.kind !== "identifyPlayer" && drawing.data.kind !== "spotlight";
   }
   if (drawing.data.kind !== "line") return false;

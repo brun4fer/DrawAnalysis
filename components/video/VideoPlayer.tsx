@@ -337,7 +337,14 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
                 setCurrentTime(sourceTimeToTimeline(video.currentTime, freezes));
                 video.volume = volume;
               }}
-              onTimeUpdate={(event) => publishSourceTime(event.currentTarget.currentTime)}
+              onTimeUpdate={(event) => {
+                // requestVideoFrameCallback is the authoritative clock when
+                // available. timeupdate may fire between presented frames and
+                // used to make React/Konva briefly select another mask.
+                if (typeof event.currentTarget.requestVideoFrameCallback !== "function") {
+                  publishSourceTime(event.currentTarget.currentTime);
+                }
+              }}
               onSeeked={(event) => { if (!holdingFreezeRef.current) publishSourceTime(event.currentTarget.currentTime); }}
               onPlay={() => setIsPlaying(true)}
               onPause={() => { if (!holdingFreezeRef.current) setIsPlaying(false); }}

@@ -1,4 +1,5 @@
 import type { DrawingObject, PlayerTrack, PlayerTrackSample, Point } from "@/types/drawing";
+import { samTrackedPlayerStateAtTime } from "@/utils/samTrackedPlayer";
 
 const clamp = (value: number, minimum: number, maximum: number) => Math.max(minimum, Math.min(maximum, value));
 
@@ -38,9 +39,24 @@ export function targetOffsetAtTime(object: DrawingObject, tracks: PlayerTrack[] 
   if (object.target?.kind !== "player" || !object.target.referenceFoot) return { x: 0, y: 0 };
   const track = tracks?.find((item) => item.id === object.target?.trackId);
   if (!track?.samples.length) return { x: 0, y: 0 };
+  if (object.target.followSamTracking) {
+    const state = samTrackedPlayerStateAtTime(track, currentTime);
+    if (!state) return { x: 0, y: 0 };
+    return {
+      x: state.foot.x - object.target.referenceFoot.x,
+      y: state.foot.y - object.target.referenceFoot.y,
+    };
+  }
   const sample = samplePlayerTrackAtTime(track, currentTime);
   return {
     x: sample.foot.x - object.target.referenceFoot.x,
     y: sample.foot.y - object.target.referenceFoot.y,
   };
+}
+
+/** Old/manual targets are always available; SAM-following targets require a safe mask for this frame. */
+export function targetAvailableAtTime(object: DrawingObject, tracks: PlayerTrack[] | undefined, currentTime: number) {
+  if (object.target?.kind !== "player" || !object.target.followSamTracking) return true;
+  const track = tracks?.find((item) => item.id === object.target?.trackId);
+  return Boolean(track && samTrackedPlayerStateAtTime(track, currentTime));
 }

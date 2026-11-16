@@ -1,19 +1,21 @@
 "use client";
 
 import { decodeMaskToRaster } from "@meta-sam/parser";
-import { useCallback, useEffect, useRef } from "react";
+import { memo, useCallback, useEffect, useRef } from "react";
+import { useEditorStore } from "@/store/useEditorStore";
 import type { PlayerTrack, SamTrackingFrame } from "@/types/drawing";
+import {
+  samTrackedPlayerFrameStateAtTime,
+  samTrackedPlayerStateAtTime,
+  samTrackedPlayerTrajectoryDiagnostics,
+} from "@/utils/samTrackedPlayer";
 import { resolveSamTrackingFrameAtTime } from "@/utils/samTracking";
-import { sourceTimeToTimeline } from "@/utils/videoTimeline";
-import type { FreezeFrame } from "@/types/slide";
 
 interface Props {
   playerTracks?: PlayerTrack[];
-  currentTime: number;
   width: number;
   height: number;
   getVideoElement?: () => HTMLVideoElement | null;
-  freezeFrames?: FreezeFrame[];
   onPrepared?: (metrics: { durationMs: number; frameCount: number }) => void;
 }
 
@@ -44,7 +46,7 @@ function coloredMask(frame: SamTrackingFrame) {
   return canvas;
 }
 
-export function SamTrackingOverlayCanvas({ playerTracks, currentTime, width, height, getVideoElement, freezeFrames, onPrepared }: Props) {
+export const SamTrackingOverlayCanvas = memo(function SamTrackingOverlayCanvas({ playerTracks, width, height, getVideoElement, onPrepared }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
   const debugRef = useRef<HTMLDivElement>(null);
   const lastDiagnosticRef = useRef("");
@@ -53,7 +55,7 @@ export function SamTrackingOverlayCanvas({ playerTracks, currentTime, width, hei
     && new URLSearchParams(window.location.search).has("samTrackingDebug");
 
   useEffect(() => {
-    // Decode once when tracking arrives, not inside a time-critical video-frame callback.
+    // Decode once when tracking arrives, not inside a time-critical frame render.
     const startedAt = performance.now();
     let frameCount = 0;
     for (const track of playerTracks ?? []) {
@@ -64,6 +66,14 @@ export function SamTrackingOverlayCanvas({ playerTracks, currentTime, width, hei
     if (frameCount) onPrepared?.({ durationMs: performance.now() - startedAt, frameCount });
   }, [onPrepared, playerTracks]);
 
+  useEffect(() => {
+    if (!debugEnabled) return;
+    for (const track of playerTracks ?? []) {
+      const diagnostics = samTrackedPlayerTrajectoryDiagnostics(track);
+      if (diagnostics) console.debug(`[SAM trajectory] ${track.name}`, diagnostics);
+    }
+  }, [debugEnabled, playerTracks]);
+
   const drawAtTime = useCallback((timelineTime: number, mediaTime?: number) => {
     const canvas = ref.current;
     const context = canvas?.getContext("2d");
@@ -73,72 +83,55 @@ export function SamTrackingOverlayCanvas({ playerTracks, currentTime, width, hei
     if (canvas.width !== targetWidth) canvas.width = targetWidth;
     if (canvas.height !== targetHeight) canvas.height = targetHeight;
     context.clearRect(0, 0, canvas.width, canvas.height);
-    let diagnostic = "sem máscara neste fotograma";
+    let diagnostic = "sem mascara neste fotograma";
     for (const track of playerTracks ?? []) {
-      const resolution = resolveSamTrackingFrameAtTime(track.samTracking, timelineTime);
-      const frame = resolution.frame;
-      if (!frame) {
+      // The mask overlay and every SAM-following drawing (including the Ring)
+      // consume this exact state. Separate render layers can no longer resolve
+      // different tracking frames for the same presented video frame.
+      const frameState = samTrackedPlayerFrameStateAtTime(track, timelineTime);
+      if (!frameState) {
+        const resolution = resolveSamTrackingFrameAtTime(track.samTracking, timelineTime);
         if (resolution.expectedFrameIndex !== undefined) {
-          diagnostic = `video ${timelineTime.toFixed(4)}s${mediaTime === undefined ? "" : ` · mediaTime ${mediaTime.toFixed(4)}s`} · sem máscara · frame esperado ${resolution.expectedFrameIndex} · causa ${resolution.mode}`;
+          diagnostic = `video ${timelineTime.toFixed(4)}s${mediaTime === undefined ? "" : ` | mediaTime ${mediaTime.toFixed(4)}s`} | sem mascara | frame esperado ${resolution.expectedFrameIndex} | causa ${resolution.mode}`;
         }
         continue;
       }
-      try {
-        const mask = coloredMask(frame);
-        if (!mask) continue;
-        const bounds = resolution.bounds ?? frame.bounds;
-        const x = bounds.x * canvas.width;
-        const y = bounds.y * canvas.height;
-        const maskWidth = bounds.width * canvas.width;
-        const maskHeight = bounds.height * canvas.height;
-        context.imageSmoothingEnabled = false;
-        context.drawImage(mask, x, y, maskWidth, maskHeight);
-        context.save();
-        context.globalAlpha = .9;
-        context.strokeStyle = "#a3ff12";
-        context.lineWidth = Math.max(1.25, canvas.width / 900);
-        context.shadowColor = "#a3ff12";
-        context.shadowBlur = 4;
-        context.strokeRect(x, y, maskWidth, maskHeight);
-        context.restore();
-        const deltaMs = (timelineTime - frame.time) * 1_000;
-        const interpolation = resolution.mode === "interpolated"
-          ? ` · interpolado ${resolution.beforeFrameIndex}→${resolution.afterFrameIndex} para ${resolution.expectedFrameIndex}`
-          : "";
-        diagnostic = `video ${timelineTime.toFixed(4)}s${mediaTime === undefined ? "" : ` · mediaTime ${mediaTime.toFixed(4)}s`} · SAM frame ${frame.frameIndex} · máscara ${frame.time.toFixed(4)}s · Δ ${deltaMs.toFixed(1)}ms · FPS ${track.samTracking?.frameRate.toFixed(2) ?? "—"}${interpolation}`;
-      } catch {
-        // A corrupt persisted mask is skipped without blocking the editor.
-      }
+      const { frame, bounds, resolution } = frameState;
+      const playerState = samTrackedPlayerStateAtTime(track, timelineTime);
+      const foot = playerState?.foot;
+      const rawFoot = playerState?.rawFoot;
+      // Confirmed masks remain available to tracking, occlusion and the Ring,
+      // but are no longer painted over the video. The user already reviewed
+      // the green preview before confirming the identification.
+      const deltaMs = (timelineTime - frame.time) * 1_000;
+      const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+      const interpolation = resolution.mode === "interpolated"
+        ? ` | interpolado ${resolution.beforeFrameIndex}->${resolution.afterFrameIndex} para ${resolution.expectedFrameIndex}`
+        : "";
+      diagnostic = `video ${timelineTime.toFixed(4)}s${mediaTime === undefined ? "" : ` | mediaTime ${mediaTime.toFixed(4)}s`} | SAM frame ${frame.frameIndex} | mascara ${frame.time.toFixed(4)}s | delta ${deltaMs.toFixed(1)}ms | centro ${center.x.toFixed(4)},${center.y.toFixed(4)} | pe bruto ${rawFoot ? `${rawFoot.x.toFixed(4)},${rawFoot.y.toFixed(4)}` : "indisponivel"} | Anel ${foot ? `${foot.x.toFixed(4)},${foot.y.toFixed(4)}` : "indisponivel"} | FPS ${track.samTracking?.frameRate.toFixed(2) ?? "-"}${interpolation}`;
     }
     if (debugRef.current) debugRef.current.textContent = diagnostic;
     if (debugEnabled && diagnostic !== lastDiagnosticRef.current) {
-      if (diagnostic.includes("sem máscara") || diagnostic.includes("interpolado")) console.debug(`[SAM tracking] ${diagnostic}`);
+      if (diagnostic.includes("sem mascara") || diagnostic.includes("interpolado")) console.debug(`[SAM tracking] ${diagnostic}`);
       lastDiagnosticRef.current = diagnostic;
     }
   }, [debugEnabled, height, playerTracks, width]);
 
   useEffect(() => {
-    const video = getVideoElement?.();
-    // During playback the video-frame callback below is the sole canvas writer. This prevents
-    // a delayed React/Zustand effect from clearing a correctly rendered presented frame.
-    if (video && !video.paused) return;
-    drawAtTime(currentTime);
-  }, [currentTime, drawAtTime, getVideoElement]);
-
-  useEffect(() => {
-    const video = getVideoElement?.();
-    if (!video || typeof video.requestVideoFrameCallback !== "function") return;
-    let callbackId = 0;
-    const drawPresentedFrame: VideoFrameRequestCallback = (_now, metadata) => {
-      drawAtTime(sourceTimeToTimeline(metadata.mediaTime, freezeFrames), metadata.mediaTime);
-      callbackId = video.requestVideoFrameCallback(drawPresentedFrame);
+    const drawPresentedTime = (time: number) => {
+      const video = getVideoElement?.();
+      drawAtTime(time, video?.currentTime);
     };
-    callbackId = video.requestVideoFrameCallback(drawPresentedFrame);
-    return () => video.cancelVideoFrameCallback(callbackId);
-  }, [drawAtTime, freezeFrames, getVideoElement]);
+    // Subscribe directly to the single presented-frame clock. This avoids
+    // waiting for a full DrawingCanvas React render before painting the mask.
+    drawPresentedTime(useEditorStore.getState().currentTime);
+    return useEditorStore.subscribe((state, previous) => {
+      if (state.currentTime !== previous.currentTime) drawPresentedTime(state.currentTime);
+    });
+  }, [drawAtTime, getVideoElement]);
 
   return <>
     <canvas ref={ref} className="sam-tracking-overlay" aria-hidden="true" />
-    {debugEnabled && <div ref={debugRef} className="sam-tracking-debug">A aguardar fotograma…</div>}
+    {debugEnabled && <div ref={debugRef} className="sam-tracking-debug">A aguardar fotograma...</div>}
   </>;
-}
+});

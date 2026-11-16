@@ -1,9 +1,10 @@
 "use client";
 
 import { forwardRef, useCallback, useEffect, useState } from "react";
+import { useEditorStore } from "@/store/useEditorStore";
 import type { DrawingObject, ObjectTransform, PlayerTrack } from "@/types/drawing";
 import { drawMovedPlayer, drawPlayerForeground, hidePlayerOriginal, shouldCompositePlayerForeground } from "@/utils/playerOcclusion";
-import { samplePlayerTrackAtTime } from "@/utils/playerTracking";
+import { samplePlayerTrackAtTime, targetAvailableAtTime } from "@/utils/playerTracking";
 import { getObjectStateAtTime } from "@/utils/temporalRenderer";
 
 function colorWithAlpha(color: string, alpha: number) {
@@ -70,7 +71,6 @@ function drawGroundLine(
 interface Props {
   drawings: DrawingObject[];
   playerTracks?: PlayerTrack[];
-  currentTime: number;
   width: number;
   height: number;
   getVideoElement?: () => HTMLVideoElement | null;
@@ -78,17 +78,17 @@ interface Props {
   editingPreview?: boolean;
 }
 
-export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(function PlayerOcclusionCanvas({ drawings, playerTracks, currentTime, width, height, getVideoElement, transformOverrides, editingPreview = false }, ref) {
+export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(function PlayerOcclusionCanvas({ drawings, playerTracks, width, height, getVideoElement, transformOverrides, editingPreview = false }, ref) {
   const [maskRevision, setMaskRevision] = useState(0);
   const redrawLoadedMask = useCallback(() => setMaskRevision((revision) => revision + 1), []);
-  useEffect(() => {
+  const drawAtTime = useCallback((renderTime: number) => {
     const canvas = typeof ref === "object" ? ref?.current : null;
     const video = getVideoElement?.();
     const context = canvas?.getContext("2d");
     if (!canvas || !video || !context || !video.videoWidth || !video.videoHeight) return;
     context.clearRect(0, 0, canvas.width, canvas.height);
 
-    const activeTargets = drawings.filter((drawing) => getObjectStateAtTime(drawing, currentTime).visible);
+    const activeTargets = drawings.filter((drawing) => getObjectStateAtTime(drawing, renderTime).visible && targetAvailableAtTime(drawing, playerTracks, renderTime));
     const trackIds = [...new Set(activeTargets.flatMap((drawing) => {
       const ids: string[] = [];
       // The dark spotlight intentionally does not redraw its target. Every
@@ -105,11 +105,11 @@ export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(functi
     for (const trackId of trackIds) {
       const track = playerTracks?.find((item) => item.id === trackId);
       if (!track?.samples.length) continue;
-      const sample = samplePlayerTrackAtTime(track, currentTime);
+      const sample = samplePlayerTrackAtTime(track, renderTime);
       if (!shouldCompositePlayerForeground(activeTargets, trackId, sample.mask)) continue;
       const identification = activeTargets.find((drawing) => drawing.data.kind === "identifyPlayer" && drawing.target?.trackId === trackId);
       const effectOpacity = identification
-        ? editingPreview ? identification.style.opacity : getObjectStateAtTime(identification, currentTime).opacity
+        ? editingPreview ? identification.style.opacity : getObjectStateAtTime(identification, renderTime).opacity
         : 1;
       try {
         drawPlayerForeground(context, video, sample.bbox, width, height, sample.foot, sample.mask, identification?.style, effectOpacity, redrawLoadedMask);
@@ -120,11 +120,11 @@ export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(functi
 
     for (const drawing of drawings) {
       if (drawing.data.kind !== "ghost" || drawing.target?.kind !== "player") continue;
-      const state = getObjectStateAtTime(drawing, currentTime);
+      const state = getObjectStateAtTime(drawing, renderTime);
       if (!state.visible) continue;
       const track = playerTracks?.find((item) => item.id === drawing.target?.trackId);
       if (!track?.samples.length) continue;
-      const sample = samplePlayerTrackAtTime(track, currentTime);
+      const sample = samplePlayerTrackAtTime(track, renderTime);
       const transform = transformOverrides?.[drawing.id] ?? state.transform;
       const finalDestination = {
         x: drawing.data.destination.x + transform.x,
@@ -132,11 +132,11 @@ export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(functi
       };
       const objectDuration = Math.max(.04, drawing.endTime - drawing.startTime);
       const travelDuration = Math.min(objectDuration / (drawing.data.returnToOrigin ? 2 : 1), Math.max(.12, drawing.data.travelDuration ?? .7));
-      const elapsed = Math.max(0, currentTime - drawing.startTime);
+      const elapsed = Math.max(0, renderTime - drawing.startTime);
       const ease = (value: number) => 1 - (1 - Math.max(0, Math.min(1, value))) ** 3;
       let travelProgress = editingPreview || drawing.data.animateMovement === false ? 1 : ease(elapsed / travelDuration);
-      if (!editingPreview && drawing.data.animateMovement !== false && drawing.data.returnToOrigin && currentTime > drawing.endTime - travelDuration) {
-        travelProgress = 1 - ease((currentTime - (drawing.endTime - travelDuration)) / travelDuration);
+      if (!editingPreview && drawing.data.animateMovement !== false && drawing.data.returnToOrigin && renderTime > drawing.endTime - travelDuration) {
+        travelProgress = 1 - ease((renderTime - (drawing.endTime - travelDuration)) / travelDuration);
       }
       const destination = {
         x: drawing.data.origin.x + (finalDestination.x - drawing.data.origin.x) * travelProgress,
@@ -164,7 +164,14 @@ export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(functi
         // The next video frame redraws this overlay automatically.
       }
     }
-  }, [currentTime, drawings, editingPreview, getVideoElement, height, maskRevision, playerTracks, redrawLoadedMask, ref, transformOverrides, width]);
+  }, [drawings, editingPreview, getVideoElement, height, maskRevision, playerTracks, redrawLoadedMask, ref, transformOverrides, width]);
+
+  useEffect(() => {
+    drawAtTime(useEditorStore.getState().currentTime);
+    return useEditorStore.subscribe((state, previous) => {
+      if (state.currentTime !== previous.currentTime) drawAtTime(state.currentTime);
+    });
+  }, [drawAtTime]);
 
   return <canvas ref={ref} className="player-occlusion-canvas" width={width} height={height} />;
 });
