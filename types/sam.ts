@@ -3,7 +3,9 @@ import type { SegmentationMaskEncoding } from "@meta-sam/parser";
 export interface SamSegmentRequest {
   imageDataUrl: string;
   frame: { width: number; height: number };
-  point: { x: number; y: number };
+  promptMode: "point" | "box";
+  point?: { x: number; y: number };
+  box?: { left: number; top: number; right: number; bottom: number };
 }
 
 export interface SamSegmentResult {

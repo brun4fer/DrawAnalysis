@@ -125,6 +125,14 @@ button:disabled { opacity: .3; cursor: default; }
 .manual-mask-actions button.primary { border-color: #7bbf17; background: #33520d; color: #dfffaa; font-weight: 700; }
 .manual-mask-close-polygon { display: inline-flex; align-items: center; gap: 4px; min-height: 29px; padding: 0 8px; border: 1px solid #7bbf17; border-radius: 5px; background: #263c20; color: #dfffaa; font: inherit; cursor: pointer; }
 .sam-mask-review { position: absolute; inset: 0; z-index: 31; overflow: hidden; pointer-events: auto; }
+.sam-selection-mode { position: absolute; left: 50%; top: 10px; z-index: 31; width: min(650px, calc(100% - 20px)); min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 9px 8px 12px; transform: translateX(-50%); border: 1px solid #a3ff126b; border-radius: 8px; background: #08100ef2; box-shadow: 0 10px 34px #000c; color: #eaf5e9; pointer-events: auto; backdrop-filter: blur(8px); }
+.sam-selection-mode > div:first-child { min-width: 0; display: grid; gap: 3px; }
+.sam-selection-mode strong { color: #baff55; font-size: 10px; letter-spacing: .08em; }
+.sam-selection-mode small { color: #9ca9a4; font-size: 8px; }
+.sam-selection-mode-actions { flex: none; display: flex; gap: 5px; }
+.sam-selection-mode button { min-height: 29px; padding: 0 10px; border: 1px solid #34413c; border-radius: 5px; background: #121b18; color: #bdc8c2; font-size: 9px; cursor: pointer; }
+.sam-selection-mode button:hover { border-color: #72874e; color: #fff; background: #213027; }
+.sam-selection-mode button.active { border-color: #7bbf17; background: #33520d; color: #dfffaa; font-weight: 750; }
 .sam-tracking-overlay { position: absolute; inset: 0; z-index: 2; display: block; width: 100%; height: 100%; pointer-events: none; }
 .sam-mask-preview { position: absolute; background: #a3ff12; opacity: .52; filter: drop-shadow(0 0 5px #a3ff12); mask-repeat: no-repeat; mask-position: center; mask-size: 100% 100%; -webkit-mask-repeat: no-repeat; -webkit-mask-position: center; -webkit-mask-size: 100% 100%; animation: sam-mask-lock .28s ease-out both; }
 .sam-loading-target { position: absolute; width: 62px; height: 62px; display: grid; place-items: center; transform: translate(-50%, -50%); border: 1px solid #a3ff12; border-radius: 50%; background: #07100866; color: #dfffac; box-shadow: 0 0 0 8px #a3ff1210, 0 0 24px #a3ff1266; animation: sam-target-pulse 1s ease-in-out infinite; }
@@ -144,7 +152,7 @@ button:disabled { opacity: .3; cursor: default; }
 .sam-spinner { animation: player-detection-spin .7s linear infinite; }
 @keyframes sam-mask-lock { from { opacity: 0; transform: scale(1.08); } to { opacity: .52; transform: scale(1); } }
 @keyframes sam-target-pulse { 50% { transform: translate(-50%, -50%) scale(.88); opacity: .65; } }
-@media (max-width: 900px) { .sam-review-toolbar { align-items: stretch; flex-direction: column; }.sam-review-actions { justify-content: flex-end; } }
+@media (max-width: 900px) { .sam-review-toolbar, .sam-selection-mode { align-items: stretch; flex-direction: column; }.sam-review-actions, .sam-selection-mode-actions { justify-content: flex-end; } }
 @media (max-width: 1180px) {
   .manual-mask-toolbar { align-items: stretch; width: min(720px, calc(100% - 16px)); }
   .manual-mask-title { flex-basis: 100%; max-width: none; text-align: center; }

@@ -35,6 +35,7 @@ export async function segmentFrameAtPoint(frame: HTMLCanvasElement, point: Point
   const request: SamSegmentRequest = {
     imageDataUrl: encodeOriginalFrameForSam(frame),
     frame: { width: frame.width, height: frame.height },
+    promptMode: "point",
     point: {
       x: Math.max(0, Math.min(frame.width - 1, Math.floor(point.x * frame.width))),
       y: Math.max(0, Math.min(frame.height - 1, Math.floor(point.y * frame.height))),
@@ -60,6 +61,45 @@ export async function segmentFrameAtPoint(frame: HTMLCanvasElement, point: Point
     const error = value as SamErrorResponse | null;
     throw new SamClientError(
       error?.error?.message || "A identificação SAM 3.1 falhou.",
+      error?.error?.code || "SAM_REQUEST_FAILED",
+      error?.error?.retryable ?? response.status >= 500,
+      response.status,
+    );
+  }
+  return value as SamSegmentResult;
+}
+
+export async function segmentFrameInBox(frame: HTMLCanvasElement, box: { x: number; y: number; width: number; height: number }, signal?: AbortSignal) {
+  const left = Math.max(0, Math.min(frame.width - 1, Math.floor(box.x * frame.width)));
+  const top = Math.max(0, Math.min(frame.height - 1, Math.floor(box.y * frame.height)));
+  const right = Math.max(left + 1, Math.min(frame.width, Math.ceil((box.x + box.width) * frame.width)));
+  const bottom = Math.max(top + 1, Math.min(frame.height, Math.ceil((box.y + box.height) * frame.height)));
+  const request: SamSegmentRequest = {
+    imageDataUrl: encodeOriginalFrameForSam(frame),
+    frame: { width: frame.width, height: frame.height },
+    promptMode: "box",
+    box: { left, top, right, bottom },
+  };
+  let response: Response;
+  try {
+    response = await fetch("/api/sam/segment", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+      cache: "no-store",
+      signal,
+    });
+  } catch (error) {
+    if (signal?.aborted || (error instanceof DOMException && error.name === "AbortError")) {
+      throw new SamClientError("A identificação SAM 3.1 foi cancelada.", "REQUEST_ABORTED", true);
+    }
+    throw new SamClientError("Não foi possível comunicar com a função SAM 3.1.", "NETWORK_ERROR", true);
+  }
+  const value: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const error = value as SamErrorResponse | null;
+    throw new SamClientError(
+      error?.error?.message || "A identificação SAM 3.1 por caixa falhou.",
       error?.error?.code || "SAM_REQUEST_FAILED",
       error?.error?.retryable ?? response.status >= 500,
       response.status,

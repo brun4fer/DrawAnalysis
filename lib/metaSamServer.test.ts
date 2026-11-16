@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { MetaSamError, parseMetaSamEventStream, validateSamSegmentRequest } from "./metaSamServer";
+import { buildSamSegmentationPrompt, MetaSamError, parseMetaSamEventStream, validateSamSegmentRequest } from "./metaSamServer";
 
 function streamFrom(chunks: string[]) {
   const encoder = new TextEncoder();
@@ -30,6 +30,34 @@ test("rejects a click outside the original frame", () => {
       point: { x: 10, y: 5 },
     }),
     (error) => error instanceof MetaSamError && error.code === "INVALID_POINT",
+  );
+});
+
+test("validates a half-open box prompt in original-frame coordinates", () => {
+  const value = validateSamSegmentRequest({
+    imageDataUrl: `data:image/jpeg;base64,${Buffer.from("frame").toString("base64")}`,
+    frame: { width: 1920, height: 1080 },
+    promptMode: "box",
+    box: { left: 100, top: 80, right: 200, bottom: 400 },
+  });
+  assert.equal(value.promptMode, "box");
+  assert.deepEqual(value.box, { left: 100, top: 80, right: 200, bottom: 400 });
+  assert.equal(buildSamSegmentationPrompt(value), "<0f>1<|box;x1=100;y1=80;x2=199;y2=399;w=1920;h=1080|>");
+});
+
+test("rejects an empty or out-of-frame box", () => {
+  const base = {
+    imageDataUrl: `data:image/jpeg;base64,${Buffer.from("frame").toString("base64")}`,
+    frame: { width: 100, height: 100 },
+    promptMode: "box",
+  };
+  assert.throws(
+    () => validateSamSegmentRequest({ ...base, box: { left: 20, top: 10, right: 20, bottom: 80 } }),
+    (error) => error instanceof MetaSamError && error.code === "INVALID_BOX",
+  );
+  assert.throws(
+    () => validateSamSegmentRequest({ ...base, box: { left: 20, top: 10, right: 101, bottom: 80 } }),
+    (error) => error instanceof MetaSamError && error.code === "INVALID_BOX",
   );
 });
 

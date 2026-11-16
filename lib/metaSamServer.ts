@@ -28,14 +28,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function validateSamSegmentRequest(value: unknown): SamSegmentRequest {
-  if (!isRecord(value) || !isRecord(value.frame) || !isRecord(value.point)) {
+  if (!isRecord(value) || !isRecord(value.frame)) {
     throw new MetaSamError("Pedido SAM 3.1 inválido.", "INVALID_REQUEST", 400, false);
   }
   const imageDataUrl = value.imageDataUrl;
   const width = value.frame.width;
   const height = value.frame.height;
-  const x = value.point.x;
-  const y = value.point.y;
+  const promptMode = value.promptMode === "box" ? "box" : "point";
   if (typeof imageDataUrl !== "string" || !/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(imageDataUrl)) {
     throw new MetaSamError("O fotograma enviado não é uma imagem válida.", "INVALID_IMAGE", 400, false);
   }
@@ -45,14 +44,48 @@ export function validateSamSegmentRequest(value: unknown): SamSegmentRequest {
   if (!Number.isInteger(width) || !Number.isInteger(height) || Number(width) < 1 || Number(height) < 1 || Number(width) > 16_384 || Number(height) > 16_384 || Number(width) * Number(height) > 80_000_000) {
     throw new MetaSamError("As dimensões do fotograma são inválidas.", "INVALID_FRAME_SIZE", 400, false);
   }
-  if (!Number.isInteger(x) || !Number.isInteger(y) || Number(x) < 0 || Number(y) < 0 || Number(x) >= Number(width) || Number(y) >= Number(height)) {
-    throw new MetaSamError("O clique está fora do fotograma.", "INVALID_POINT", 400, false);
+  if (promptMode === "point") {
+    if (!isRecord(value.point)) throw new MetaSamError("O pedido não contém um ponto válido.", "INVALID_POINT", 400, false);
+    const x = value.point.x;
+    const y = value.point.y;
+    if (!Number.isInteger(x) || !Number.isInteger(y) || Number(x) < 0 || Number(y) < 0 || Number(x) >= Number(width) || Number(y) >= Number(height)) {
+      throw new MetaSamError("O clique está fora do fotograma.", "INVALID_POINT", 400, false);
+    }
+    return {
+      imageDataUrl,
+      frame: { width: Number(width), height: Number(height) },
+      promptMode,
+      point: { x: Number(x), y: Number(y) },
+    };
+  }
+  if (!isRecord(value.box)) throw new MetaSamError("O pedido não contém uma caixa válida.", "INVALID_BOX", 400, false);
+  const left = value.box.left;
+  const top = value.box.top;
+  const right = value.box.right;
+  const bottom = value.box.bottom;
+  if (![left, top, right, bottom].every(Number.isInteger)
+    || Number(left) < 0 || Number(top) < 0 || Number(right) > Number(width) || Number(bottom) > Number(height)
+    || Number(right) <= Number(left) || Number(bottom) <= Number(top)) {
+    throw new MetaSamError("A caixa está fora do fotograma ou é demasiado pequena.", "INVALID_BOX", 400, false);
   }
   return {
     imageDataUrl,
     frame: { width: Number(width), height: Number(height) },
-    point: { x: Number(x), y: Number(y) },
+    promptMode,
+    box: { left: Number(left), top: Number(top), right: Number(right), bottom: Number(bottom) },
   };
+}
+
+export function buildSamSegmentationPrompt(input: SamSegmentRequest) {
+  return buildObjectPrompt({
+    size: input.frame,
+    objects: [{
+      id: 1,
+      prompts: input.promptMode === "box" && input.box
+        ? [{ box: input.box }]
+        : [{ points: [{ x: input.point!.x, y: input.point!.y, label: "positive" }] }],
+    }],
+  });
 }
 
 function eventFromBlock(block: string): { type: string } | null {
@@ -123,10 +156,7 @@ export async function requestMetaSamSegmentation(
   apiKey: string,
   signal: AbortSignal,
 ): Promise<SamSegmentResult> {
-  const prompt = buildObjectPrompt({
-    size: input.frame,
-    objects: [{ id: 1, prompts: [{ points: [{ x: input.point.x, y: input.point.y, label: "positive" }] }] }],
-  });
+  const prompt = buildSamSegmentationPrompt(input);
   let response: Response;
   try {
     response = await fetch(META_RESPONSES_URL, {

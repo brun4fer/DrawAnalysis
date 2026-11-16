@@ -15,7 +15,7 @@ import { playerGroundPoint, samplePlayerTrackAtTime, targetOffsetAtTime } from "
 import { playerRingDimensions } from "@/utils/playerRing";
 import { buildManualPlayerSample, pointHitsPlayerMask } from "@/utils/playerManualMask";
 import { buildSamPlayerSample } from "@/utils/samPlayerMask";
-import { SamClientError, segmentFrameAtPoint } from "@/lib/samClient";
+import { SamClientError, segmentFrameAtPoint, segmentFrameInBox } from "@/lib/samClient";
 import { recordSamTrackingClip } from "@/lib/samClipRecorder";
 import { trackSamPlayer } from "@/lib/samTrackingClient";
 import { buildSamPlayerTracking } from "@/utils/samTracking";
@@ -53,6 +53,7 @@ interface SamMaskSession {
   trackingDuration?: 2 | 3;
   message?: string;
   retryable?: boolean;
+  selectionMode?: "point" | "box";
 }
 
 const labelFor = (kind: DrawingObject["type"]) => ({
@@ -299,6 +300,8 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
   const [pendingGhost, setPendingGhost] = useState<IdentifiedPlayer | null>(null);
   const [manualMaskSession, setManualMaskSession] = useState<ManualMaskSession | null>(null);
   const [samMaskSession, setSamMaskSession] = useState<SamMaskSession | null>(null);
+  const [samSelectionMode, setSamSelectionMode] = useState<"point" | "box">("point");
+  const [samBoxDraft, setSamBoxDraft] = useState<{ start: Point; current: Point } | null>(null);
   const [ghostTransformPreview, setGhostTransformPreview] = useState<Record<string, ObjectTransform>>({});
   const [trackingQuality, setTrackingQuality] = useState<"tracking" | "reacquiring" | null>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -323,6 +326,12 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     const animationFrame = window.requestAnimationFrame(() => setSamMaskSession(null));
     return () => window.cancelAnimationFrame(animationFrame);
   }, [samMaskSession, tool]);
+
+  useEffect(() => {
+    if (tool === "sam31") return;
+    const animationFrame = window.requestAnimationFrame(() => setSamBoxDraft(null));
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [tool]);
 
   useEffect(() => {
     if (tool !== "identifyPlayer") {
@@ -582,6 +591,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
   const cancelSamIdentification = () => {
     samAbortRef.current?.abort();
     samAbortRef.current = null;
+    setSamBoxDraft(null);
     setSamMaskSession(null);
     setTool("select");
   };
@@ -598,7 +608,9 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     samAbortRef.current?.abort();
     samAbortRef.current = null;
     setSamMaskSession(null);
-    setDetectionMessage("SAM 3.1 pronto · clique novamente no centro do jogador");
+    setDetectionMessage(samSelectionMode === "box"
+      ? "SAM 3.1 pronto · desenhe novamente a caixa à volta do jogador"
+      : "SAM 3.1 pronto · clique novamente no centro do jogador");
     window.setTimeout(() => setDetectionMessage(null), 2200);
   };
 
@@ -622,7 +634,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     const controller = new AbortController();
     samAbortRef.current?.abort();
     samAbortRef.current = controller;
-    setSamMaskSession({ phase: "loading", click, frame });
+    setSamMaskSession({ phase: "loading", click, frame, selectionMode: "point" });
     const startedAt = performance.now();
     try {
       const result = await segmentFrameAtPoint(frame, click, controller.signal);
@@ -634,6 +646,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         click,
         frame,
         sample,
+        selectionMode: "point",
         message: `Máscara alinhada · confiança ${Math.round(sample.confidence * 100)}% · confirme antes de guardar`,
       });
     } catch (error) {
@@ -645,6 +658,61 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         phase: "error",
         click,
         frame,
+        selectionMode: "point",
+        message: clientError.message,
+        retryable: clientError.retryable,
+      });
+    } finally {
+      if (samAbortRef.current === controller) samAbortRef.current = null;
+    }
+  };
+
+  const startSamBoxIdentification = async (box: NormalizedBox) => {
+    if (samMaskSession?.phase === "loading") return;
+    const video = getVideoElement?.();
+    const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    if (!video || !video.videoWidth || !video.videoHeight || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      setDetectionMessage("O fotograma do vídeo ainda não está pronto.");
+      window.setTimeout(() => setDetectionMessage(null), 2600);
+      return;
+    }
+    video.pause();
+    let frame: HTMLCanvasElement;
+    try {
+      frame = captureVideoFrame(video);
+    } catch {
+      setDetectionMessage("Não foi possível ler este fotograma. Confirme o CORS do vídeo Cloudflare R2 e tente novamente.");
+      window.setTimeout(() => setDetectionMessage(null), 4200);
+      return;
+    }
+    const controller = new AbortController();
+    samAbortRef.current?.abort();
+    samAbortRef.current = controller;
+    setSamMaskSession({ phase: "loading", click: center, frame, selectionMode: "box", message: "A analisar o jogador dentro da caixa no fotograma original…" });
+    const startedAt = performance.now();
+    try {
+      const result = await segmentFrameInBox(frame, box, controller.signal);
+      if (samAbortRef.current !== controller) return;
+      const sample = buildSamPlayerSample(frame, result, currentTime, performance.now() - startedAt);
+      if (!sample?.mask) throw new SamClientError("A máscara recebida está vazia ou desalinhada.", "INVALID_MASK", true);
+      setSamMaskSession({
+        phase: "review",
+        click: center,
+        frame,
+        sample,
+        selectionMode: "box",
+        message: `Máscara por caixa alinhada · confiança ${Math.round(sample.confidence * 100)}% · confirme antes de guardar`,
+      });
+    } catch (error) {
+      if (controller.signal.aborted || samAbortRef.current !== controller) return;
+      const clientError = error instanceof SamClientError
+        ? error
+        : new SamClientError("Não foi possível concluir a identificação SAM 3.1 por caixa.", "SAM_REQUEST_FAILED", true);
+      setSamMaskSession({
+        phase: "error",
+        click: center,
+        frame,
+        selectionMode: "box",
         message: clientError.message,
         retryable: clientError.retryable,
       });
@@ -1228,20 +1296,21 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
   }, [makeDrawing]);
 
   useEffect(() => {
-    if (!draft) return;
+    if (!draft && !samBoxDraft) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
         setDraft(null);
+        setSamBoxDraft(null);
       }
-      if (event.key === "Enter" && draft.tool === "line" && draft.points.length >= 2) {
+      if (event.key === "Enter" && draft?.tool === "line" && draft.points.length >= 2) {
         event.preventDefault();
         finishLineDraft(draft);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [draft, finishLineDraft]);
+  }, [draft, finishLineDraft, samBoxDraft]);
 
   const onPointerDown = (event: Konva.KonvaEventObject<PointerEvent>) => {
     if (event.target !== event.target.getStage()) return;
@@ -1252,7 +1321,12 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       return;
     }
     if (tool === "sam31") {
-      void startSamIdentification(point);
+      if (samSelectionMode === "box") {
+        getVideoElement?.()?.pause();
+        setSamBoxDraft({ start: point, current: point });
+      } else {
+        void startSamIdentification(point);
+      }
       return;
     }
     if (tool === "playerRing") {
@@ -1354,6 +1428,11 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
   };
 
   const onPointerMove = (event: Konva.KonvaEventObject<PointerEvent>) => {
+    if (tool === "sam31" && samSelectionMode === "box" && samBoxDraft) {
+      const point = pointFromStage(event.target.getStage()!);
+      if (point) setSamBoxDraft({ ...samBoxDraft, current: point });
+      return;
+    }
     if (!draft || draft.tool !== tool || tool === "select" || tool === "text") return;
     const point = pointFromStage(event.target.getStage()!);
     if (!point) return;
@@ -1365,7 +1444,24 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     } else setDraft({ ...draft, current: point });
   };
 
-  const onPointerUp = () => {
+  const onPointerUp = (event: Konva.KonvaEventObject<PointerEvent>) => {
+    if (tool === "sam31" && samSelectionMode === "box" && samBoxDraft) {
+      const release = pointFromStage(event.target.getStage()!) ?? samBoxDraft.current;
+      const box = {
+        x: Math.min(samBoxDraft.start.x, release.x),
+        y: Math.min(samBoxDraft.start.y, release.y),
+        width: Math.abs(release.x - samBoxDraft.start.x),
+        height: Math.abs(release.y - samBoxDraft.start.y),
+      };
+      setSamBoxDraft(null);
+      if (box.width * width < 8 || box.height * height < 8) {
+        setDetectionMessage("Desenhe uma caixa completa à volta do jogador.");
+        window.setTimeout(() => setDetectionMessage(null), 2200);
+        return;
+      }
+      void startSamBoxIdentification(box);
+      return;
+    }
     if (draft?.tool === "freeDraw" && tool === "freeDraw" && draft.points.length > 1) {
       makeDrawing("freeDraw", { kind: "freeDraw", points: draft.points });
     }
@@ -1433,6 +1529,22 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       onPointerUp={onPointerUp}
     >
       <Layer>
+        {samBoxDraft && tool === "sam31" && (
+          <Rect
+            listening={false}
+            x={Math.min(samBoxDraft.start.x, samBoxDraft.current.x) * width}
+            y={Math.min(samBoxDraft.start.y, samBoxDraft.current.y) * height}
+            width={Math.abs(samBoxDraft.current.x - samBoxDraft.start.x) * width}
+            height={Math.abs(samBoxDraft.current.y - samBoxDraft.start.y) * height}
+            stroke="#a3ff12"
+            strokeWidth={2}
+            dash={[8, 5]}
+            fill="#a3ff1214"
+            shadowColor="#a3ff12"
+            shadowBlur={8}
+            shadowOpacity={.55}
+          />
+        )}
         {detectionBoxes.map((box, index) => (
           <Rect
             key={`detected-player-${index}`}
@@ -1501,6 +1613,26 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     <SamTrackingOverlayCanvas playerTracks={activeVideoContent?.playerTracks} currentTime={currentTime} width={width} height={height} />
     <ZoomLensCanvas ref={zoomCanvasRef} drawings={drawings} currentTime={currentTime} width={width} height={height} getVideoElement={getVideoElement} editingPreview={!isPlaying} />
     <PlayerLabelOverlay drawings={drawings} playerTracks={activeVideoContent?.playerTracks} currentTime={currentTime} width={width} height={height} editingPreview={!isPlaying} />
+    {tool === "sam31" && !samMaskSession && (
+      <div className="sam-selection-mode" onPointerDown={(event) => event.stopPropagation()}>
+        <div>
+          <strong>SAM 3.1</strong>
+          <small>{samSelectionMode === "box" ? "Arraste uma caixa à volta do corpo completo" : "Clique no centro do jogador"}</small>
+        </div>
+        <div className="sam-selection-mode-actions">
+          <button
+            type="button"
+            className={samSelectionMode === "point" ? "active" : ""}
+            onClick={() => { setSamBoxDraft(null); setSamSelectionMode("point"); }}
+          >Identificar por clique</button>
+          <button
+            type="button"
+            className={samSelectionMode === "box" ? "active" : ""}
+            onClick={() => { setSamBoxDraft(null); setSamSelectionMode("box"); }}
+          >Selecionar por caixa</button>
+        </div>
+      </div>
+    )}
     {tool === "identifyPlayer" && manualMaskSession && (
       <ManualPlayerMaskEditor
         width={width}
