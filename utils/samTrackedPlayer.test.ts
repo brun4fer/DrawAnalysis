@@ -207,3 +207,49 @@ test("interpolates the stabilised Ring path continuously between SAM frames", ()
   assert.ok(halfway.foot.x > before.foot.x && halfway.foot.x < after.foot.x);
   assert.ok(Math.abs(halfway.foot.x - (before.foot.x + after.foot.x) / 2) < 1e-6);
 });
+
+test("suppresses subpixel tremor for a distant player without delaying horizontal movement", () => {
+  const times = Array.from({ length: 11 }, (_, index) => index * .04);
+  const verticalNoise = [0, .0018, -.0014, .0016, -.0017, .0015, -.0015, .0017, -.0013, .0014, 0];
+  const track: PlayerTrack = {
+    id: "distant-player",
+    name: "Distant player",
+    source: "automatic",
+    status: "ready",
+    samples: [{ time: 0, bbox: { x: .1, y: .2, width: .035, height: .055 }, foot: { x: .1175, y: .255 }, confidence: .9 }],
+    samTracking: {
+      sourceStartTime: 0,
+      startTime: 0,
+      endTime: times[times.length - 1],
+      duration: 2,
+      frameRate: 25,
+      frameTimes: times,
+      sourceWidth: 1280,
+      sourceHeight: 720,
+      frames: times.map((time, frameIndex) => ({
+        frameIndex,
+        time,
+        bounds: {
+          x: .1 + frameIndex * .004,
+          y: .2 + frameIndex * .0003 + verticalNoise[frameIndex],
+          width: .035,
+          height: .055,
+        },
+        mask: { encoding: "one_bit", width: 5, height: 5, payload: "!!!!!(QO(0lu8?" },
+        confidence: .9,
+      })),
+    },
+  };
+  const states = times.map((time) => samTrackedPlayerStateAtTime(track, time));
+  assert.ok(states.every(Boolean));
+  const secondDifference = (values: number[]) => values.slice(2).reduce((sum, value, index) =>
+    sum + Math.abs(value - values[index + 1] * 2 + values[index]), 0);
+  const rawVerticalRoughness = secondDifference(states.map((state) => state!.rawFoot.y * 720));
+  const stableVerticalRoughness = secondDifference(states.map((state) => state!.foot.y * 720));
+  assert.ok(stableVerticalRoughness < rawVerticalRoughness * .72,
+    `expected less distant-player tremor, got ${rawVerticalRoughness}px -> ${stableVerticalRoughness}px`);
+  states.forEach((state) => {
+    assert.ok(Math.abs(state!.foot.x - state!.rawFoot.x) * 1280 < 1,
+      "constant horizontal movement must remain current-time aligned");
+  });
+});

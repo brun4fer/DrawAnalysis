@@ -431,6 +431,111 @@ function adaptiveBaselineCoordinate(
   return sample.baseline[key] + clamp(requestedPx, -maximumPx, maximumPx) * strength / scale;
 }
 
+function microOscillationAt(
+  samples: FootTrajectorySample[],
+  index: number,
+  key: "x" | "y",
+  tracking: SamPlayerTracking,
+  maximumAmplitudePx: number,
+) {
+  if (index < 1 || index >= samples.length - 1) return false;
+  const before = samples[index - 1];
+  const current = samples[index];
+  const after = samples[index + 1];
+  if (!framesBelongToSameTrajectory(before, current) || !framesBelongToSameTrajectory(current, after)) return false;
+  const scale = axisPixelScale(tracking, key);
+  const incoming = (current.stable[key] - before.stable[key]) * scale;
+  const outgoing = (after.stable[key] - current.stable[key]) * scale;
+  if (incoming * outgoing >= 0) return false;
+  const progress = (current.time - before.time) / Math.max(.001, after.time - before.time);
+  const neighbourLine = before.stable[key] + (after.stable[key] - before.stable[key]) * progress;
+  const excursionPx = Math.abs(current.stable[key] - neighbourLine) * scale;
+  return Math.min(Math.abs(incoming), Math.abs(outgoing)) <= maximumAmplitudePx
+    && excursionPx <= maximumAmplitudePx * 1.35;
+}
+
+/**
+ * Distant players expose one-pixel changes in the SAM lower contour as a
+ * visible Ring tremor. This zero-phase pass fills only that micro-jitter
+ * dead-zone: it smooths the foot offset relative to the body and isolated
+ * subpixel reversals, while leaving large players and real direction changes
+ * untouched.
+ */
+function stabiliseSmallPlayerMicroJitter(
+  samples: FootTrajectorySample[],
+  tracking: SamPlayerTracking,
+) {
+  if (samples.length < 3) return 0;
+  const heights = samples.map((sample) => sample.bounds.height * tracking.sourceHeight).sort((left, right) => left - right);
+  const medianHeightPx = heights[Math.floor(heights.length / 2)];
+  const smallPlayerStrength = clamp((68 - medianHeightPx) / 20, 0, 1);
+  if (smallPlayerStrength <= 0) return 0;
+
+  let changedFrames = 0;
+  const residualSnapshot = samples.map((sample) => ({ ...sample, stable: { ...sample.stable } }));
+  samples.forEach((sample, index) => {
+    let changed = false;
+    for (const key of ["x", "y"] as const) {
+      const scale = axisPixelScale(tracking, key);
+      const maximumMicroPx = clamp(medianHeightPx * (key === "x" ? .045 : .05), 1.25, 2.25);
+      const currentRelative = relativeGroundCoordinate(residualSnapshot[index], key);
+      const estimatedRelative = centredTrajectoryEstimateAt(
+        residualSnapshot,
+        index,
+        (candidate) => relativeGroundCoordinate(candidate, key),
+      );
+      const differencePx = Math.abs(estimatedRelative - currentRelative) * scale;
+      if (differencePx < .08 || differencePx > maximumMicroPx) continue;
+      const correctionStrength = smallPlayerStrength * (key === "y" ? .88 : .78);
+      sample.stable[key] += (estimatedRelative - currentRelative) * correctionStrength;
+      changed = true;
+    }
+    if (changed) changedFrames += 1;
+  });
+
+  // A second snapshot handles tiny reversals inherited from the SAM bounds
+  // themselves. The centred estimate has no phase delay and is used only when
+  // the current sample is a local excursion no larger than a couple of pixels.
+  const positionSnapshot = samples.map((sample) => ({ ...sample, stable: { ...sample.stable } }));
+  samples.forEach((sample, index) => {
+    let changed = false;
+    for (const key of ["x", "y"] as const) {
+      const scale = axisPixelScale(tracking, key);
+      const maximumMicroPx = clamp(medianHeightPx * (key === "x" ? .04 : .055), 1.2, 2.4);
+      const estimated = centredTrajectoryEstimateAt(positionSnapshot, index, (candidate) => candidate.stable[key]);
+      const differencePx = Math.abs(estimated - positionSnapshot[index].stable[key]) * scale;
+      const shouldCorrect = key === "y"
+        ? differencePx >= .08 && differencePx <= maximumMicroPx * 1.75
+        : microOscillationAt(positionSnapshot, index, key, tracking, maximumMicroPx)
+          && differencePx <= maximumMicroPx * 1.35;
+      if (!shouldCorrect) continue;
+      const boundedCorrection = clamp(
+        estimated - positionSnapshot[index].stable[key],
+        -maximumMicroPx / scale,
+        maximumMicroPx / scale,
+      );
+      sample.stable[key] += boundedCorrection
+        * smallPlayerStrength
+        * (key === "y" ? .9 : .8);
+      changed = true;
+    }
+    if (changed) changedFrames += 1;
+  });
+
+  samples.forEach((sample) => {
+    const maximumHorizontalDistance = clamp(medianHeightPx * .1, 3, 6) / tracking.sourceWidth;
+    const maximumVerticalDistance = clamp(medianHeightPx * .08, 2.5, 4) / tracking.sourceHeight;
+    sample.stable.x = clamp(
+      sample.stable.x,
+      Math.max(sample.bounds.x, sample.raw.x - maximumHorizontalDistance),
+      Math.min(sample.bounds.x + sample.bounds.width, sample.raw.x + maximumHorizontalDistance),
+    );
+    sample.stable.y = clamp(sample.stable.y, sample.raw.y - maximumVerticalDistance, sample.raw.y + maximumVerticalDistance);
+    sample.stable.y = clamp(sample.stable.y, 0, 1);
+  });
+  return changedFrames;
+}
+
 function trajectoryJitter(samples: FootTrajectorySample[], key: "raw" | "stable") {
   let total = 0;
   for (let index = 1; index < samples.length - 1; index += 1) {
@@ -531,6 +636,7 @@ function buildFootTrajectory(tracking: SamPlayerTracking): FootTrajectory {
     };
   });
   stablePoints.forEach((point, index) => { corrected[index].stable = point; });
+  correctedOutliers += stabiliseSmallPlayerMicroJitter(corrected, tracking);
 
   const jumps = (key: "raw" | "stable") => {
     const distances: number[] = [];
