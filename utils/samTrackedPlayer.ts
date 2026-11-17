@@ -35,6 +35,7 @@ interface FootTrajectorySample {
   frameIndex: number;
   time: number;
   bounds: NormalizedBox;
+  baseline: Point;
   raw: Point;
   stable: Point;
 }
@@ -57,6 +58,12 @@ function maskKey(frame: SamTrackingFrame) {
 function median(values: number[]) {
   const sorted = [...values].sort((left, right) => left - right);
   return sorted[Math.floor(sorted.length / 2)];
+}
+
+function quantile(sorted: number[], amount: number) {
+  if (!sorted.length) return 0;
+  const index = Math.max(0, Math.min(sorted.length - 1, Math.round((sorted.length - 1) * amount)));
+  return sorted[index];
 }
 
 /**
@@ -119,6 +126,7 @@ export function robustMaskGroundContact(
   // estimate, while the bottom band still anchors the result to the feet.
   const lowerStart = Math.max(0, supportedBottom - Math.max(3, Math.round(height * .42)));
   const lowerRowCenters: number[] = [];
+  const lowerHorizontalSamples: number[] = [];
   for (let y = lowerStart; y <= supportedBottom; y += 1) {
     if (rowCounts[y] < minimumRowSupport) continue;
     let sum = 0;
@@ -126,12 +134,29 @@ export function robustMaskGroundContact(
     for (let x = 0; x < width; x += 1) {
       if (!raster[y * width + x]) continue;
       sum += x + .5;
+      lowerHorizontalSamples.push(x + .5);
       count += 1;
     }
     if (count) lowerRowCenters.push(sum / count);
   }
-  const lowerCenter = lowerRowCenters.length ? median(lowerRowCenters) : bottomCenter;
-  const centerX = lowerCenter * .72 + bottomCenter * .28;
+  lowerHorizontalSamples.sort((left, right) => left - right);
+  const rowCenter = lowerRowCenters.length ? median(lowerRowCenters) : bottomCenter;
+  const lowerEnvelopeCenter = lowerHorizontalSamples.length
+    ? (quantile(lowerHorizontalSamples, .08) + quantile(lowerHorizontalSamples, .92)) / 2
+    : rowCenter;
+  const lowerTrim = lowerHorizontalSamples.length >= 12 ? Math.floor(lowerHorizontalSamples.length * .08) : 0;
+  const lowerStableSamples = lowerHorizontalSamples.slice(lowerTrim, lowerHorizontalSamples.length - lowerTrim || undefined);
+  const lowerMassCenter = lowerStableSamples.length
+    ? lowerStableSamples.reduce((sum, value) => sum + value, 0) / lowerStableSamples.length
+    : rowCenter;
+
+  // The horizontal ground reference must remain between the legs instead of
+  // following whichever boot happens to touch the last mask rows. A robust
+  // lower-silhouette envelope carries most of the weight; the bottom band is
+  // retained only as a small contact cue. This removes stride alternation
+  // without predicting the player's motion or adding a fixed lead offset.
+  const lowerCenter = lowerEnvelopeCenter * .58 + lowerMassCenter * .27 + rowCenter * .15;
+  const centerX = lowerCenter * .9 + bottomCenter * .1;
   return {
     x: Math.max(0, Math.min(1, centerX / width)),
     y: Math.max(0, Math.min(1, (supportedBottom + 1) / height)),
@@ -240,7 +265,11 @@ function framesBelongToSameTrajectory(left: FootTrajectorySample, right: FootTra
     && areaRatio <= 2.5;
 }
 
-function linearRegressionAt(samples: FootTrajectorySample[], index: number, key: "x" | "y") {
+function centredTrajectoryEstimateAt(
+  samples: FootTrajectorySample[],
+  index: number,
+  valueAt: (sample: FootTrajectorySample) => number,
+) {
   const origin = samples[index].time;
   const from = Math.max(0, index - 2);
   const to = Math.min(samples.length - 1, index + 2);
@@ -255,7 +284,7 @@ function linearRegressionAt(samples: FootTrajectorySample[], index: number, key:
     }
     if (connected) neighbours.push(samples[candidate]);
   }
-  if (neighbours.length < 3) return samples[index].stable[key];
+  if (neighbours.length < 3) return valueAt(samples[index]);
 
   // A centred local linear fit preserves constant velocity exactly, including
   // with irregular timestamps. Unlike an exponential filter it introduces no
@@ -272,7 +301,7 @@ function linearRegressionAt(samples: FootTrajectorySample[], index: number, key:
     const weight = 1 / (1 + (relativeTime / timeScale) ** 2);
     weightSum += weight;
     weightedTime += weight * relativeTime;
-    weightedValue += weight * sample.stable[key];
+    weightedValue += weight * valueAt(sample);
   }
   const meanTime = weightedTime / weightSum;
   const meanValue = weightedValue / weightSum;
@@ -281,11 +310,125 @@ function linearRegressionAt(samples: FootTrajectorySample[], index: number, key:
   for (const sample of neighbours) {
     const relativeTime = sample.time - origin;
     const weight = 1 / (1 + (relativeTime / timeScale) ** 2);
-    covariance += weight * (relativeTime - meanTime) * (sample.stable[key] - meanValue);
+    covariance += weight * (relativeTime - meanTime) * (valueAt(sample) - meanValue);
     variance += weight * (relativeTime - meanTime) ** 2;
   }
   const slope = variance > 1e-9 ? covariance / variance : 0;
-  return meanValue - slope * meanTime;
+  const linearEstimate = meanValue - slope * meanTime;
+  if (neighbours.length < 5) return linearEstimate;
+
+  // With the complete five-frame window, a centred quadratic fit preserves
+  // genuine acceleration and smooth changes of direction. A linear fit can
+  // mistake those movements for noise and visibly leave the Ring behind.
+  const matrix = Array.from({ length: 3 }, () => [0, 0, 0, 0]);
+  for (const sample of neighbours) {
+    const normalisedTime = (sample.time - origin) / timeScale;
+    const weight = 1 / (1 + normalisedTime ** 2);
+    const powers = [1, normalisedTime, normalisedTime ** 2];
+    for (let row = 0; row < 3; row += 1) {
+      for (let column = 0; column < 3; column += 1) {
+        matrix[row][column] += weight * powers[row] * powers[column];
+      }
+      matrix[row][3] += weight * powers[row] * valueAt(sample);
+    }
+  }
+  for (let pivot = 0; pivot < 3; pivot += 1) {
+    let best = pivot;
+    for (let row = pivot + 1; row < 3; row += 1) {
+      if (Math.abs(matrix[row][pivot]) > Math.abs(matrix[best][pivot])) best = row;
+    }
+    if (Math.abs(matrix[best][pivot]) < 1e-9) return linearEstimate;
+    [matrix[pivot], matrix[best]] = [matrix[best], matrix[pivot]];
+    const divisor = matrix[pivot][pivot];
+    for (let column = pivot; column < 4; column += 1) matrix[pivot][column] /= divisor;
+    for (let row = 0; row < 3; row += 1) {
+      if (row === pivot) continue;
+      const factor = matrix[row][pivot];
+      for (let column = pivot; column < 4; column += 1) matrix[row][column] -= factor * matrix[pivot][column];
+    }
+  }
+  return matrix[0][3];
+}
+
+function clamp(value: number, minimum: number, maximum: number) {
+  return Math.max(minimum, Math.min(maximum, value));
+}
+
+function pixelDistance(left: Point, right: Point, tracking: SamPlayerTracking) {
+  return Math.hypot(
+    (right.x - left.x) * tracking.sourceWidth,
+    (right.y - left.y) * tracking.sourceHeight,
+  );
+}
+
+function axisPixelScale(tracking: SamPlayerTracking, key: "x" | "y") {
+  return key === "x" ? tracking.sourceWidth : tracking.sourceHeight;
+}
+
+function relativeGroundCoordinate(sample: FootTrajectorySample, key: "x" | "y") {
+  return sample.stable[key] - sample.baseline[key];
+}
+
+/**
+ * Smooths only mask-shape noise relative to the current player bounds. The
+ * player's actual translation and camera movement remain at the current
+ * timestamp, which prevents the phase lag caused by filtering absolute x/y.
+ */
+function adaptiveRelativeCoordinate(
+  samples: FootTrajectorySample[],
+  index: number,
+  key: "x" | "y",
+  tracking: SamPlayerTracking,
+) {
+  const sample = samples[index];
+  const scale = axisPixelScale(tracking, key);
+  const playerHeightPx = sample.bounds.height * tracking.sourceHeight;
+  const currentRelative = relativeGroundCoordinate(sample, key);
+  const estimatedRelative = centredTrajectoryEstimateAt(samples, index, (candidate) => relativeGroundCoordinate(candidate, key));
+  const deviationPx = Math.abs(estimatedRelative - currentRelative) * scale;
+
+  // One mask pixel is already meaningful on a distant player. Corrections are
+  // therefore proportional to the tracked player's height, not to the canvas.
+  const quietPx = key === "x"
+    ? clamp(playerHeightPx * .02, .65, 1.75)
+    : clamp(playerHeightPx * .025, 1, 2.25);
+  if (deviationPx <= quietPx) return sample.stable[key];
+  const fullCorrectionPx = key === "x"
+    ? Math.max(quietPx + .75, playerHeightPx * .065)
+    : Math.max(quietPx + 1, playerHeightPx * .08);
+  const strength = clamp((deviationPx - quietPx) / Math.max(.001, fullCorrectionPx - quietPx), 0, 1);
+  const maximumAdjustmentPx = key === "x"
+    ? clamp(playerHeightPx * .045, 1.25, 3.5)
+    : clamp(playerHeightPx * .025, .75, 2);
+  const requestedAdjustmentPx = (estimatedRelative - currentRelative) * scale;
+  const adjustmentPx = clamp(requestedAdjustmentPx, -maximumAdjustmentPx, maximumAdjustmentPx) * strength;
+  return sample.stable[key] + adjustmentPx / scale;
+}
+
+function adaptiveBaselineCoordinate(
+  samples: FootTrajectorySample[],
+  index: number,
+  key: "x" | "y",
+  tracking: SamPlayerTracking,
+) {
+  const sample = samples[index];
+  const scale = axisPixelScale(tracking, key);
+  const playerHeightPx = sample.bounds.height * tracking.sourceHeight;
+  const estimated = centredTrajectoryEstimateAt(samples, index, (candidate) => candidate.baseline[key]);
+  const requestedPx = (estimated - sample.baseline[key]) * scale;
+  const deviationPx = Math.abs(requestedPx);
+  const quietPx = key === "x"
+    ? clamp(playerHeightPx * .008, .35, .8)
+    : clamp(playerHeightPx * .01, .45, 1);
+  if (deviationPx <= quietPx) return sample.baseline[key];
+  const fullCorrectionPx = key === "x"
+    ? Math.max(quietPx + .8, playerHeightPx * .045)
+    : Math.max(quietPx + 1, playerHeightPx * .055);
+  const strength = clamp((deviationPx - quietPx) / Math.max(.001, fullCorrectionPx - quietPx), 0, 1);
+  const maximumPx = key === "x"
+    ? clamp(playerHeightPx * .03, 1, 2.5)
+    : clamp(playerHeightPx * .018, .65, 1.5);
+  return sample.baseline[key] + clamp(requestedPx, -maximumPx, maximumPx) * strength / scale;
 }
 
 function trajectoryJitter(samples: FootTrajectorySample[], key: "raw" | "stable") {
@@ -318,12 +461,22 @@ function buildFootTrajectory(tracking: SamPlayerTracking): FootTrajectory {
       const raw = groundPointForFrame(frame);
       const time = tracking.frameTimes?.[frame.frameIndex] ?? frame.time;
       if (!raw || !Number.isFinite(time)) return undefined;
-      return { frameIndex: frame.frameIndex, time, bounds: frame.bounds, raw, stable: raw };
+      return {
+        frameIndex: frame.frameIndex,
+        time,
+        bounds: frame.bounds,
+        baseline: {
+          x: frame.bounds.x + frame.bounds.width / 2,
+          y: frame.bounds.y + frame.bounds.height,
+        },
+        raw,
+        stable: raw,
+      };
     })
     .filter((sample): sample is FootTrajectorySample => Boolean(sample));
 
-  let correctedOutliers = 0;
   const corrected = samples.map((sample) => ({ ...sample, stable: { ...sample.raw } }));
+  let correctedOutliers = 0;
   for (let index = 1; index < corrected.length - 1; index += 1) {
     const before = corrected[index - 1];
     const current = corrected[index];
@@ -331,25 +484,47 @@ function buildFootTrajectory(tracking: SamPlayerTracking): FootTrajectory {
     if (!framesBelongToSameTrajectory(before, current) || !framesBelongToSameTrajectory(current, after)) continue;
     const progress = (current.time - before.time) / (after.time - before.time);
     const expected = mixPoint(before.raw, after.raw, progress);
-    const averageHeight = (before.bounds.height + current.bounds.height + after.bounds.height) / 3;
-    const maximumDeviation = Math.max(.004, averageHeight * .075);
-    if (pointDistance(current.raw, expected) > maximumDeviation
-      && pointDistance(before.raw, after.raw) <= Math.max(.08, averageHeight * .9)) {
-      current.stable = expected;
+    const expectedBaseline = mixPoint(before.baseline, after.baseline, progress);
+    const averageHeightPx = (before.bounds.height + current.bounds.height + after.bounds.height)
+      / 3 * tracking.sourceHeight;
+    const currentBaselineDeviationPx = pixelDistance(current.baseline, expectedBaseline, tracking);
+    const currentGroundDeviationPx = pixelDistance(current.raw, expected, tracking);
+    const neighbourMovementPx = pixelDistance(before.raw, after.raw, tracking);
+    const isolatedBodyThresholdPx = clamp(averageHeightPx * .1, 2.5, 12);
+
+    // A very occasional SAM bounds jump moves both the body and feet together.
+    // Correct it only when it is an isolated geometric discontinuity. Normal
+    // running/acceleration remains untouched and is handled from current-time
+    // bounds below, so this cannot create systematic tracking delay.
+    if (currentBaselineDeviationPx > isolatedBodyThresholdPx
+      && currentGroundDeviationPx > isolatedBodyThresholdPx
+      && neighbourMovementPx <= Math.max(16, averageHeightPx * 1.15)) {
+      const maximumX = clamp(averageHeightPx * .075, 2.5, 12) / tracking.sourceWidth;
+      const maximumY = clamp(averageHeightPx * .04, 1.5, 4) / tracking.sourceHeight;
+      current.baseline = {
+        x: current.baseline.x + clamp(expectedBaseline.x - current.baseline.x, -maximumX, maximumX),
+        y: current.baseline.y + clamp(expectedBaseline.y - current.baseline.y, -maximumY, maximumY),
+      };
+      current.stable = {
+        x: current.stable.x + clamp(expected.x - current.stable.x, -maximumX, maximumX),
+        y: current.stable.y + clamp(expected.y - current.stable.y, -maximumY, maximumY),
+      };
       correctedOutliers += 1;
     }
   }
 
   const stablePoints = corrected.map((sample, index) => {
-    const estimated = {
-      x: linearRegressionAt(corrected, index, "x"),
-      y: linearRegressionAt(corrected, index, "y"),
+    const baseline = {
+      x: adaptiveBaselineCoordinate(corrected, index, "x", tracking),
+      y: adaptiveBaselineCoordinate(corrected, index, "y", tracking),
     };
-    const maximumAdjustment = Math.max(.003, sample.bounds.height * .06);
-    const adjustment = pointDistance(sample.stable, estimated);
-    const safe = adjustment > maximumAdjustment
-      ? mixPoint(sample.stable, estimated, maximumAdjustment / adjustment)
-      : estimated;
+    const relativeX = adaptiveRelativeCoordinate(corrected, index, "x", tracking) - sample.baseline.x;
+    const relativeY = adaptiveRelativeCoordinate(corrected, index, "y", tracking) - sample.baseline.y;
+    const safe = {
+      x: baseline.x + relativeX,
+      y: baseline.y + relativeY,
+    };
+    if (pixelDistance(sample.stable, safe, tracking) >= .5) correctedOutliers += 1;
     return {
       x: Math.max(sample.bounds.x, Math.min(sample.bounds.x + sample.bounds.width, safe.x)),
       y: Math.max(0, Math.min(1, safe.y)),
@@ -387,15 +562,25 @@ function buildFootTrajectory(tracking: SamPlayerTracking): FootTrajectory {
   return trajectory;
 }
 
-function trajectoryPointForFrame(tracking: SamPlayerTracking, frameIndex: number) {
-  return buildFootTrajectory(tracking).byFrameIndex.get(frameIndex);
-}
-
-function interpolatedTrajectoryPoint(tracking: SamPlayerTracking, beforeIndex: number, afterIndex: number, time: number) {
-  const before = trajectoryPointForFrame(tracking, beforeIndex);
-  const after = trajectoryPointForFrame(tracking, afterIndex);
-  if (!before || !after || !framesBelongToSameTrajectory(before, after)) return undefined;
-  const progress = Math.max(0, Math.min(1, (time - before.time) / (after.time - before.time)));
+function trajectoryPointAtTime(tracking: SamPlayerTracking, time: number) {
+  const trajectory = buildFootTrajectory(tracking);
+  if (!trajectory.samples.length) return undefined;
+  const afterIndex = trajectory.samples.findIndex((sample) => sample.time >= time);
+  if (afterIndex < 0) {
+    const last = trajectory.samples[trajectory.samples.length - 1];
+    return { raw: last.raw, stable: last.stable };
+  }
+  if (afterIndex === 0) {
+    const first = trajectory.samples[0];
+    return { raw: first.raw, stable: first.stable };
+  }
+  const after = trajectory.samples[afterIndex];
+  const before = trajectory.samples[afterIndex - 1];
+  if (!framesBelongToSameTrajectory(before, after)) {
+    const nearest = Math.abs(time - before.time) <= Math.abs(after.time - time) ? before : after;
+    return { raw: nearest.raw, stable: nearest.stable };
+  }
+  const progress = Math.max(0, Math.min(1, (time - before.time) / Math.max(.001, after.time - before.time)));
   return {
     raw: mixPoint(before.raw, after.raw, progress),
     stable: mixPoint(before.stable, after.stable, progress),
@@ -422,10 +607,11 @@ export function samTrackedPlayerStateAtTime(track: PlayerTrack, currentTime: num
   const tracking = track.samTracking;
   const frameState = samTrackedPlayerFrameStateAtTime(track, currentTime);
   if (!tracking || !frameState) return undefined;
-  const { resolution } = frameState;
-  const trajectoryState = resolution.mode === "interpolated" && resolution.beforeFrameIndex !== undefined && resolution.afterFrameIndex !== undefined
-    ? interpolatedTrajectoryPoint(tracking, resolution.beforeFrameIndex, resolution.afterFrameIndex, currentTime)
-    : trajectoryPointForFrame(tracking, frameState.frame.frameIndex);
+  // Mask lookup remains frame-exact, while the already calculated Ring path
+  // is interpolated using the original media timestamps. This makes movement
+  // continuous at display refresh rates above the source FPS without changing
+  // SAM frames, tracking synchronisation or making additional API requests.
+  const trajectoryState = trajectoryPointAtTime(tracking, currentTime);
   if (!trajectoryState) return undefined;
   const { raw: rawFoot, stable: foot } = trajectoryState;
   return { ...frameState, rawFoot, foot };

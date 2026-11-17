@@ -55,6 +55,8 @@ test("does not alternate the Ring centre between feet during a running stride", 
   const right = robustMaskGroundContact(raster(20, 20, rightFoot), 20, 20);
   assert.ok(left && right);
   assert.ok(Math.abs(left.x - right.x) < .16, `expected stable lower-body centre, got ${left.x} -> ${right.x}`);
+  assert.ok(Math.abs(left.x - .5) < .12 && Math.abs(right.x - .5) < .12,
+    `the Ring must remain between both legs, got ${left.x} and ${right.x}`);
   assert.equal(left.y, right.y);
 });
 
@@ -129,4 +131,79 @@ test("rejects an isolated trajectory spike without adding temporal lag", () => {
   assert.ok(Math.abs(state.foot.x - state.rawFoot.x) > .01, "isolated spike should be corrected");
   assert.ok(diagnostics.correctedOutliers >= 1);
   assert.ok(diagnostics.stableJitter < diagnostics.rawJitter);
+});
+
+test("preserves genuine acceleration instead of leaving the Ring behind", () => {
+  const times = Array.from({ length: 9 }, (_, index) => index * .04);
+  const track: PlayerTrack = {
+    id: "accelerating-player",
+    name: "Accelerating player",
+    source: "automatic",
+    status: "ready",
+    samples: [{ time: 0, bbox: { x: .1, y: .2, width: .08, height: .16 }, foot: { x: .14, y: .36 }, confidence: .9 }],
+    samTracking: {
+      sourceStartTime: 0,
+      startTime: 0,
+      endTime: times[times.length - 1],
+      duration: 2,
+      frameRate: 25,
+      frameTimes: times,
+      sourceWidth: 1280,
+      sourceHeight: 720,
+      frames: times.map((time, frameIndex) => ({
+        frameIndex,
+        time,
+        bounds: {
+          x: .1 + frameIndex * .006 + frameIndex ** 2 * .0007,
+          y: .2,
+          width: .08,
+          height: .16,
+        },
+        mask: { encoding: "one_bit", width: 5, height: 5, payload: "!!!!!(QO(0lu8?" },
+        confidence: .9,
+      })),
+    },
+  };
+
+  for (let frameIndex = 2; frameIndex <= 6; frameIndex += 1) {
+    const state = samTrackedPlayerStateAtTime(track, times[frameIndex]);
+    assert.ok(state);
+    const horizontalCorrectionPx = Math.abs(state.foot.x - state.rawFoot.x) * track.samTracking!.sourceWidth;
+    assert.ok(horizontalCorrectionPx < .75, `acceleration must remain current-time aligned, got ${horizontalCorrectionPx}px`);
+  }
+});
+
+test("interpolates the stabilised Ring path continuously between SAM frames", () => {
+  const times = [0, .04, .08, .12, .16];
+  const positions = [.1, .11, .12, .13, .14];
+  const track: PlayerTrack = {
+    id: "interpolated-player",
+    name: "Interpolated player",
+    source: "automatic",
+    status: "ready",
+    samples: [{ time: 0, bbox: { x: .1, y: .1, width: .2, height: .5 }, foot: { x: .2, y: .6 }, confidence: .9 }],
+    samTracking: {
+      sourceStartTime: 0,
+      startTime: 0,
+      endTime: .16,
+      duration: 2,
+      frameRate: 25,
+      frameTimes: times,
+      sourceWidth: 1000,
+      sourceHeight: 500,
+      frames: positions.map((x, frameIndex) => ({
+        frameIndex,
+        time: times[frameIndex],
+        bounds: { x, y: .1, width: .2, height: .5 },
+        mask: { encoding: "one_bit", width: 5, height: 5, payload: "!!!!!(QO(0lu8?" },
+        confidence: .9,
+      })),
+    },
+  };
+  const before = samTrackedPlayerStateAtTime(track, .08);
+  const halfway = samTrackedPlayerStateAtTime(track, .1);
+  const after = samTrackedPlayerStateAtTime(track, .12);
+  assert.ok(before && halfway && after);
+  assert.ok(halfway.foot.x > before.foot.x && halfway.foot.x < after.foot.x);
+  assert.ok(Math.abs(halfway.foot.x - (before.foot.x + after.foot.x) / 2) < 1e-6);
 });
