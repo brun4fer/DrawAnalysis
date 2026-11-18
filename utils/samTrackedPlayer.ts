@@ -31,6 +31,22 @@ export interface SamFootTrajectoryDiagnostics {
   stableJitter: number;
 }
 
+/**
+ * A direction vector based on the already-stabilised SAM ground path. It is a
+ * visual summary of the observed tracking interval, never a prediction and
+ * never a new SAM request.
+ */
+export interface SamTrackedPlayerMovement {
+  start: Point;
+  end: Point;
+  distance: number;
+}
+
+export interface SamTrackedPlayerPathPoint {
+  time: number;
+  foot: Point;
+}
+
 interface FootTrajectorySample {
   frameIndex: number;
   time: number;
@@ -695,6 +711,27 @@ function trajectoryPointAtTime(tracking: SamPlayerTracking, time: number) {
 
 export function samTrackedPlayerTrajectoryDiagnostics(track: PlayerTrack) {
   return track.samTracking ? buildFootTrajectory(track.samTracking).diagnostics : undefined;
+}
+
+export function samTrackedPlayerMovement(track: PlayerTrack): SamTrackedPlayerMovement | undefined {
+  const tracking = track.samTracking;
+  if (!tracking) return undefined;
+  const start = trajectoryPointAtTime(tracking, tracking.startTime)?.stable;
+  const end = trajectoryPointAtTime(tracking, tracking.endTime)?.stable;
+  if (!start || !end) return undefined;
+  return { start, end, distance: pointDistance(start, end) };
+}
+
+/**
+ * The recorded, stabilised ground path. Consumers can visualise this path but
+ * must not mutate it: it is the same path the tracked Ring already follows.
+ */
+export function samTrackedPlayerPath(track: PlayerTrack): SamTrackedPlayerPathPoint[] {
+  if (!track.samTracking) return [];
+  return buildFootTrajectory(track.samTracking).samples.map((sample) => ({
+    time: sample.time,
+    foot: { ...sample.stable },
+  }));
 }
 
 export function samTrackedPlayerFrameStateAtTime(track: PlayerTrack, currentTime: number): SamTrackedPlayerFrameState | undefined {

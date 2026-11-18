@@ -5,6 +5,8 @@ import {
   pointHitsSamTrackedPlayerMask,
   robustMaskGroundContact,
   samTrackedPlayerMaskRuns,
+  samTrackedPlayerMovement,
+  samTrackedPlayerPath,
   samTrackedPlayerStateAtTime,
   samTrackedPlayerTrajectoryDiagnostics,
 } from "./samTrackedPlayer";
@@ -206,6 +208,69 @@ test("interpolates the stabilised Ring path continuously between SAM frames", ()
   assert.ok(before && halfway && after);
   assert.ok(halfway.foot.x > before.foot.x && halfway.foot.x < after.foot.x);
   assert.ok(Math.abs(halfway.foot.x - (before.foot.x + after.foot.x) / 2) < 1e-6);
+});
+
+test("summarises the observed SAM movement from the saved stabilised trajectory", () => {
+  const times = [0, .04, .08, .12];
+  const track: PlayerTrack = {
+    id: "movement-player",
+    name: "Movement player",
+    source: "automatic",
+    status: "ready",
+    samples: [{ time: 0, bbox: { x: .1, y: .2, width: .08, height: .16 }, foot: { x: .14, y: .36 }, confidence: .9 }],
+    samTracking: {
+      sourceStartTime: 0,
+      startTime: 0,
+      endTime: .12,
+      duration: 2,
+      frameRate: 25,
+      frameTimes: times,
+      sourceWidth: 1280,
+      sourceHeight: 720,
+      frames: times.map((time, frameIndex) => ({
+        frameIndex,
+        time,
+        bounds: { x: .1 + frameIndex * .02, y: .2, width: .08, height: .16 },
+        mask: { encoding: "one_bit", width: 5, height: 5, payload: "!!!!!(QO(0lu8?" },
+      })),
+    },
+  };
+  const movement = samTrackedPlayerMovement(track);
+  assert.ok(movement);
+  assert.ok(movement.end.x > movement.start.x, "the direction must use the saved real path");
+  assert.ok(movement.distance > .04, "the distance must retain the observed extent");
+});
+
+test("exposes the saved stabilised foot path for a visual direction overlay", () => {
+  const times = [0, .04, .08];
+  const positions = [{ x: .1, y: .2 }, { x: .13, y: .2 }, { x: .16, y: .19 }];
+  const track: PlayerTrack = {
+    id: "path-player",
+    name: "Path player",
+    source: "automatic",
+    status: "ready",
+    samples: [{ time: 0, bbox: { x: .1, y: .2, width: .08, height: .16 }, foot: { x: .14, y: .36 }, confidence: .9 }],
+    samTracking: {
+      sourceStartTime: 0,
+      startTime: 0,
+      endTime: .08,
+      duration: 2,
+      frameRate: 25,
+      frameTimes: times,
+      sourceWidth: 1280,
+      sourceHeight: 720,
+      frames: positions.map((position, frameIndex) => ({
+        frameIndex,
+        time: times[frameIndex],
+        bounds: { ...position, width: .08, height: .16 },
+        mask: { encoding: "one_bit", width: 5, height: 5, payload: "!!!!!(QO(0lu8?" },
+      })),
+    },
+  };
+  const path = samTrackedPlayerPath(track);
+  assert.equal(path.length, 3);
+  assert.ok(path[1].foot.x > path[0].foot.x);
+  assert.ok(path[2].foot.y < path[1].foot.y, "the overlay keeps real curvature from the SAM path");
 });
 
 test("suppresses subpixel tremor for a distant player without delaying horizontal movement", () => {

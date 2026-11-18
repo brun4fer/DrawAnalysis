@@ -9,7 +9,7 @@ import { useEditorStore } from "@/store/useEditorStore";
 import { flattenPoints } from "@/utils/coordinates";
 import { automaticLongBallControl, buildCurvedArrowGeometry, buildPolylineArrowGeometry, quadraticPointAt } from "@/utils/curvedArrowGeometry";
 import { playerGroundPoint, samplePlayerTrackAtTime, targetAvailableAtTime, targetOffsetAtTime } from "@/utils/playerTracking";
-import { samTrackedPlayerFrameStateAtTime, samTrackedPlayerMaskRuns } from "@/utils/samTrackedPlayer";
+import { samTrackedPlayerFrameStateAtTime, samTrackedPlayerMaskRuns, samTrackedPlayerPath, samTrackedPlayerStateAtTime } from "@/utils/samTrackedPlayer";
 import type { SamTrackedPlayerMaskRun } from "@/utils/samTrackedPlayer";
 import { getObjectStateAtTime, resolvedDrawingAnimation } from "@/utils/temporalRenderer";
 
@@ -84,6 +84,72 @@ function partialPolylinePoints(points: number[], progress: number) {
   }
   if (result.length < 4) result.push(points[0] + .01, points[1] + .01);
   return result;
+}
+
+function polylineLength(points: number[]) {
+  let total = 0;
+  for (let index = 2; index < points.length; index += 2) {
+    total += Math.hypot(points[index] - points[index - 2], points[index + 1] - points[index - 1]);
+  }
+  return total;
+}
+
+/**
+ * Ends a polyline before its final point.  Tactical dashed arrows use this to
+ * reserve real empty space behind the head: reducing opacity must never reveal
+ * a dashed segment below the triangular head.
+ */
+function trimPolylineEnd(points: number[], trimDistance: number) {
+  if (points.length < 4) return points;
+  const targetLength = Math.max(0, polylineLength(points) - Math.max(0, trimDistance));
+  const result = [points[0], points[1]];
+  let travelled = 0;
+  for (let index = 2; index < points.length; index += 2) {
+    const startX = points[index - 2];
+    const startY = points[index - 1];
+    const endX = points[index];
+    const endY = points[index + 1];
+    const length = Math.hypot(endX - startX, endY - startY);
+    if (travelled + length < targetLength - .001) {
+      result.push(endX, endY);
+      travelled += length;
+      continue;
+    }
+    const ratio = length > .001 ? (targetLength - travelled) / length : 0;
+    result.push(startX + (endX - startX) * ratio, startY + (endY - startY) * ratio);
+    break;
+  }
+  return result.length >= 4 ? result : [];
+}
+
+function dashedArrowParts(points: number[], preferredHeadLength: number, preferredHeadWidth: number) {
+  const totalLength = polylineLength(points);
+  if (points.length < 4 || totalLength < 8) return { body: [], head: [] };
+  const headLength = Math.min(Math.max(10, preferredHeadLength), totalLength * .4);
+  const headWidth = Math.min(Math.max(8, preferredHeadWidth), headLength * 1.35);
+  const tipX = points.at(-2)!;
+  const tipY = points.at(-1)!;
+  const previousX = points.at(-4)!;
+  const previousY = points.at(-3)!;
+  const segmentLength = Math.max(.001, Math.hypot(tipX - previousX, tipY - previousY));
+  const directionX = (tipX - previousX) / segmentLength;
+  const directionY = (tipY - previousY) / segmentLength;
+  const normalX = -directionY;
+  const normalY = directionX;
+  const baseX = tipX - directionX * headLength;
+  const baseY = tipY - directionY * headLength;
+  const bodyGap = Math.max(2.5, headWidth * .18);
+  return {
+    body: trimPolylineEnd(points, headLength + bodyGap),
+    head: [
+      baseX + normalX * headWidth / 2,
+      baseY + normalY * headWidth / 2,
+      tipX,
+      tipY,
+      baseX - normalX * headWidth / 2,
+      baseY - normalY * headWidth / 2,
+    ],
+  };
 }
 
 function anchoredLinePoints(data: Extract<DrawingData, { kind: "line" }>, playerTracks: PlayerTrack[] | undefined, currentTime: number) {
@@ -441,7 +507,10 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         const primaryColor = solidColor(object.style.stroke, "#f7f8f2");
         const secondaryColor = solidColor(object.style.fill, "#1454c4");
         const ringDesign = data.ringDesign ?? "segmented";
-        const glowColor = ringDesign === "broadcastGlow" ? "#ffffff" : solidColor(object.style.shadowColor, "#f1e72b");
+        const pitchSegmented = ringDesign === "pitchSegmented";
+        const glowColor = pitchSegmented
+          ? primaryColor
+          : ringDesign === "broadcastGlow" ? "#ffffff" : solidColor(object.style.shadowColor, "#f1e72b");
         const glowStrength = object.style.shadowOpacity;
         const appearanceScale = animation.motion === "ringLock" || animation.motion === "scaleIn"
           ? .18 + temporalState.entryProgress * .82
@@ -475,6 +544,38 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
           const fineInnerSegments = Array.from({ length: 10 }, (_, slot) => ({ start: -90 + slot * 36 - 12.5, angle: 25 }));
           const broadcastOuterSegments = Array.from({ length: 8 }, (_, slot) => ({ start: -90 + slot * 45 - 17, angle: 34 }));
           const broadcastInnerSegments = Array.from({ length: 8 }, (_, slot) => ({ start: -90 + slot * 45 - 16, angle: 32 }));
+          // Reference tactical ring: a broad ellipse with six deliberate gaps.
+          // Its brightness travels from side to side and back; it never rotates
+          // or changes the player's tracked ground position.
+          const pitchRadiusX = radiusX * 1.28;
+          const pitchRadiusY = radiusY * 1.28;
+          const pitchSegments = Array.from({ length: 6 }, (_, slot) => ({ start: -90 + slot * 60 - 20, angle: 40 }));
+          const pitchHighlightCenter = (Math.sin(elapsed * 1.18) * .5 + .5) * (pitchSegments.length - 1);
+          const trackedRingPlayer = object.target?.kind === "player" && data.showMovementArrow
+            ? playerTracks?.find((track) => track.id === object.target?.trackId)
+            : undefined;
+          const samPath = trackedRingPlayer ? samTrackedPlayerPath(trackedRingPlayer) : [];
+          const samTracking = trackedRingPlayer?.samTracking;
+          const currentSamState = trackedRingPlayer ? samTrackedPlayerStateAtTime(trackedRingPlayer, currentTime) : undefined;
+          const currentFoot = currentSamState?.foot ?? samPath[0]?.foot;
+          const trackingProgress = samTracking
+            ? Math.max(0, Math.min(1, (currentTime - samTracking.startTime) / Math.max(.001, samTracking.endTime - samTracking.startTime)))
+            : 0;
+          // Start the path at the exact foot point the Ring is rendering at,
+          // rather than trimming by a percentage of the travelled distance.
+          // That keeps the tail attached to the Ring even on uneven movement.
+          const arrowReveal = Math.max(0, Math.min(1, trackingProgress / .18));
+          const currentOffset = currentFoot
+            ? { x: (currentFoot.x - data.center.x) * width, y: (currentFoot.y - data.center.y) * height }
+            : { x: 0, y: 0 };
+          const futurePath = currentFoot
+            ? [currentFoot, ...samPath.filter((sample) => sample.time > currentTime).map((sample) => sample.foot)]
+            : [];
+          const arrowPath = futurePath.flatMap((foot) => [foot.x * width - currentOffset.x, foot.y * height - currentOffset.y]);
+          const visibleArrowPath = partialPolylinePoints(arrowPath, arrowReveal);
+          const movementArrow = visibleArrowPath.length >= 4
+            ? buildPolylineArrowGeometry(visibleArrowPath, Math.max(3.5, ringThickness * .82))
+            : undefined;
           const labelText = data.label
             ? [data.label.number.trim(), data.label.position.trim(), data.label.name.trim()]
               .filter(Boolean)
@@ -573,7 +674,7 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
                 listening={false}
               />
             )}
-            <Ellipse
+            {!pitchSegmented && <Ellipse
               x={x}
               y={y}
               radiusX={radiusX * 1.12}
@@ -587,8 +688,8 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
               shadowBlur={object.style.shadowBlur}
               shadowOpacity={object.style.shadowOpacity * .75}
               listening={false}
-            />
-            <Ellipse
+            />}
+            {!pitchSegmented && <Ellipse
               x={x}
               y={y + radiusY * .02}
               radiusX={radiusX * .27}
@@ -599,7 +700,7 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
               shadowBlur={Math.max(4, object.style.shadowBlur * .3)}
               shadowOpacity={.72}
               listening={false}
-            />
+            />}
             <Group visible={ringDesign === "segmented"} x={x} y={y + depthOffset} scaleY={radiusY / radiusX} listening={false}>
               {outerSegments.map((segment, index) => {
                 const segmentColor = primaryColor;
@@ -794,6 +895,41 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
                   />
                 ))}
               </Group>
+              <Group visible={pitchSegmented} x={x} y={y} scaleY={pitchRadiusY / pitchRadiusX} listening={false}>
+                {pitchSegments.map((segment, index) => {
+                  const distanceToHighlight = Math.abs(index - pitchHighlightCenter);
+                  const highlight = Math.exp(-(distanceToHighlight * distanceToHighlight) / 1.25);
+                  const segmentColor = shadeColor(primaryColor, Math.round(76 * highlight));
+                  return (
+                    <Arc
+                      key={`pitch-segment-${index}`}
+                      innerRadius={pitchRadiusX * .7}
+                      outerRadius={pitchRadiusX}
+                      angle={segment.angle}
+                      rotation={segment.start}
+                      fill={segmentColor}
+                      stroke={shadeColor(primaryColor, -38)}
+                      strokeWidth={Math.max(.45, ringThickness * .1)}
+                      shadowColor={segmentColor}
+                      shadowBlur={Math.max(3, object.style.shadowBlur * .28 + 3 * highlight)}
+                      shadowOpacity={Math.max(.16, object.style.shadowOpacity * .46) + .24 * highlight}
+                    />
+                  );
+                })}
+              </Group>
+              {movementArrow?.polygon.length ? (
+                <Group listening={false}>
+                  <Line
+                    points={movementArrow.polygon}
+                    closed
+                    fill={primaryColor}
+                    shadowColor={primaryColor}
+                    shadowBlur={Math.max(2, object.style.shadowBlur * .22)}
+                    shadowOpacity={Math.max(.18, object.style.shadowOpacity * .42)}
+                    lineJoin="round"
+                  />
+                </Group>
+              ) : null}
               {renderMode !== "base" && labelNode}
               <Ellipse x={x} y={y} radiusX={radiusX} radiusY={radiusY} fill="#00000001" />
             </Group>
@@ -982,6 +1118,11 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         if (!geometry.polygon.length) return null;
         const faceColor = solidColor(object.style.stroke, "#65d9ff");
         const shadowColor = solidColor(object.style.shadowColor, "#000000");
+        const tacticalFlat = data.arrowDesign === "tacticalFlat";
+        // The flat tactical alternative is intentionally straight. The curved
+        // version belongs to the B / Long Ball tool where its height is editable.
+        const tacticalBodyWidth = Math.max(1.5, object.style.strokeWidth * .36);
+        const tacticalParts = dashedArrowParts(points, tacticalBodyWidth * 6.2, tacticalBodyWidth * 4.8);
         const renderScale = Math.max(.45, Math.min(3, Math.min(width / 960, height / 540)));
         const updateEndpoint = (index: 0 | 1, commit = false) => (event: Konva.KonvaEventObject<DragEvent>) => {
           event.cancelBubble = true;
@@ -1000,7 +1141,25 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         };
         return (
           <Group opacity={temporalState.opacity}>
-            <Line
+            {tacticalFlat ? <>
+              {tacticalParts.body.length >= 4 && <Line
+                points={tacticalParts.body}
+                stroke={faceColor}
+                strokeWidth={tacticalBodyWidth}
+                dash={[tacticalBodyWidth * 3.25, tacticalBodyWidth * 2.3]}
+                lineCap="round"
+                lineJoin="round"
+                listening={false}
+              />}
+              {tacticalParts.head.length && <Line
+                points={tacticalParts.head}
+                closed
+                fill={faceColor}
+                lineJoin="round"
+                listening={false}
+              />}
+            </> : <>
+              <Line
               points={offsetPoints(geometry.polygon, effectiveShadow.offsetX, effectiveShadow.offsetY)}
               closed
               fill={shadowColor}
@@ -1009,8 +1168,14 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
               shadowBlur={Math.max(.5, effectiveShadow.blur)}
               shadowOpacity={effectiveShadow.opacity}
               listening={false}
-            />
-            <Line points={geometry.polygon} closed fill={faceColor} lineJoin="round" />
+              />
+              <Line
+              points={geometry.polygon}
+              closed
+              fill={faceColor}
+              lineJoin="round"
+              />
+            </>}
             {selected && canEdit && renderMode !== "playerLabel" && (
               <Group name="selection-transformer">
                 {arrowPoints.map((point, index) => (
@@ -1018,13 +1183,13 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
                     key={index === 0 ? "arrow-start" : "arrow-end"}
                     x={point.x * width}
                     y={point.y * height}
-                    radius={6.5 * renderScale}
-                    fill="#a3ff12"
-                    stroke="#10130d"
-                    strokeWidth={2 * renderScale}
-                    shadowColor="#000000"
-                    shadowBlur={4 * renderScale}
-                    shadowOpacity={.7}
+                    radius={(tacticalFlat ? 4.25 : 6.5) * renderScale}
+                    fill={tacticalFlat ? faceColor : "#a3ff12"}
+                    stroke={tacticalFlat ? "#17221b" : "#10130d"}
+                    strokeWidth={(tacticalFlat ? 1.25 : 2) * renderScale}
+                    shadowColor={tacticalFlat ? undefined : "#000000"}
+                    shadowBlur={tacticalFlat ? 0 : 4 * renderScale}
+                    shadowOpacity={tacticalFlat ? 0 : .7}
                     draggable
                     onPointerDown={(event) => { event.cancelBubble = true; }}
                     onDragStart={(event) => { event.cancelBubble = true; }}
@@ -1048,6 +1213,13 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         const bodyWidth = object.style.strokeWidth * renderScale;
         const geometry = buildCurvedArrowGeometry({ start, control, end, bodyWidth, renderScale, progress: drawProgress });
         if (!geometry.polygon.length) return null;
+        const tacticalDesign = data.longBallDesign === "tacticalDashed";
+        const tacticalBodyWidth = Math.max(1.5 * renderScale, bodyWidth * .36);
+        const tacticalParts = dashedArrowParts(
+          geometry.centerline,
+          tacticalBodyWidth * 6.2,
+          tacticalBodyWidth * 4.8,
+        );
         const groundControl = automaticLongBallControl(
           start,
           end,
@@ -1089,7 +1261,7 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         };
         return (
           <Group opacity={temporalState.opacity}>
-            <Line
+            {!tacticalDesign && <Line
               points={offsetPoints(groundGeometry.polygon, shadowX, shadowY)}
               closed
               fill={shadowColor}
@@ -1099,7 +1271,7 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
               shadowOpacity={shadowOpacity}
               lineJoin="round"
               listening={false}
-            />
+            />}
             {data.showLandingZone !== false && (
               <Ellipse
                 x={end.x}
@@ -1113,7 +1285,18 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
                 listening={false}
               />
             )}
-            <Line points={geometry.polygon} closed fill={faceColor} lineJoin="round" />
+            {tacticalDesign ? <>
+              {tacticalParts.body.length >= 4 && <Line
+                points={tacticalParts.body}
+                stroke={faceColor}
+                strokeWidth={tacticalBodyWidth}
+                dash={[tacticalBodyWidth * 3.25, tacticalBodyWidth * 2.3]}
+                lineCap="round"
+                lineJoin="round"
+                listening={false}
+              />}
+              {tacticalParts.head.length && <Line points={tacticalParts.head} closed fill={faceColor} lineJoin="round" listening={false} />}
+            </> : <Line points={geometry.polygon} closed fill={faceColor} lineJoin="round" />}
             {selected && canEdit && renderMode !== "playerLabel" && (
               <Group name="selection-transformer">
                 <Line points={[start.x, start.y, control.x, control.y, end.x, end.y]} stroke="#ffffff" strokeWidth={1} dash={[5, 5]} opacity={.62} listening={false} />
@@ -1256,6 +1439,12 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         const x = data.origin.x * width;
         const y = data.origin.y * height;
         const fontSize = data.fontSize * height;
+        const textFontFamily = data.fontFamily === "condensed"
+          ? 'Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif'
+          : data.fontFamily === "heavy"
+            ? '"Arial Black", Impact, Inter, sans-serif'
+            : "Inter, Arial, sans-serif";
+        const textLetterSpacing = fontSize * (data.letterSpacing ?? 0);
         const estimatedWidth = Math.max(fontSize, data.text.length * fontSize * .68);
         const clipText = (node: ReactNode) => (
           <Group
@@ -1276,7 +1465,8 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
             text={data.text}
             fontSize={fontSize}
             fontStyle="bold"
-            fontFamily="Inter, Arial, sans-serif"
+            fontFamily={textFontFamily}
+            letterSpacing={textLetterSpacing}
             fill={object.style.stroke}
             shadowColor={object.style.shadowColor}
             shadowBlur={object.style.shadowBlur}
@@ -1285,6 +1475,59 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
             shadowOpacity={object.style.shadowOpacity}
           />,
         );
+        if (data.textDesign === "analysisWhite") return clipText(
+          <Text
+            x={x}
+            y={y}
+            text={data.text}
+            fontSize={fontSize}
+            fontStyle="bold"
+            fontFamily={textFontFamily}
+            letterSpacing={Math.max(.2, textLetterSpacing || fontSize * .008)}
+            fill="#ffffff"
+            stroke="#071018"
+            strokeWidth={Math.max(.35, fontSize * .018)}
+            shadowColor="#071018"
+            shadowBlur={0}
+            shadowOffsetX={0}
+            shadowOffsetY={1.25}
+            shadowOpacity={.58}
+            perfectDrawEnabled
+          />,
+        );
+        if (data.textDesign === "pitchTactical" || data.textDesign === "pitchTitle") {
+          const isTitle = data.textDesign === "pitchTitle";
+          const pitchFontFamily = data.fontFamily
+            ? textFontFamily
+            : 'Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif';
+          const pitchScaleY = data.pitchScaleY ?? (isTitle ? .61 : .64);
+          const tiltRadians = (data.groundTilt ?? -10) * Math.PI / 180;
+          const faceColor = solidColor(object.style.stroke, "#ffffff");
+          const pitchSpacing = textLetterSpacing || fontSize * (isTitle ? .018 : .008);
+          // Keep this projection deliberately single-pass. The older 3D preset
+          // stacks several canvas text nodes and its soft shadows look blurred on
+          // grass; tactical labels instead use one crisp face and a hard support.
+          return clipText(
+            <Group x={x} y={y} scaleY={pitchScaleY} skewX={tiltRadians}>
+              <Text
+                text={data.text}
+                fontSize={fontSize}
+                fontStyle="bold italic"
+                fontFamily={pitchFontFamily}
+                letterSpacing={pitchSpacing}
+                fill={faceColor}
+                stroke="#071018"
+                strokeWidth={Math.max(.5, fontSize * .014)}
+                shadowColor="#071018"
+                shadowBlur={0}
+                shadowOffsetX={0}
+                shadowOffsetY={Math.max(1, fontSize * .018)}
+                shadowOpacity={.62}
+                perfectDrawEnabled
+              />
+            </Group>,
+          );
+        }
         const depth = data.groundDepth ?? 7;
         const faceColor = solidColor(object.style.stroke, "#ffffff");
         const depthColor = solidColor(object.style.shadowColor, "#000000");
@@ -1297,7 +1540,8 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
               text={data.text}
               fontSize={fontSize}
               fontStyle="bold italic"
-              fontFamily="Inter, Arial, sans-serif"
+              fontFamily={textFontFamily}
+              letterSpacing={textLetterSpacing}
               fill="#000000"
               opacity={.38}
               shadowColor="#000000"
@@ -1313,7 +1557,8 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
                 text={data.text}
                 fontSize={fontSize}
                 fontStyle="bold italic"
-                fontFamily="Inter, Arial, sans-serif"
+                fontFamily={textFontFamily}
+                letterSpacing={textLetterSpacing}
                 fill={shadeColor(depthColor, index * 3)}
                 stroke="#000000"
                 strokeWidth={Math.max(.5, fontSize * .018)}
@@ -1324,7 +1569,8 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
               text={data.text}
               fontSize={fontSize}
               fontStyle="bold italic"
-              fontFamily="Inter, Arial, sans-serif"
+              fontFamily={textFontFamily}
+              letterSpacing={textLetterSpacing}
               fill={faceColor}
               stroke={shadeColor(faceColor, -115)}
               strokeWidth={Math.max(1, fontSize * .045)}
@@ -1340,7 +1586,8 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
               text={data.text}
               fontSize={fontSize}
               fontStyle="bold italic"
-              fontFamily="Inter, Arial, sans-serif"
+              fontFamily={textFontFamily}
+              letterSpacing={textLetterSpacing}
               fill={withAlpha(shadeColor(faceColor, 105), .36)}
               listening={false}
             />

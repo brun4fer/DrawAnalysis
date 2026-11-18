@@ -39,9 +39,18 @@ export function applyFavoriteData(base: DrawingData, favorite: ToolFavorite): Dr
     case "triangle":
       return base.kind === "triangle" ? { ...base, fillDesign: saved.fillDesign, stripeColor: saved.stripeColor, stripeSpacing: saved.stripeSpacing, stripeAngle: saved.stripeAngle, stripeOpacity: saved.stripeOpacity } : base;
     case "text":
-      return base.kind === "text" ? { ...base, fontSize: saved.fontSize, textDesign: saved.textDesign, groundTilt: saved.groundTilt, groundDepth: saved.groundDepth } : base;
+      return base.kind === "text" ? {
+        ...base,
+        fontSize: saved.fontSize,
+        textDesign: saved.textDesign,
+        fontFamily: saved.fontFamily,
+        letterSpacing: saved.letterSpacing,
+        pitchScaleY: saved.pitchScaleY,
+        groundTilt: saved.groundTilt,
+        groundDepth: saved.groundDepth,
+      } : base;
     case "longBallArrow":
-      return base.kind === "longBallArrow" ? { ...base, curveHeight: saved.curveHeight, showLandingZone: saved.showLandingZone, landingZoneColor: saved.landingZoneColor, landingZoneSize: saved.landingZoneSize } : base;
+      return base.kind === "longBallArrow" ? { ...base, curveHeight: saved.curveHeight, longBallDesign: saved.longBallDesign, showLandingZone: saved.showLandingZone, landingZoneColor: saved.landingZoneColor, landingZoneSize: saved.landingZoneSize } : base;
     case "ellipse":
     case "arrow":
     case "freeDraw":

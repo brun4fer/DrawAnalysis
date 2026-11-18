@@ -472,6 +472,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
   const createRingForPlayer = (
     { track, sample }: IdentifiedPlayer,
     tracking?: { followSamTracking: true; startTime: number; endTime: number },
+    showMovementArrow = false,
   ) => {
     const { radiusX, radiusY } = playerRingDimensions(sample.bbox, width, height);
     const labelFontSize = clamp(sample.bbox.height * .2, .012, .032);
@@ -485,12 +486,13 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         occlusionWidth: sample.bbox.width * 1.05,
         labelOffsetY: sample.bbox.height + clamp(labelFontSize * .9, .012, .028),
         label: { visible: true, number: "", position: "", name: track.name.toUpperCase(), color: "#ffffff", fontSize: labelFontSize },
-        ringDesign: "broadcast",
-        spinEnabled: true,
+        ringDesign: showMovementArrow ? "pitchSegmented" : "broadcast",
+        spinEnabled: !showMovementArrow,
         spinSpeed: 1,
         showRing: true,
         splashEnabled: false,
         splashSpeed: 1,
+        showMovementArrow,
       },
       {
         target: {
@@ -1466,7 +1468,20 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       return;
     }
     if (tool === "text") {
-      makeDrawing("text", { kind: "text", origin: point, text: "TEXTO", fontSize: 0.055, textDesign: "flat", groundTilt: -12, groundDepth: 7 });
+      makeDrawing("text", {
+        kind: "text",
+        origin: point,
+        text: "TEXTO",
+        fontSize: 0.055,
+        // New labels start with the same crisp, pitch-aligned treatment used in
+        // tactical video examples. Older drawings preserve their original preset.
+        textDesign: "pitchTactical",
+        fontFamily: "condensed",
+        letterSpacing: .012,
+        pitchScaleY: .64,
+        groundTilt: -10,
+        groundDepth: 7,
+      });
       return;
     }
     if (tool === "triangle" || tool === "polygon") {
@@ -1530,7 +1545,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         stripeAngle: 58,
         stripeOpacity: .72,
       });
-      if (tool === "arrow") makeDrawing("arrow", { kind: "arrow", points: [draft.start, point] });
+      if (tool === "arrow") makeDrawing("arrow", { kind: "arrow", points: [draft.start, point], arrowDesign: "broadcast" });
       if (tool === "longBallArrow") makeDrawing("longBallArrow", { kind: "longBallArrow", start: draft.start, end: point, curveHeight: .13, showLandingZone: false, landingZoneColor: "#65d9ff", landingZoneSize: 1 });
       if (tool === "glimpse") makeDrawing("glimpse", { kind: "glimpse", origin: draft.start, target: point, spread: 38 });
       return;

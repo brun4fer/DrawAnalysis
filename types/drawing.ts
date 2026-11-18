@@ -112,10 +112,13 @@ export interface PlayerLabel {
   fontSize: number;
 }
 
-export type PlayerRingDesign = "segmented" | "doubleLine" | "broadcast" | "broadcastGlow";
+export type PlayerRingDesign = "segmented" | "doubleLine" | "broadcast" | "broadcastGlow" | "pitchSegmented";
+export type ArrowDesign = "broadcast" | "tacticalFlat";
+export type LongBallArrowDesign = "broadcast" | "tacticalDashed";
 export type LineDesign = "single" | "dual" | "fadeShadow";
 export type ZoneDesign = "solid" | "striped";
-export type TextDesign = "flat" | "ground3d";
+export type TextDesign = "flat" | "ground3d" | "analysisWhite" | "pitchTactical" | "pitchTitle";
+export type TextFont = "inter" | "condensed" | "heavy";
 
 export interface ActionLabel {
   visible: boolean;
@@ -161,19 +164,34 @@ export interface DrawingKeyframe {
 export type DrawingData =
   | { kind: "identifyPlayer"; center: Point; radiusX: number; radiusY: number }
   | { kind: "playerLabel"; anchor: Point; labelOffsetY?: number; label: PlayerLabel }
-  | { kind: "playerRing"; center: Point; radiusX: number; radiusY: number; occlusionWidth?: number; labelOffsetY?: number; label?: PlayerLabel; ringDesign?: PlayerRingDesign; spinEnabled?: boolean; spinSpeed?: number; showRing?: boolean; splashEnabled?: boolean; splashSpeed?: number }
+  | { kind: "playerRing"; center: Point; radiusX: number; radiusY: number; occlusionWidth?: number; labelOffsetY?: number; label?: PlayerLabel; ringDesign?: PlayerRingDesign; spinEnabled?: boolean; spinSpeed?: number; showRing?: boolean; splashEnabled?: boolean; splashSpeed?: number; showMovementArrow?: boolean }
   | { kind: "ghost"; origin: Point; destination: Point; radiusX: number; radiusY: number; hideOriginal?: boolean; playerOpacity?: number; showArrow?: boolean; showOrigin?: boolean; animateMovement?: boolean; returnToOrigin?: boolean; travelDuration?: number }
   | { kind: "spotlight"; target: Point; radiusX: number; radiusY: number; beamHeight: number; design?: "beam" | "isolation"; darkness?: number; feather?: number }
   | { kind: "zoom"; center: Point; radius: number; zoom: number }
   | { kind: "ellipse"; center: Point; radiusX: number; radiusY: number }
   | { kind: "rectangle"; origin: Point; width: number; height: number; fillDesign?: ZoneDesign; stripeColor?: string; stripeSpacing?: number; stripeAngle?: number; stripeOpacity?: number }
-  | { kind: "longBallArrow"; start: Point; end: Point; control?: Point; curveHeight: number; showLandingZone?: boolean; landingZoneColor?: string; landingZoneSize?: number }
+  | { kind: "longBallArrow"; start: Point; end: Point; control?: Point; curveHeight: number; longBallDesign?: LongBallArrowDesign; showLandingZone?: boolean; landingZoneColor?: string; landingZoneSize?: number }
   | { kind: "line"; points: Point[]; lineDesign?: LineDesign; secondaryColor?: string; startTarget?: DrawingTarget; endTarget?: DrawingTarget; pointTargets?: Array<DrawingTarget | null> }
   | { kind: "glimpse"; origin: Point; target: Point; spread: number }
   | { kind: "polygon"; points: Point[]; zoneDesign?: ZoneDesign; stripeColor?: string; stripeSpacing?: number; stripeAngle?: number; stripeOpacity?: number }
   | { kind: "triangle"; points: Point[]; fillDesign?: ZoneDesign; stripeColor?: string; stripeSpacing?: number; stripeAngle?: number; stripeOpacity?: number }
-  | { kind: "arrow" | "freeDraw"; points: Point[] }
-  | { kind: "text"; origin: Point; text: string; fontSize: number; textDesign?: TextDesign; groundTilt?: number; groundDepth?: number };
+  | { kind: "arrow"; points: Point[]; arrowDesign?: ArrowDesign }
+  | { kind: "freeDraw"; points: Point[] }
+  | {
+    kind: "text";
+    origin: Point;
+    text: string;
+    fontSize: number;
+    textDesign?: TextDesign;
+    /** Font family selection for the text presets. Existing projects use Inter. */
+    fontFamily?: TextFont;
+    /** Letter spacing as a fraction of the font size, kept independent of canvas resolution. */
+    letterSpacing?: number;
+    /** Vertical compression used by the two pitch-aligned text presets. */
+    pitchScaleY?: number;
+    groundTilt?: number;
+    groundDepth?: number;
+  };
 
 export interface DrawingObject {
   id: string;

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { ArrowDown, ArrowUp, Copy, LocateFixed, Pencil, Star, Trash2 } from "lucide-react";
 import { useEditorStore } from "@/store/useEditorStore";
-import type { ActionLabel, LineDesign, PlayerLabel, PlayerRingDesign, TextDesign, ZoneDesign } from "@/types/drawing";
+import type { ActionLabel, ArrowDesign, LineDesign, LongBallArrowDesign, PlayerLabel, PlayerRingDesign, TextDesign, TextFont, ZoneDesign } from "@/types/drawing";
 import type { AnalysisSlide, VideoSlideContent } from "@/types/slide";
 import { resolvedDrawingAnimation } from "@/utils/temporalRenderer";
 import { getSourceDuration, sourceTimeToTimeline, timelineTimeToSource } from "@/utils/videoTimeline";
@@ -73,13 +73,47 @@ export function PropertiesPanel() {
     if (object.data.kind !== "playerRing" && object.data.kind !== "playerLabel") return;
     updateDrawing(object.id, { data: { ...object.data, labelOffsetY: Math.max(.03, Math.min(.55, labelOffsetY)) } });
   };
-  const updatePlayerRingAppearance = (patch: { ringDesign?: PlayerRingDesign; spinEnabled?: boolean; spinSpeed?: number; showRing?: boolean; splashEnabled?: boolean; splashSpeed?: number; radiusX?: number; radiusY?: number }) => {
+  const updatePlayerRingAppearance = (patch: { ringDesign?: PlayerRingDesign; spinEnabled?: boolean; spinSpeed?: number; showRing?: boolean; splashEnabled?: boolean; splashSpeed?: number; showMovementArrow?: boolean; radiusX?: number; radiusY?: number }) => {
     if (object.data.kind !== "playerRing") return;
     updateDrawing(object.id, { data: { ...object.data, ...patch } });
   };
   const updateLineAppearance = (patch: { lineDesign?: LineDesign; secondaryColor?: string }) => {
     if (object.data.kind !== "line") return;
     updateDrawing(object.id, { data: { ...object.data, ...patch } });
+  };
+  const updateArrowAppearance = (patch: { arrowDesign?: ArrowDesign }) => {
+    if (object.data.kind !== "arrow") return;
+    updateDrawing(object.id, {
+      data: { ...object.data, ...patch },
+      ...(patch.arrowDesign === "tacticalFlat" ? {
+        style: {
+          ...object.style,
+          stroke: "#f3f4ed",
+          strokeWidth: Math.min(object.style.strokeWidth, 4),
+          shadowBlur: 0,
+          shadowOpacity: 0,
+          shadowOffsetX: 0,
+          shadowOffsetY: 0,
+        },
+      } : {}),
+    });
+  };
+  const updateLongBallAppearance = (patch: { longBallDesign?: LongBallArrowDesign }) => {
+    if (object.data.kind !== "longBallArrow") return;
+    updateDrawing(object.id, {
+      data: { ...object.data, ...patch },
+      ...(patch.longBallDesign === "tacticalDashed" ? {
+        style: {
+          ...object.style,
+          stroke: "#f3f4ed",
+          strokeWidth: Math.min(object.style.strokeWidth, 4),
+          shadowBlur: 0,
+          shadowOpacity: 0,
+          shadowOffsetX: 0,
+          shadowOffsetY: 0,
+        },
+      } : {}),
+    });
   };
   const updatePatternAppearance = (patch: { design?: ZoneDesign; stripeColor?: string; stripeSpacing?: number; stripeAngle?: number; stripeOpacity?: number }) => {
     if (object.data.kind === "polygon") {
@@ -92,9 +126,38 @@ export function PropertiesPanel() {
       updateDrawing(object.id, { data: { ...object.data, ...stripePatch, ...(design ? { fillDesign: design } : {}) } });
     }
   };
-  const updateTextAppearance = (patch: { textDesign?: TextDesign; groundTilt?: number; groundDepth?: number }) => {
+  const updateTextAppearance = (patch: {
+    textDesign?: TextDesign;
+    fontFamily?: TextFont;
+    letterSpacing?: number;
+    pitchScaleY?: number;
+    groundTilt?: number;
+    groundDepth?: number;
+  }) => {
     if (object.data.kind !== "text") return;
-    updateDrawing(object.id, { data: { ...object.data, ...patch } });
+    const usesPitchPreset = patch.textDesign === "pitchTactical" || patch.textDesign === "pitchTitle";
+    updateDrawing(object.id, {
+      data: {
+        ...object.data,
+        ...patch,
+        ...(usesPitchPreset && patch.fontFamily === undefined && !object.data.fontFamily ? { fontFamily: "condensed" as TextFont } : {}),
+        ...(usesPitchPreset && patch.letterSpacing === undefined && object.data.letterSpacing === undefined ? { letterSpacing: .012 } : {}),
+        ...(usesPitchPreset && patch.pitchScaleY === undefined && object.data.pitchScaleY === undefined ? { pitchScaleY: .64 } : {}),
+        ...(usesPitchPreset && patch.groundTilt === undefined && object.data.groundTilt === undefined ? { groundTilt: -10 } : {}),
+      },
+      ...((patch.textDesign === "analysisWhite" || usesPitchPreset) ? {
+        style: {
+          ...object.style,
+          stroke: "#ffffff",
+          shadowColor: "#071018",
+          // A hard one-pixel support keeps type legible on grass without a soft halo.
+          shadowBlur: 0,
+          shadowOpacity: .58,
+          shadowOffsetX: 0,
+          shadowOffsetY: 1.25,
+        },
+      } : {}),
+    });
   };
   const updateActionLabel = (patch: Partial<ActionLabel>) => {
     const actionIndex = drawings.filter((drawing) => ["line", "arrow", "longBallArrow"].includes(drawing.type)).findIndex((drawing) => drawing.id === object.id) + 1;
@@ -203,13 +266,24 @@ export function PropertiesPanel() {
             </label>
             <label className="field-row">
               <FieldLabel>Modelo</FieldLabel>
-              <select value={object.data.ringDesign ?? "segmented"} onChange={(event) => updatePlayerRingAppearance({ ringDesign: event.target.value as PlayerRingDesign })}>
+              <select value={object.data.ringDesign ?? "segmented"} onChange={(event) => {
+                const ringDesign = event.target.value as PlayerRingDesign;
+                updatePlayerRingAppearance({ ringDesign, ...(ringDesign === "pitchSegmented" ? { spinEnabled: false, splashEnabled: false } : {}) });
+              }}>
                 <option value="segmented">Segmentado 3D</option>
                 <option value="doubleLine">Duplo fino</option>
                 <option value="broadcast">Broadcast 3D</option>
                 <option value="broadcastGlow">Broadcast · halo branco</option>
+                <option value="pitchSegmented">Segmentado no relvado</option>
               </select>
             </label>
+            {object.target?.followSamTracking && (
+              <label className="toggle-row">
+                <span><FieldLabel>Mostrar direção SAM</FieldLabel><small>Seta baseada no deslocamento real guardado</small></span>
+                <input type="checkbox" checked={object.data.showMovementArrow ?? false} onChange={(event) => updatePlayerRingAppearance({ showMovementArrow: event.target.checked })} />
+                <span />
+              </label>
+            )}
             <label className="toggle-row">
               <span><FieldLabel>Rotação oposta</FieldLabel><small>Os dois círculos giram entre si</small></span>
               <input type="checkbox" checked={object.data.spinEnabled !== false} onChange={(event) => updatePlayerRingAppearance({ spinEnabled: event.target.checked })} />
@@ -268,8 +342,29 @@ export function PropertiesPanel() {
               <select value={object.data.textDesign ?? "flat"} onChange={(event) => updateTextAppearance({ textDesign: event.target.value as TextDesign })}>
                 <option value="flat">Texto normal</option>
                 <option value="ground3d">3D no relvado</option>
+                <option value="analysisWhite">Análise branca</option>
+                <option value="pitchTactical">Tático no relvado</option>
+                <option value="pitchTitle">Título no relvado</option>
               </select>
             </label>
+            <label className="field-row">
+              <FieldLabel>Tipo de letra</FieldLabel>
+              <select value={object.data.fontFamily ?? "inter"} onChange={(event) => updateTextAppearance({ fontFamily: event.target.value as TextFont })}>
+                <option value="inter">Inter · limpa</option>
+                <option value="condensed">Condensada · tática</option>
+                <option value="heavy">Pesada · destaque</option>
+              </select>
+            </label>
+            <label className="stacked-field">
+              <span><FieldLabel>Espaçamento das letras</FieldLabel><b>{Math.round((object.data.letterSpacing ?? 0) * 1000) / 10}px</b></span>
+              <input type="range" min={-.04} max={.09} step={.002} value={object.data.letterSpacing ?? 0} onChange={(event) => updateTextAppearance({ letterSpacing: Number(event.target.value) })} />
+            </label>
+            {(["pitchTactical", "pitchTitle"] as TextDesign[]).includes(object.data.textDesign ?? "flat") && (
+              <>
+                <label className="stacked-field"><span><FieldLabel>Perspetiva no relvado</FieldLabel><b>{Math.round((object.data.pitchScaleY ?? .64) * 100)}%</b></span><input type="range" min={.42} max={1} step={.01} value={object.data.pitchScaleY ?? .64} onChange={(event) => updateTextAppearance({ pitchScaleY: Number(event.target.value) })} /></label>
+                <label className="stacked-field"><span><FieldLabel>Inclinação no relvado</FieldLabel><b>{Math.round(object.data.groundTilt ?? -10)}°</b></span><input type="range" min={-35} max={35} step={1} value={object.data.groundTilt ?? -10} onChange={(event) => updateTextAppearance({ groundTilt: Number(event.target.value) })} /></label>
+              </>
+            )}
             {(object.data.textDesign ?? "flat") === "ground3d" && (
               <>
                 <label className="stacked-field"><span><FieldLabel>Inclinação no relvado</FieldLabel><b>{Math.round(object.data.groundTilt ?? -12)}°</b></span><input type="range" min={-35} max={35} step={1} value={object.data.groundTilt ?? -12} onChange={(event) => updateTextAppearance({ groundTilt: Number(event.target.value) })} /></label>
@@ -288,6 +383,15 @@ export function PropertiesPanel() {
               <option value="single">Uma cor</option>
               <option value="dual">Duas cores</option>
               <option value="fadeShadow">Sombra e fade</option>
+            </select>
+          </label>
+        )}
+        {object.data.kind === "arrow" && (
+          <label className="field-row">
+            <FieldLabel>Modelo da seta</FieldLabel>
+            <select value={object.data.arrowDesign ?? "broadcast"} onChange={(event) => updateArrowAppearance({ arrowDesign: event.target.value as ArrowDesign })}>
+              <option value="broadcast">Seta atual</option>
+              <option value="tacticalFlat">Tática reta tracejada</option>
             </select>
           </label>
         )}
@@ -334,6 +438,13 @@ export function PropertiesPanel() {
         {object.data.kind === "longBallArrow" && (
           <>
             <p className="property-help">Arraste os pontos azuis inicial/final e o ponto amarelo da curvatura diretamente sobre o vídeo.</p>
+            <label className="field-row">
+              <FieldLabel>Modelo da seta</FieldLabel>
+              <select value={object.data.longBallDesign ?? "broadcast"} onChange={(event) => updateLongBallAppearance({ longBallDesign: event.target.value as LongBallArrowDesign })}>
+                <option value="broadcast">Bola longa atual</option>
+                <option value="tacticalDashed">Tática curva tracejada</option>
+              </select>
+            </label>
             <label className="stacked-field"><span><FieldLabel>Altura automática</FieldLabel><b>{Math.round(object.data.curveHeight * 100)}%</b></span><input type="range" min={.02} max={.34} step={.01} value={object.data.curveHeight} onChange={(event) => object.data.kind === "longBallArrow" && updateDrawing(object.id, { data: { ...object.data, curveHeight: Number(event.target.value), control: undefined } })} /></label>
             <label className="toggle-row"><span><FieldLabel>Zona de destino</FieldLabel><small>Marca no relvado onde termina a bola longa</small></span><input type="checkbox" checked={object.data.showLandingZone !== false} onChange={(event) => object.data.kind === "longBallArrow" && updateDrawing(object.id, { data: { ...object.data, showLandingZone: event.target.checked } })} /><span /></label>
             {object.data.showLandingZone !== false && <>
