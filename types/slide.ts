@@ -23,7 +23,7 @@ export interface SlidePlayer {
   size?: number;
 }
 
-export type TacticalBoardMarkType = "arrow" | "line" | "circle" | "rectangle" | "zone" | "free" | "text";
+export type TacticalBoardMarkType = "arrow" | "line" | "circle" | "rectangle" | "zone" | "free" | "text" | "cone" | "flat-ladder";
 
 export interface TacticalBoardMark {
   id: string;
@@ -178,6 +178,9 @@ export interface WrittenReportSlideContent {
   subtitleFontSize?: number;
   bodyFontSize?: number;
   playerSize?: number;
+  /** Older reports keep both teams visible unless one is explicitly hidden. */
+  showHomeTeam?: boolean;
+  showAwayTeam?: boolean;
   ballPosition?: Point;
   showBall?: boolean;
   selectedDiagramMarkId?: string;

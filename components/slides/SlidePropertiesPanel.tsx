@@ -7,6 +7,7 @@ import { formationNames, formationSlots, playersForFormation } from "@/utils/sli
 import { createId } from "@/utils/id";
 import { CaptionControls } from "./CaptionControls";
 import { ColorPalettePicker } from "@/components/ui/ColorPalettePicker";
+import { APP_PRODUCT, isWrittenReportProduct } from "@/lib/product";
 
 export function SlidePropertiesPanel() {
   const { slides, selectedSlideId, updateSlide } = useEditorStore();
@@ -106,14 +107,15 @@ function TextProperties({ content, onChange }: { content: TextSlideContent; onCh
 }
 
 function LineupProperties({ content, onChange }: { content: LineupSlideContent; onChange: (value: LineupSlideContent) => void }) {
+  const lineupName = isWrittenReportProduct(APP_PRODUCT.variant) ? "Starting XI / Onze Inicial" : "Onze provável";
   const systems = content.tacticalSystems ?? [];
   const updatePlayer = (playerId: string, patch: Partial<LineupSlideContent["players"][number]>) => onChange({ ...content, players: content.players.map((player) => player.id === playerId ? { ...player, ...patch } : player) });
   const updateSystem = (index: number, value: string) => onChange({ ...content, tacticalSystems: systems.map((system, systemIndex) => systemIndex === index ? value : system) });
   return <>
-    <Section title="ONZE PROVÁVEL">
+    <Section title={lineupName.toUpperCase()}>
       <label className="slide-prop-field vertical"><span>Nome do clube</span><input value={content.clubName ?? content.title} onChange={(event) => onChange({ ...content, clubName: event.target.value })} /></label>
-      <label className="slide-prop-field vertical"><span>Texto “Onze provável”</span><input placeholder="Deixe vazio para ocultar" value={content.title} onChange={(event) => onChange({ ...content, title: event.target.value })} /></label>
-      <label className="stacked-field"><span><span className="field-label">Tamanho de “Onze provável”</span><b>{content.lineupLabelFontSize ?? 7}px</b></span><input type="range" min={5} max={18} step={1} value={content.lineupLabelFontSize ?? 7} onChange={(event) => onChange({ ...content, lineupLabelFontSize: Number(event.target.value) })} /></label>
+      <label className="slide-prop-field vertical"><span>Texto “{lineupName}”</span><input placeholder="Deixe vazio para ocultar" value={content.title} onChange={(event) => onChange({ ...content, title: event.target.value })} /></label>
+      <label className="stacked-field"><span><span className="field-label">Tamanho de “{lineupName}”</span><b>{content.lineupLabelFontSize ?? 7}px</b></span><input type="range" min={5} max={18} step={1} value={content.lineupLabelFontSize ?? 7} onChange={(event) => onChange({ ...content, lineupLabelFontSize: Number(event.target.value) })} /></label>
       <label className="slide-prop-field"><span>Formação dos jogadores</span><select value={content.formation} onChange={(event) => { const formation = event.target.value; onChange({ ...content, formation, subtitle: formation, players: playersForFormation(formation) }); }}>{formationNames.map((name) => <option key={name}>{name}</option>)}</select></label>
       <label className="slide-prop-field"><span>Template</span><select value={content.template ?? "broadcast"} onChange={(event) => onChange({ ...content, template: event.target.value as NonNullable<LineupSlideContent["template"]> })}><option value="broadcast">Broadcast · referência</option><option value="glass">Painel de vidro</option><option value="tactical">Tático</option></select></label>
       <ImageAssetUpload label="Emblema do clube" value={content.clubCrest} onLoad={(clubCrest) => onChange({ ...content, clubCrest })} onClear={() => onChange({ ...content, clubCrest: undefined })} />
@@ -303,8 +305,10 @@ function WrittenReportProperties({ content, onChange }: { content: WrittenReport
       <ColorPaletteField label="Equipa A" value={content.teamColor} onChange={(teamColor) => onChange({ ...content, teamColor })} />
       <ColorPaletteField label="Letras da equipa A" value={content.homeTextColor ?? "#101010"} onChange={(homeTextColor) => onChange({ ...content, homeTextColor })} />
       <ColorPaletteField label="Guarda-redes A" value={content.goalkeeperColor} onChange={(goalkeeperColor) => onChange({ ...content, goalkeeperColor })} />
+      <label className="slide-check-field"><input type="checkbox" checked={content.showHomeTeam !== false} onChange={(event) => onChange({ ...content, showHomeTeam: event.target.checked })} /> Mostrar equipa A</label>
       <ColorPaletteField label="Equipa B" value={content.awayColor ?? "#112d91"} onChange={(awayColor) => onChange({ ...content, awayColor })} />
       <ColorPaletteField label="Letras da equipa B" value={content.awayTextColor ?? "#ffffff"} onChange={(awayTextColor) => onChange({ ...content, awayTextColor })} />
+      <label className="slide-check-field"><input type="checkbox" checked={content.showAwayTeam !== false} onChange={(event) => onChange({ ...content, showAwayTeam: event.target.checked })} /> Mostrar equipa B</label>
       <label className="stacked-field"><span><span className="field-label">Tamanho dos jogadores</span><b>{Math.round((content.playerSize ?? .82) * 100)}%</b></span><input type="range" min={.55} max={1.5} step={.05} value={content.playerSize ?? .82} onChange={(event) => onChange({ ...content, playerSize: Number(event.target.value) })} /></label>
       <label className="slide-check-field"><input type="checkbox" checked={content.showBall ?? true} onChange={(event) => onChange({ ...content, showBall: event.target.checked })} /> Mostrar bola</label>
       <p className="property-help">Arraste os 11 jogadores de cada equipa e a bola diretamente no campo. A barra permite adicionar setas, zonas, texto e desenhos livres.</p>
@@ -371,7 +375,7 @@ function MatchPresentationProperties({ content, onChange }: { content: MatchPres
       <ColorPaletteField label="Moldura" value={content.frameColor ?? "#ffffff"} onChange={(frameColor) => onChange({ ...content, frameColor })} />
       <ColorPaletteField label="Escurecimento do fundo" value={content.overlayColor ?? "#071018"} onChange={(overlayColor) => onChange({ ...content, overlayColor })} opacity={content.overlayOpacity ?? .12} onOpacityChange={(overlayOpacity) => onChange({ ...content, overlayOpacity })} />
       <label className="stacked-field"><span><span className="field-label">Opacidade dos painéis</span><b>{Math.round((content.panelOpacity ?? .22) * 100)}%</b></span><input type="range" min={0} max={1} step={.02} value={content.panelOpacity ?? .22} onChange={(event) => onChange({ ...content, panelOpacity: Number(event.target.value) })} /></label>
-      <label className="stacked-field"><span><span className="field-label">Tamanho dos emblemas</span><b>{Math.round((content.crestScale ?? 1) * 100)}%</b></span><input type="range" min={.55} max={1.45} step={.05} value={content.crestScale ?? 1} onChange={(event) => onChange({ ...content, crestScale: Number(event.target.value) })} /></label>
+      <label className="stacked-field"><span><span className="field-label">Tamanho dos emblemas</span><b>{Math.round((content.crestScale ?? 1) * 100)}%</b></span><input type="range" min={.55} max={isWrittenReportProduct(APP_PRODUCT.variant) ? 2.1 : 1.45} step={.05} value={content.crestScale ?? 1} onChange={(event) => onChange({ ...content, crestScale: Number(event.target.value) })} /></label>
     </Section>
   </>;
 }
@@ -489,7 +493,7 @@ function BoardProperties({ content, onChange }: { content: BoardSlideContent; on
       <ColorPaletteField label="Preenchimento" value={selectedMark?.fillColor ?? content.markFillColor ?? "#fff23d"} onChange={(fillColor) => selectedMark ? updateSelectedMark({ fillColor }) : onChange({ ...content, markFillColor: fillColor })} opacity={selectedMark?.opacity ?? content.markOpacity ?? 1} onOpacityChange={(opacity) => selectedMark ? updateSelectedMark({ opacity }) : onChange({ ...content, markOpacity: opacity })} />
       <label className="slide-prop-field"><span>Espessura</span><div><input type="range" min={1} max={16} step={1} value={selectedMark?.strokeWidth ?? content.markStrokeWidth ?? 5} onChange={(event) => selectedMark ? updateSelectedMark({ strokeWidth: Number(event.target.value) }) : onChange({ ...content, markStrokeWidth: Number(event.target.value) })} /><i>{selectedMark?.strokeWidth ?? content.markStrokeWidth ?? 5}px</i></div></label>
       <label className="slide-check-field"><input type="checkbox" checked={selectedMark?.dashed ?? content.markDashed ?? false} onChange={(event) => selectedMark ? updateSelectedMark({ dashed: event.target.checked }) : onChange({ ...content, markDashed: event.target.checked })} /> Linha tracejada</label>
-      <p className="property-help">Use a barra sobre o campo para criar objetos. Com a seta selecionada, clique num objeto para o mover, alterar o tamanho pelos pontos verdes ou editar as propriedades aqui.</p>
+      <p className="property-help">{isWrittenReportProduct(APP_PRODUCT.variant) ? "No Relatório Escrito, a barra do campo também inclui cone e escada plana. Selecione um e clique no campo para o colocar; depois pode movê-lo ou redimensioná-lo pelos pontos verdes. " : ""}Use a barra sobre o campo para criar objetos. Com a seta selecionada, clique num objeto para o mover, alterar o tamanho pelos pontos verdes ou editar as propriedades aqui.</p>
     </Section>
   </>;
 }

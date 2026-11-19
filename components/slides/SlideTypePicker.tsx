@@ -3,7 +3,7 @@
 import { AlignLeft, ClipboardList, ClipboardType, Film, ImageIcon, Landmark, LayoutTemplate, Presentation, ShieldHalf, UserRoundSearch, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { SlideType } from "@/types/slide";
-import { APP_PRODUCT, supportsPlayerProfile } from "@/lib/product";
+import { APP_PRODUCT, isWrittenReportProduct, supportsPlayerProfile } from "@/lib/product";
 
 interface Props { onSelect: (type: SlideType) => void; onClose: () => void }
 
@@ -21,9 +21,16 @@ const choices: Array<{ type: SlideType; label: string; description: string; icon
 ];
 
 export function SlideTypePicker({ onSelect, onClose }: Props) {
-  const visibleChoices = supportsPlayerProfile(APP_PRODUCT.variant)
+  const isWrittenReport = isWrittenReportProduct(APP_PRODUCT.variant);
+  const visibleChoices = (supportsPlayerProfile(APP_PRODUCT.variant)
     ? choices
-    : choices.filter((choice) => choice.type !== "player-profile");
+    : choices.filter((choice) => choice.type !== "player-profile"))
+    // Existing video slides keep rendering/editing normally. This only removes the
+    // creation template from Written Report.
+    .filter((choice) => !isWrittenReport || choice.type !== "video")
+    .map((choice) => choice.type === "lineup" && isWrittenReport
+      ? { ...choice, label: "Starting XI / Onze Inicial", description: "Starting lineup in a broadcast format" }
+      : choice);
   return (
     <div className="modal-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="slide-type-picker" role="dialog" aria-modal="true" aria-labelledby="slide-picker-title">

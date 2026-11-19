@@ -200,7 +200,7 @@ export function WrittenReportSlide({ content, interactive = true, onChange }: Pr
           </header>
           <div className="report-pitch-canvas">
             <FootballPitch
-              players={content.players}
+              players={content.players.filter((player) => player.team === "home" ? content.showHomeTeam !== false : content.showAwayTeam !== false)}
               homeColor={content.teamColor}
               goalkeeperColor={content.goalkeeperColor}
               awayColor={content.awayColor ?? "#112d91"}

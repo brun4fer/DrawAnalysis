@@ -1,4 +1,5 @@
 import type { AnalysisSlide, SlidePlayer, SlideType } from "@/types/slide";
+import { APP_PRODUCT, isWrittenReportProduct } from "@/lib/product";
 import { createId } from "./id";
 
 const FORMATIONS: Record<string, Array<[number, number]>> = {
@@ -57,7 +58,10 @@ export function createSlide(type: SlideType, index: number): AnalysisSlide {
   switch (type) {
     case "title": return { ...base, name: "Novo momento", content: { kind: "title", text: "ORGANIZAÇÃO OFENSIVA", subtitle: "MOMENTO DO JOGO", body: "", background: "#101914", backgroundOpacity: 1, overlayOpacity: .12, accentColor: "#a3ff12", crestCorner: "top-right", alignment: "left", fontSize: 64, subtitleFontSize: 16 } };
     case "text": return { ...base, name: "Conclusão", content: { kind: "text", title: "PRINCÍPIO", text: "Forçar o adversário a jogar por fora.", background: "#111518", alignment: "center", fontSize: 44, position: { x: .5, y: .5 } } };
-    case "lineup": return { ...base, name: "Onze provável", content: { kind: "lineup", formation: "4-3-3", tacticalSystems: [], players: playersForFormation("4-3-3"), teamColor: "#f28c28", goalkeeperColor: "#ffcc00", title: "ONZE PROVÁVEL", subtitle: "4-3-3", clubName: "NOME DO CLUBE", coachName: "Nome do treinador", template: "broadcast", background: "#0a0d0f", backgroundOpacity: .08, overlayOpacity: .18, panelOpacity: .82, frameColor: "#ffffff", pitchColor: "#07131a", playerNumberSize: 18, playerNameSize: 9, playerPhotoScale: 1, playerCardScale: 1, panelScale: 1, miniPlayerColor: "#92969a", miniPlayerScale: 1, lineupLabelFontSize: 7, headerBackgroundColor: "#ffffff", headerTextColor: "#050505", leftFootMarker: "both", leftFootMarkerColor: "#efff29" } };
+    case "lineup": {
+      const writtenReport = isWrittenReportProduct(APP_PRODUCT.variant);
+      return { ...base, name: writtenReport ? "Starting XI / Onze Inicial" : "Onze provável", content: { kind: "lineup", formation: "4-3-3", tacticalSystems: [], players: playersForFormation("4-3-3"), teamColor: "#f28c28", goalkeeperColor: "#ffcc00", title: writtenReport ? "ONZE INICIAL" : "ONZE PROVÁVEL", subtitle: "4-3-3", clubName: "NOME DO CLUBE", coachName: "Nome do treinador", template: "broadcast", background: "#0a0d0f", backgroundOpacity: .08, overlayOpacity: .18, panelOpacity: .82, frameColor: "#ffffff", pitchColor: "#07131a", playerNumberSize: 18, playerNameSize: 9, playerPhotoScale: 1, playerCardScale: 1, panelScale: 1, miniPlayerColor: "#92969a", miniPlayerScale: 1, lineupLabelFontSize: 7, headerBackgroundColor: "#ffffff", headerTextColor: "#050505", leftFootMarker: "both", leftFootMarkerColor: "#efff29" } };
+    }
     case "team-overview": return {
       ...base,
       name: "Dados gerais da equipa",
@@ -125,6 +129,8 @@ export function createSlide(type: SlideType, index: number): AnalysisSlide {
         subtitleFontSize: 14,
         bodyFontSize: 21,
         playerSize: .82,
+        showHomeTeam: true,
+        showAwayTeam: true,
         ballPosition: { x: .5, y: .5 },
         showBall: true,
       },
@@ -190,7 +196,7 @@ export function createSlide(type: SlideType, index: number): AnalysisSlide {
         overlayColor: "#071018",
         overlayOpacity: .12,
         panelOpacity: .22,
-        crestScale: 1,
+        crestScale: isWrittenReportProduct(APP_PRODUCT.variant) ? 1.18 : 1,
         designVersion: 2,
       },
     };

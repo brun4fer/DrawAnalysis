@@ -32,6 +32,11 @@ export function supportsPlayerProfile(variant: ProductVariant) {
     || variant === "individual-training-video-analysis";
 }
 
+/** Features intentionally exclusive to the team written-report product. */
+export function isWrittenReportProduct(variant: ProductVariant) {
+  return variant === "written-report";
+}
+
 export const APP_VARIANT = normalizeProductVariant(process.env.NEXT_PUBLIC_APP_VARIANT);
 
 const PRODUCTS = {

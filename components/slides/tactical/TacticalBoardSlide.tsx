@@ -7,6 +7,7 @@ import type { BoardSlideContent, SlidePlayer, TacticalBoardMark, TacticalBoardMa
 import { hexToRgba } from "@/utils/color";
 import { createId } from "@/utils/id";
 import { FootballPitch } from "../shared/FootballPitch";
+import { APP_PRODUCT, isWrittenReportProduct } from "@/lib/product";
 
 interface Props {
   content: BoardSlideContent;
@@ -18,7 +19,7 @@ interface Props {
 type BoardTool = "move" | TacticalBoardMarkType;
 
 const FIELD_HEIGHT = 56.25;
-const tools: Array<{ id: BoardTool; label: string; icon: typeof MousePointer2 }> = [
+const baseTools: Array<{ id: BoardTool; label: string; icon: typeof MousePointer2 }> = [
   { id: "move", label: "Mover jogadores e bola", icon: MousePointer2 },
   { id: "arrow", label: "Seta", icon: ArrowUpRight },
   { id: "line", label: "Linha", icon: Minus },
@@ -28,6 +29,13 @@ const tools: Array<{ id: BoardTool; label: string; icon: typeof MousePointer2 }>
   { id: "free", label: "Desenho livre", icon: Pencil },
   { id: "text", label: "Texto", icon: Type },
 ];
+
+const trainingTools: Array<{ id: BoardTool; label: string; icon: typeof MousePointer2 }> = [
+  { id: "cone", label: "Cone de treino", icon: SquareDashed },
+  { id: "flat-ladder", label: "Escada plana", icon: Minus },
+];
+
+const tools = isWrittenReportProduct(APP_PRODUCT.variant) ? [...baseTools, ...trainingTools] : baseTools;
 
 interface BoardState {
   positions: Record<string, Point>;
@@ -164,8 +172,42 @@ function BoardMark({ mark, markerPrefix, revealOpacity = 1, editable = false, se
     vectorEffect: "non-scaling-stroke" as const,
     opacity,
   };
+  // Equipment is much smaller than a zone or an arrow. Keep its outline legible
+  // without allowing the general tactical-line width to cover the whole object.
+  const equipmentStroke = { ...common, strokeWidth: Math.max(.45, Math.min(1.9, mark.strokeWidth * .16)) };
   let shape: React.ReactNode;
-  if (mark.type === "circle") {
+  if (mark.type === "cone") {
+    const x = Math.min(start.x, end.x);
+    const y = Math.min(start.y, end.y);
+    const width = Math.max(3, Math.abs(end.x - start.x));
+    const height = Math.max(1.5, Math.abs(end.y - start.y));
+    const cx = x + width / 2;
+    const cy = y + height / 2;
+    const coneRed = mark.fillColor || "#f2382b";
+    const coneEdge = mark.color || "#b61e1c";
+    // A low disc cone, seen from above: broad red base, inset top ring and
+    // curved highlights instead of the old upright triangular marker.
+    shape = <g>
+      <ellipse cx={cx} cy={cy + height * .06} rx={width * .5} ry={height * .43} fill={coneEdge} opacity={opacity} />
+      <ellipse cx={cx} cy={cy} rx={width * .47} ry={height * .4} fill={coneRed} {...equipmentStroke} />
+      <ellipse cx={cx} cy={cy - height * .09} rx={width * .2} ry={height * .13} fill="#8e171a" opacity={opacity * .86} />
+      <ellipse cx={cx} cy={cy - height * .11} rx={width * .135} ry={height * .075} fill="#f88678" opacity={opacity * .78} />
+      <path d={`M ${x + width * .11} ${cy + height * .08} Q ${cx} ${y + height * .18} ${x + width * .89} ${cy + height * .08}`} fill="none" stroke="#ff9d90" strokeWidth={equipmentStroke.strokeWidth} strokeLinecap="round" opacity={opacity * .7} />
+    </g>;
+  } else if (mark.type === "flat-ladder") {
+    const x = Math.min(start.x, end.x);
+    const y = Math.min(start.y, end.y);
+    const width = Math.max(7, Math.abs(end.x - start.x));
+    const height = Math.max(1.7, Math.abs(end.y - start.y));
+    const rungs = Array.from({ length: 8 }, (_, index) => x + width * ((index + .5) / 8));
+    const railY = [y + height * .13, y + height * .87];
+    const rungRed = mark.fillColor || "#f03b20";
+    shape = <g fill="none" strokeLinecap="round" strokeLinejoin="round" opacity={opacity}>
+      <path d={railY.map((rail) => `M ${x} ${rail} L ${x + width} ${rail}`).join(" ")} stroke="#11181d" strokeWidth={Math.max(.5, equipmentStroke.strokeWidth * 1.15)} />
+      <path d={rungs.map((rung) => `M ${rung} ${railY[0]} L ${rung} ${railY[1]}`).join(" ")} stroke={rungRed} strokeWidth={Math.max(.55, equipmentStroke.strokeWidth * 1.35)} />
+      <path d={`M ${x} ${railY[0]} L ${x} ${railY[1]} M ${x + width} ${railY[0]} L ${x + width} ${railY[1]}`} stroke="#11181d" strokeWidth={Math.max(.4, equipmentStroke.strokeWidth * .85)} />
+    </g>;
+  } else if (mark.type === "circle") {
     shape = <ellipse cx={start.x} cy={start.y} rx={Math.abs(end.x - start.x)} ry={Math.abs(end.y - start.y)} fill={hexToRgba(mark.fillColor, opacity * .24)} {...common} />;
   } else if (mark.type === "rectangle" || mark.type === "zone") {
     shape = <rect x={Math.min(start.x, end.x)} y={Math.min(start.y, end.y)} width={Math.abs(end.x - start.x)} height={Math.abs(end.y - start.y)} rx={mark.type === "zone" ? 1.4 : .25} fill={hexToRgba(mark.fillColor, opacity * (mark.type === "zone" ? .24 : .14))} {...common} strokeDasharray={mark.type === "zone" ? "10 7" : common.strokeDasharray} />;
@@ -182,7 +224,7 @@ function BoardMark({ mark, markerPrefix, revealOpacity = 1, editable = false, se
   const maximumX = Math.max(...convertedPoints.map((point) => point.x));
   const minimumY = Math.min(...convertedPoints.map((point) => point.y));
   const maximumY = Math.max(...convertedPoints.map((point) => point.y));
-  const editablePointIndices = mark.type === "arrow" || mark.type === "line" || mark.type === "circle" || mark.type === "rectangle" || mark.type === "zone"
+  const editablePointIndices = mark.type === "arrow" || mark.type === "line" || mark.type === "circle" || mark.type === "rectangle" || mark.type === "zone" || mark.type === "cone" || mark.type === "flat-ladder"
     ? [0, Math.max(0, mark.points.length - 1)]
     : [];
   return (
@@ -267,6 +309,16 @@ export function TacticalBoardSlide({ content, interactive = true, onChange, pres
     if (!interactive || tool === "move") return;
     event.preventDefault();
     const point = pointFromPointer(event);
+    if (tool === "cone" || tool === "flat-ladder") {
+      const mark: TacticalBoardMark = {
+        id: createId(), type: tool,
+        points: [point, { x: Math.min(1, point.x + (tool === "cone" ? .06 : .16)), y: Math.min(1, point.y + (tool === "cone" ? .035 : .045)) }],
+        color: tool === "cone" ? "#b61e1c" : "#11181d", fillColor: tool === "cone" ? "#f2382b" : "#f03b20",
+        strokeWidth: content.markStrokeWidth ?? 5, opacity: content.markOpacity ?? 1, dashed: false,
+      };
+      updateMarks([...state.marks, mark], mark.id);
+      return;
+    }
     if (tool === "text") {
       const text = window.prompt("Texto a adicionar ao quadro", "TEXTO")?.trim();
       if (!text) return;
