@@ -545,8 +545,9 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
           const broadcastOuterSegments = Array.from({ length: 8 }, (_, slot) => ({ start: -90 + slot * 45 - 17, angle: 34 }));
           const broadcastInnerSegments = Array.from({ length: 8 }, (_, slot) => ({ start: -90 + slot * 45 - 16, angle: 32 }));
           // Reference tactical ring: a broad ellipse with six deliberate gaps.
-          // Its brightness travels from side to side and back; it never rotates
-          // or changes the player's tracked ground position.
+          // Its brightness travels from side to side while the segments rotate
+          // subtly around the tracked ground point. The arrow is rendered
+          // separately, so this never changes its direction or player anchor.
           const pitchRadiusX = radiusX * 1.28;
           const pitchRadiusY = radiusY * 1.28;
           const pitchSegments = Array.from({ length: 6 }, (_, slot) => ({ start: -90 + slot * 60 - 20, angle: 40 }));
@@ -906,7 +907,7 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
                       innerRadius={pitchRadiusX * .7}
                       outerRadius={pitchRadiusX}
                       angle={segment.angle}
-                      rotation={segment.start}
+                      rotation={segment.start + outerRotation * .62}
                       fill={segmentColor}
                       stroke={shadeColor(primaryColor, -38)}
                       strokeWidth={Math.max(.45, ringThickness * .1)}

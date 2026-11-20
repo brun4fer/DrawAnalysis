@@ -74,7 +74,8 @@ export interface SamPlayerTracking {
   sourceStartTime: number;
   startTime: number;
   endTime: number;
-  duration: 2 | 3;
+  /** Requested interval, currently between 1 and 8 seconds. */
+  duration: number;
   frameRate: number;
   /** Exact timeline times of every encoded frame, including frames for which SAM returned no mask. */
   frameTimes?: number[];

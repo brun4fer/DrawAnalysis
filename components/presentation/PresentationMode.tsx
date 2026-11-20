@@ -22,6 +22,28 @@ function getActiveSlide(playhead: number, durations: number[]) {
   return { index: 0, start: 0, elapsed: 0 };
 }
 
+type TacticalPhase = "idle" | "movement" | "drawing" | "complete";
+
+function tacticalPhaseAt(content: { movements?: unknown[]; movementDuration?: number; movementHoldDuration?: number }, elapsed: number) {
+  const movementCount = content.movements?.length ?? 0;
+  const hold = Math.max(0, content.movementHoldDuration ?? .65);
+  const travel = Math.max(.15, content.movementDuration ?? 1.2);
+  const stepLength = travel + hold;
+  if (!movementCount) return { phase: "complete" as TacticalPhase, index: -1, start: 0, end: 0, travel, hold };
+  if (elapsed < hold) return { phase: "idle" as TacticalPhase, index: 0, start: hold, end: hold + travel, travel, hold };
+  for (let index = 0; index < movementCount; index += 1) {
+    const start = hold + index * stepLength;
+    const movementEnd = start + travel;
+    const drawingEnd = movementEnd + hold;
+    if (elapsed < movementEnd) return { phase: "movement" as TacticalPhase, index, start, end: movementEnd, travel, hold };
+    // Keep the completed drawing phase addressable at its endpoint. This lets
+    // the left key return to the player positions before the drawings, while
+    // the right key advances to the next movement only on a separate press.
+    if (elapsed <= drawingEnd) return { phase: "drawing" as TacticalPhase, index, start: movementEnd, end: drawingEnd, travel, hold };
+  }
+  return { phase: "complete" as TacticalPhase, index: movementCount - 1, start: hold + (movementCount - 1) * stepLength, end: hold + movementCount * stepLength, travel, hold };
+}
+
 export function PresentationMode({ onClose }: Props) {
   const { slides, selectedSlideId } = useEditorStore();
   const durations = useMemo(() => slides.map(getSlidePresentationDuration), [slides]);
@@ -51,20 +73,6 @@ export function PresentationMode({ onClose }: Props) {
       let next = playheadRef.current + delta;
       if (isTacticalBoard && tacticalAnimationEnd !== null && next >= tacticalAnimationEnd) {
         next = tacticalAnimationEnd;
-        const movementCount = slide.content.kind === "tactical-board" ? slide.content.movements?.length ?? 0 : 0;
-        const hold = slide.content.kind === "tactical-board" ? Math.max(0, slide.content.movementHoldDuration ?? .65) : 0;
-        const travel = slide.content.kind === "tactical-board" ? Math.max(.15, slide.content.movementDuration ?? 1.2) : 0;
-        const lastMovementEnd = movementCount > 0
-          ? active.start + hold + (movementCount - 1) * (travel + hold) + travel
-          : Number.POSITIVE_INFINITY;
-        if (next >= lastMovementEnd - .02 && active.index < slides.length - 1) {
-          const nextSlideStart = activeSlideEnd;
-          playheadRef.current = nextSlideStart;
-          setPlayhead(nextSlideStart);
-          setTacticalAnimationEnd(null);
-          setPlaying(slides[active.index + 1]?.content.kind !== "tactical-board");
-          return;
-        }
         playheadRef.current = next;
         setPlayhead(next);
         setTacticalAnimationEnd(null);
@@ -113,33 +121,63 @@ export function PresentationMode({ onClose }: Props) {
         }
         if (tacticalAnimationEnd !== null) return;
         const tacticalContent = currentSlide.content;
+        const phase = tacticalPhaseAt(tacticalContent, currentActive.elapsed);
         const movementCount = tacticalContent.movements?.length ?? 0;
-        const hold = Math.max(0, tacticalContent.movementHoldDuration ?? .65);
-        const travel = Math.max(.15, tacticalContent.movementDuration ?? 1.2);
-        const stepLength = travel + hold;
-        const completionTimes = Array.from({ length: movementCount }, (_, index) => hold + index * stepLength + travel);
-        const completedMovements = completionTimes.filter((targetTime) => currentActive.elapsed >= targetTime - .02).length;
-        if (event.key === "ArrowLeft") {
-          if (completedMovements <= 0) {
-            goToSlide(currentActive.index - 1);
-            return;
-          }
-          const previousStep = completedMovements - 1;
-          const targetElapsed = previousStep === 0 ? 0 : completionTimes[previousStep - 1];
-          const target = currentActive.start + targetElapsed;
+        const moveTo = (elapsed: number) => {
+          const target = currentActive.start + Math.max(0, elapsed);
           playheadRef.current = target;
           setPlayhead(target);
           setPlaying(false);
+        };
+        const animateTo = (start: number, end: number) => {
+          const safeStart = Math.max(0, start);
+          const safeEnd = Math.max(safeStart, end);
+          playheadRef.current = currentActive.start + safeStart;
+          setPlayhead(currentActive.start + safeStart);
+          if (safeEnd - safeStart < .01) {
+            playheadRef.current = currentActive.start + safeEnd;
+            setPlayhead(currentActive.start + safeEnd);
+            setPlaying(false);
+            return;
+          }
+          setTacticalAnimationEnd(currentActive.start + safeEnd);
+          setPlaying(true);
+        };
+        if (event.key === "ArrowLeft") {
+          if (phase.phase === "idle" || !movementCount) {
+            goToSlide(currentActive.index - 1);
+            return;
+          }
+          if (phase.phase === "drawing") {
+            // The preceding click shows the player movement. Going back from
+            // the drawing stage deliberately returns to that exact position,
+            // before the new shapes appear.
+            moveTo(currentActive.elapsed <= phase.start + .001 ? Math.max(0, phase.start - phase.travel) : phase.start);
+            return;
+          }
+          if (phase.phase === "movement") {
+            moveTo(phase.start);
+            return;
+          }
+          moveTo(Math.max(0, phase.start + phase.travel));
           return;
         }
-        if (completedMovements < movementCount) {
-          const transitionStart = hold + completedMovements * stepLength;
-          const start = currentActive.start + transitionStart;
-          const end = start + travel;
-          playheadRef.current = start;
-          setPlayhead(start);
-          setTacticalAnimationEnd(end);
-          setPlaying(true);
+        if (!movementCount) {
+          goToSlide(currentActive.index + 1);
+          return;
+        }
+        if (phase.phase === "idle" || phase.phase === "movement") {
+          animateTo(phase.start, phase.end);
+          return;
+        }
+        if (phase.phase === "drawing" && currentActive.elapsed < phase.end - .02) {
+          animateTo(phase.start, phase.end);
+          return;
+        }
+        const nextIndex = phase.phase === "drawing" ? phase.index + 1 : movementCount;
+        if (nextIndex < movementCount) {
+          const nextStart = phase.hold + nextIndex * (phase.travel + phase.hold);
+          animateTo(nextStart, nextStart + phase.travel);
           return;
         }
         goToSlide(currentActive.index + 1);

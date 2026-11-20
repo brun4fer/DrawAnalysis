@@ -1,13 +1,14 @@
 "use client";
 
-import { useId, useState } from "react";
-import { ArrowUpRight, Circle, Eraser, Minus, MousePointer2, Pencil, Square, SquareDashed, Type, Undo2 } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
+import { ArrowUpRight, Check, Circle, Eraser, Link2, Minus, MousePointer2, Pencil, Pentagon, Square, SquareDashed, Type, Undo2, X } from "lucide-react";
 import type { Point } from "@/types/drawing";
 import type { BoardSlideContent, SlidePlayer, TacticalBoardMark, TacticalBoardMarkType, TacticalMovement } from "@/types/slide";
 import { hexToRgba } from "@/utils/color";
 import { createId } from "@/utils/id";
 import { FootballPitch } from "../shared/FootballPitch";
 import { APP_PRODUCT, isWrittenReportProduct } from "@/lib/product";
+import { isPlayerLinkedMark, resolveTacticalMarkTransition, resolvedTacticalMark } from "@/utils/tacticalBoard";
 
 interface Props {
   content: BoardSlideContent;
@@ -25,9 +26,10 @@ const baseTools: Array<{ id: BoardTool; label: string; icon: typeof MousePointer
   { id: "line", label: "Linha", icon: Minus },
   { id: "circle", label: "Círculo", icon: Circle },
   { id: "rectangle", label: "Retângulo", icon: Square },
-  { id: "zone", label: "Zona", icon: SquareDashed },
   { id: "free", label: "Desenho livre", icon: Pencil },
   { id: "text", label: "Texto", icon: Type },
+  { id: "player-link", label: "Ligar jogadores", icon: Link2 },
+  { id: "player-polygon", label: "Polígono ligado a jogadores", icon: Pentagon },
 ];
 
 const trainingTools: Array<{ id: BoardTool; label: string; icon: typeof MousePointer2 }> = [
@@ -42,6 +44,7 @@ interface BoardState {
   ballPosition: Point;
   marks: TacticalBoardMark[];
   markOpacities: Record<string, number>;
+  markReveals: Record<string, number>;
   name: string;
 }
 
@@ -50,6 +53,11 @@ interface MarkDrag {
   start: Point;
   pointIndex?: number;
   preview: TacticalBoardMark;
+}
+
+interface PendingText {
+  point: Point;
+  value: string;
 }
 
 function pointFromClient(element: SVGSVGElement, clientX: number, clientY: number): Point {
@@ -90,6 +98,7 @@ function stateSequence(content: BoardSlideContent): BoardState[] {
     ballPosition: content.ballPosition ?? { x: .5, y: .5 },
     marks: content.tacticalMarks ?? [],
     markOpacities: Object.fromEntries((content.tacticalMarks ?? []).map((mark) => [mark.id, 1])),
+    markReveals: Object.fromEntries((content.tacticalMarks ?? []).map((mark) => [mark.id, 1])),
     name: "Formação inicial",
   };
   return (content.movements ?? []).reduce<BoardState[]>((states, movement) => {
@@ -99,6 +108,7 @@ function stateSequence(content: BoardSlideContent): BoardState[] {
       ballPosition: movement.ballPosition ?? previous.ballPosition,
       marks: movement.marks ?? previous.marks,
       markOpacities: Object.fromEntries((movement.marks ?? previous.marks).map((mark) => [mark.id, 1])),
+      markReveals: Object.fromEntries((movement.marks ?? previous.marks).map((mark) => [mark.id, 1])),
       name: movement.name,
     });
     return states;
@@ -123,26 +133,37 @@ function playbackState(content: BoardSlideContent, time: number): BoardState {
   const localTime = elapsed - movementIndex * stepLength;
   const previous = states[movementIndex];
   const target = states[movementIndex + 1];
-  if (localTime >= travel || movementIndex >= states.length - 1) return target;
+  if (movementIndex >= states.length - 1) return target;
   const linear = Math.max(0, Math.min(1, localTime / travel));
   const progress = linear * linear * (3 - 2 * linear);
-  const previousMarkIds = new Set(previous.marks.map((mark) => mark.id));
   const positions = Object.fromEntries(Object.keys({ ...previous.positions, ...target.positions }).map((playerId) => {
     const start = previous.positions[playerId] ?? target.positions[playerId];
     const end = target.positions[playerId] ?? start;
     return [playerId, { x: start.x + (end.x - start.x) * progress, y: start.y + (end.y - start.y) * progress }];
   }));
+  // A tactical step is always presented in two deliberate passes: first the
+  // player/ball movement, then the new drawings. That makes the right/left
+  // navigation predictable and avoids revealing an explanation before the
+  // movement it belongs to has been seen.
+  const drawingProgress = localTime < travel
+    ? 0
+    : hold <= 0 ? 1 : Math.max(0, Math.min(1, (localTime - travel) / hold));
+  const markTransition = resolveTacticalMarkTransition(
+    previous.marks,
+    target.marks,
+    drawingProgress,
+    true,
+    linear,
+  );
   return {
     positions,
     ballPosition: {
       x: previous.ballPosition.x + (target.ballPosition.x - previous.ballPosition.x) * progress,
       y: previous.ballPosition.y + (target.ballPosition.y - previous.ballPosition.y) * progress,
     },
-    marks: target.marks,
-    markOpacities: Object.fromEntries(target.marks.map((mark) => [
-      mark.id,
-      previousMarkIds.has(mark.id) ? 1 : Math.min(1, linear * 1.8),
-    ])),
+    marks: markTransition.marks,
+    markOpacities: markTransition.opacities,
+    markReveals: markTransition.reveals,
     name: target.name,
   };
 }
@@ -151,14 +172,16 @@ function svgPoint(point: Point) {
   return { x: point.x * 100, y: point.y * FIELD_HEIGHT };
 }
 
-function BoardMark({ mark, markerPrefix, revealOpacity = 1, editable = false, selected = false, onMove, onMovePoint }: {
+function BoardMark({ mark, markerPrefix, revealOpacity = 1, revealProgress = 1, editable = false, selected = false, onMove, onMovePoint, onSelect }: {
   mark: TacticalBoardMark;
   markerPrefix: string;
   revealOpacity?: number;
+  revealProgress?: number;
   editable?: boolean;
   selected?: boolean;
   onMove?: (event: React.PointerEvent<SVGGElement>) => void;
   onMovePoint?: (event: React.PointerEvent<SVGCircleElement>, pointIndex: number) => void;
+  onSelect?: (event: React.PointerEvent<SVGGElement>) => void;
 }) {
   const start = svgPoint(mark.points[0] ?? { x: 0, y: 0 });
   const end = svgPoint(mark.points.at(-1) ?? mark.points[0] ?? { x: 0, y: 0 });
@@ -213,22 +236,33 @@ function BoardMark({ mark, markerPrefix, revealOpacity = 1, editable = false, se
     shape = <rect x={Math.min(start.x, end.x)} y={Math.min(start.y, end.y)} width={Math.abs(end.x - start.x)} height={Math.abs(end.y - start.y)} rx={mark.type === "zone" ? 1.4 : .25} fill={hexToRgba(mark.fillColor, opacity * (mark.type === "zone" ? .24 : .14))} {...common} strokeDasharray={mark.type === "zone" ? "10 7" : common.strokeDasharray} />;
   } else if (mark.type === "text") {
     shape = <text x={start.x} y={start.y} fill={mark.color} opacity={opacity} fontSize={Math.max(2, mark.strokeWidth * .58)} fontWeight="800" paintOrder="stroke" stroke="#00000080" strokeWidth=".35">{mark.text || "TEXTO"}</text>;
+  } else if (mark.type === "player-polygon") {
+    const points = mark.points.map((point) => { const value = svgPoint(point); return `${value.x},${value.y}`; }).join(" ");
+    shape = <polygon points={points} fill={hexToRgba(mark.fillColor, opacity * .24)} {...common} />;
+  } else if (mark.type === "player-link") {
+    const points = mark.points.map((point) => { const value = svgPoint(point); return `${value.x},${value.y}`; }).join(" ");
+    shape = <polyline points={points} fill="none" {...common} />;
   } else {
     const points = mark.points.map((point) => { const value = svgPoint(point); return `${value.x},${value.y}`; }).join(" ");
     shape = mark.type === "free"
       ? <polyline points={points} fill="none" {...common} />
-      : <line x1={start.x} y1={start.y} x2={end.x} y2={end.y} fill="none" markerEnd={mark.type === "arrow" ? `url(#${markerPrefix}-${mark.id})` : undefined} {...common} />;
+      : (() => {
+        const animatedEnd = mark.type === "arrow"
+          ? { x: start.x + (end.x - start.x) * revealProgress, y: start.y + (end.y - start.y) * revealProgress }
+          : end;
+        return <line x1={start.x} y1={start.y} x2={animatedEnd.x} y2={animatedEnd.y} fill="none" markerEnd={mark.type === "arrow" && revealProgress >= .72 ? `url(#${markerPrefix}-${mark.id})` : undefined} {...common} />;
+      })();
   }
   const convertedPoints = mark.points.map(svgPoint);
   const minimumX = Math.min(...convertedPoints.map((point) => point.x));
   const maximumX = Math.max(...convertedPoints.map((point) => point.x));
   const minimumY = Math.min(...convertedPoints.map((point) => point.y));
   const maximumY = Math.max(...convertedPoints.map((point) => point.y));
-  const editablePointIndices = mark.type === "arrow" || mark.type === "line" || mark.type === "circle" || mark.type === "rectangle" || mark.type === "zone" || mark.type === "cone" || mark.type === "flat-ladder"
+  const editablePointIndices = !isPlayerLinkedMark(mark) && (mark.type === "arrow" || mark.type === "line" || mark.type === "circle" || mark.type === "rectangle" || mark.type === "zone" || mark.type === "cone" || mark.type === "flat-ladder")
     ? [0, Math.max(0, mark.points.length - 1)]
     : [];
   return (
-    <g className={`tactical-board-mark${editable ? " is-editable" : ""}${selected ? " selected" : ""}`} onPointerDown={editable ? onMove : undefined}>
+    <g className={`tactical-board-mark${editable || onSelect ? " is-editable" : ""}${selected ? " selected" : ""}`} onPointerDown={editable ? onMove : onSelect}>
       {shape}
       {selected && <>
         <rect className="tactical-mark-selection" x={minimumX - .8} y={minimumY - .8} width={Math.max(1.6, maximumX - minimumX + 1.6)} height={Math.max(1.6, maximumY - minimumY + 1.6)} fill="none" vectorEffect="non-scaling-stroke" />
@@ -249,6 +283,9 @@ export function TacticalBoardSlide({ content, interactive = true, onChange, pres
   const [tool, setTool] = useState<BoardTool>("move");
   const [draft, setDraft] = useState<TacticalBoardMark | null>(null);
   const [markDrag, setMarkDrag] = useState<MarkDrag | null>(null);
+  const [linkedPlayerIds, setLinkedPlayerIds] = useState<string[]>([]);
+  const [pendingText, setPendingText] = useState<PendingText | null>(null);
+  const textInputRef = useRef<HTMLInputElement>(null);
   const markerPrefix = `tactical-arrow-${useId().replaceAll(":", "")}`;
   const movements = content.movements ?? [];
   const activeMovement = movements.find((movement) => movement.id === content.activeMovementId);
@@ -262,6 +299,12 @@ export function TacticalBoardSlide({ content, interactive = true, onChange, pres
     ? state.marks.map((mark) => mark.id === markDrag.mark.id ? markDrag.preview : mark)
     : state.marks;
   const visibleMarks = draft ? [...draggedMarks, draft] : draggedMarks;
+  const isLinkingPlayers = tool === "player-link" || tool === "player-polygon";
+  const minimumLinkedPlayers = tool === "player-polygon" ? 3 : 2;
+
+  useEffect(() => {
+    if (pendingText) textInputRef.current?.focus();
+  }, [pendingText]);
 
   const updateMarks = (marks: TacticalBoardMark[], selectedMarkId = content.selectedMarkId) => {
     if (activeMovement) {
@@ -272,6 +315,37 @@ export function TacticalBoardSlide({ content, interactive = true, onChange, pres
   };
 
   const selectMark = (markId?: string) => onChange?.({ ...content, selectedMarkId: markId });
+
+  const toggleLinkedPlayer = (playerId: string) => {
+    if (!isLinkingPlayers) {
+      onChange?.({ ...content, selectedPlayerId: playerId });
+      return;
+    }
+    setLinkedPlayerIds((current) => current.includes(playerId)
+      ? current.filter((id) => id !== playerId)
+      : [...current, playerId]);
+  };
+
+  const createPlayerLinkedMark = () => {
+    if (!isLinkingPlayers || linkedPlayerIds.length < minimumLinkedPlayers) return;
+    const points = linkedPlayerIds
+      .map((playerId) => state.positions[playerId])
+      .filter((point): point is Point => Boolean(point));
+    if (points.length < minimumLinkedPlayers) return;
+    const mark: TacticalBoardMark = {
+      id: createId(),
+      type: tool,
+      playerIds: [...linkedPlayerIds],
+      points,
+      color: content.markColor ?? "#fff23d",
+      fillColor: content.markFillColor ?? "#fff23d",
+      strokeWidth: content.markStrokeWidth ?? 5,
+      opacity: content.markOpacity ?? 1,
+      dashed: content.markDashed ?? false,
+    };
+    updateMarks([...state.marks, mark], mark.id);
+    setLinkedPlayerIds([]);
+  };
 
   const beginMarkDrag = (event: React.PointerEvent<SVGGElement | SVGCircleElement>, mark: TacticalBoardMark, pointIndex?: number) => {
     if (!interactive || tool !== "move") return;
@@ -305,8 +379,20 @@ export function TacticalBoardSlide({ content, interactive = true, onChange, pres
     onChange?.({ ...content, ballPosition });
   };
 
+  const addPendingText = () => {
+    const text = pendingText?.value.trim();
+    if (!pendingText || !text) return;
+    const mark: TacticalBoardMark = {
+      id: createId(), type: "text", points: [pendingText.point], text,
+      color: content.markColor ?? "#fff23d", fillColor: content.markFillColor ?? "#fff23d",
+      strokeWidth: content.markStrokeWidth ?? 5, opacity: content.markOpacity ?? 1, dashed: false,
+    };
+    updateMarks([...state.marks, mark], mark.id);
+    setPendingText(null);
+  };
+
   const beginDrawing = (event: React.PointerEvent<SVGSVGElement>) => {
-    if (!interactive || tool === "move") return;
+    if (!interactive || tool === "move" || isLinkingPlayers) return;
     event.preventDefault();
     const point = pointFromPointer(event);
     if (tool === "cone" || tool === "flat-ladder") {
@@ -320,14 +406,7 @@ export function TacticalBoardSlide({ content, interactive = true, onChange, pres
       return;
     }
     if (tool === "text") {
-      const text = window.prompt("Texto a adicionar ao quadro", "TEXTO")?.trim();
-      if (!text) return;
-      const mark: TacticalBoardMark = {
-        id: createId(), type: "text", points: [point], text,
-        color: content.markColor ?? "#fff23d", fillColor: content.markFillColor ?? "#fff23d",
-        strokeWidth: content.markStrokeWidth ?? 5, opacity: content.markOpacity ?? 1, dashed: false,
-      };
-      updateMarks([...state.marks, mark], mark.id);
+      setPendingText({ point, value: "" });
       return;
     }
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -364,6 +443,40 @@ export function TacticalBoardSlide({ content, interactive = true, onChange, pres
     setDraft(null);
   };
 
+  const marksOverlay = (
+    <svg
+      className={`tactical-board-marks tool-${tool}`}
+      viewBox={`0 0 100 ${FIELD_HEIGHT}`}
+      preserveAspectRatio="none"
+      onPointerDown={beginDrawing}
+      onPointerMove={continueDrawing}
+      onPointerUp={finishDrawing}
+      onPointerCancel={() => { setDraft(null); setMarkDrag(null); }}
+    >
+      <defs>{visibleMarks.filter((mark) => mark.type === "arrow").map((mark) => <marker key={mark.id} id={`${markerPrefix}-${mark.id}`} markerWidth="3.2" markerHeight="3.2" refX="2.8" refY="1.6" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L3.2,1.6 L0,3.2 Z" fill={mark.color} opacity={mark.opacity} /></marker>)}</defs>
+      {visibleMarks.map((mark) => {
+        const resolvedMark = resolvedTacticalMark(mark, state.positions);
+        const playerLinked = isPlayerLinkedMark(mark);
+        return <BoardMark
+          key={mark.id}
+          mark={resolvedMark}
+          markerPrefix={markerPrefix}
+          revealOpacity={draft?.id === mark.id ? 1 : (state.markOpacities[mark.id] ?? 1)}
+          revealProgress={draft?.id === mark.id ? 1 : (state.markReveals[mark.id] ?? 1)}
+          editable={interactive && tool === "move" && !playerLinked && draft?.id !== mark.id}
+          selected={interactive && content.selectedMarkId === mark.id}
+          onMove={(event) => beginMarkDrag(event, mark)}
+          onMovePoint={(event, pointIndex) => beginMarkDrag(event, mark, pointIndex)}
+          onSelect={interactive && tool === "move" ? (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            selectMark(mark.id);
+          } : undefined}
+        />;
+      })}
+    </svg>
+  );
+
   return (
     <article className="tactical-board-slide" data-slide-root>
       <div className="tactical-board-canvas">
@@ -380,42 +493,45 @@ export function TacticalBoardSlide({ content, interactive = true, onChange, pres
           labelMode="name"
           ballPosition={state.ballPosition}
           showBall={content.showBall ?? true}
-          interactive={interactive && tool === "move"}
-          onSelectPlayer={(playerId) => onChange?.({ ...content, selectedPlayerId: playerId })}
+          overlay={marksOverlay}
+          interactive={interactive && (tool === "move" || isLinkingPlayers)}
+          selectionMode={isLinkingPlayers}
+          selectedPlayerIds={isLinkingPlayers ? linkedPlayerIds : []}
+          onSelectPlayer={toggleLinkedPlayer}
           onMove={updatePlayerPosition}
           onMoveBall={updateBallPosition}
         />
 
-        <svg
-          className={`tactical-board-marks tool-${tool}`}
-          viewBox={`0 0 100 ${FIELD_HEIGHT}`}
-          preserveAspectRatio="none"
-          onPointerDown={beginDrawing}
-          onPointerMove={continueDrawing}
-          onPointerUp={finishDrawing}
-          onPointerCancel={() => { setDraft(null); setMarkDrag(null); }}
-        >
-          <defs>{visibleMarks.filter((mark) => mark.type === "arrow").map((mark) => <marker key={mark.id} id={`${markerPrefix}-${mark.id}`} markerWidth="3.2" markerHeight="3.2" refX="2.8" refY="1.6" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L3.2,1.6 L0,3.2 Z" fill={mark.color} opacity={mark.opacity} /></marker>)}</defs>
-          {visibleMarks.map((mark) => <BoardMark
-            key={mark.id}
-            mark={mark}
-            markerPrefix={markerPrefix}
-            revealOpacity={draft?.id === mark.id ? 1 : (state.markOpacities[mark.id] ?? 1)}
-            editable={interactive && tool === "move" && draft?.id !== mark.id}
-            selected={interactive && content.selectedMarkId === mark.id}
-            onMove={(event) => beginMarkDrag(event, mark)}
-            onMovePoint={(event, pointIndex) => beginMarkDrag(event, mark, pointIndex)}
-          />)}
-        </svg>
-
         {interactive && (
           <div className="tactical-board-toolbar">
-            {tools.map(({ id, label, icon: Icon }) => <button type="button" key={id} className={tool === id ? "active" : ""} onClick={() => { setTool(id); setDraft(null); setMarkDrag(null); }} title={label}><Icon size={14} /></button>)}
+            {tools.map(({ id, label, icon: Icon }) => <button type="button" key={id} className={tool === id ? "active" : ""} onClick={() => { setTool(id); setDraft(null); setMarkDrag(null); setLinkedPlayerIds([]); setPendingText(null); }} title={label}><Icon size={14} /></button>)}
             <i />
             <button type="button" onClick={() => { const marks = state.marks.slice(0, -1); updateMarks(marks, marks.some((mark) => mark.id === content.selectedMarkId) ? content.selectedMarkId : undefined); }} disabled={!state.marks.length} title="Anular último objeto"><Undo2 size={14} /></button>
             <button type="button" onClick={() => updateMarks([], undefined)} disabled={!state.marks.length} title="Limpar objetos desta etapa"><Eraser size={14} /></button>
           </div>
         )}
+
+        {interactive && isLinkingPlayers && <div className="tactical-link-builder">
+          <span>{tool === "player-polygon" ? "Polígono" : "Ligação"}: {linkedPlayerIds.length}/{minimumLinkedPlayers} jogadores</span>
+          <button type="button" onClick={createPlayerLinkedMark} disabled={linkedPlayerIds.length < minimumLinkedPlayers} title="Criar ligação"><Check size={13} /></button>
+          <button type="button" onClick={() => setLinkedPlayerIds([])} disabled={!linkedPlayerIds.length} title="Limpar seleção"><X size={13} /></button>
+        </div>}
+
+        {interactive && pendingText && <form
+          className="tactical-text-composer"
+          style={{ left: `${pendingText.point.x * 100}%`, top: `${pendingText.point.y * 100}%` }}
+          onSubmit={(event) => { event.preventDefault(); addPendingText(); }}
+        >
+          <input
+            ref={textInputRef}
+            value={pendingText.value}
+            placeholder="Escreva o texto"
+            onChange={(event) => setPendingText((current) => current ? { ...current, value: event.target.value } : current)}
+            onKeyDown={(event) => { if (event.key === "Escape") setPendingText(null); }}
+          />
+          <button type="submit" disabled={!pendingText.value.trim()} title="Adicionar texto"><Check size={13} /></button>
+          <button type="button" onClick={() => setPendingText(null)} title="Cancelar"><X size={13} /></button>
+        </form>}
 
         {interactive && <div className="tactical-movement-badge"><span>{activeMovement ? "MOVIMENTO" : "INÍCIO"}</span><strong>{state.name}</strong></div>}
       </div>

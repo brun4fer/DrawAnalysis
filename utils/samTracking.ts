@@ -145,7 +145,7 @@ export function samTrackingFrameAtTime(tracking: SamPlayerTracking | undefined, 
 }
 
 /** Reuses the leading part of a longer result without changing masks or frame correspondence. */
-export function trimSamPlayerTracking(tracking: SamPlayerTracking, duration: 2 | 3, endTime: number): SamPlayerTracking {
+export function trimSamPlayerTracking(tracking: SamPlayerTracking, duration: number, endTime: number): SamPlayerTracking {
   if (duration >= tracking.duration) return tracking;
   const frameTimes = tracking.frameTimes?.filter((time) => time <= endTime + .0005);
   const allowedIndexes = new Set(frameTimes?.map((_time, index) => index));

@@ -5,7 +5,7 @@ export interface RecordedSamClip {
   frameRate: number;
   /** One exact original-video mediaTime for every frame explicitly pushed to the MP4. */
   sourceFrameTimes: number[];
-  duration: 2 | 3;
+  duration: number;
   sourceStartTime: number;
   timings: {
     preparationMs: number;
@@ -18,6 +18,8 @@ export interface RecordedSamClip {
 }
 
 const MAX_BYTES = 4_000_000;
+const MAX_RECORDING_BITRATE = 8_500_000;
+const MIN_RECORDING_BITRATE = 1_800_000;
 
 function seekVideo(video: HTMLVideoElement, time: number) {
   if (!video.seeking && Math.abs(video.currentTime - time) < .015) return Promise.resolve();
@@ -72,7 +74,7 @@ async function forceExactPresentedFrame(video: HTMLVideoElement, targetTime: num
   return waitForPresentedFrame(video, clamped, signal);
 }
 
-export async function recordSamTrackingClip(video: HTMLVideoElement, duration: 2 | 3, sourceStartTime: number, signal?: AbortSignal): Promise<RecordedSamClip> {
+export async function recordSamTrackingClip(video: HTMLVideoElement, duration: number, sourceStartTime: number, signal?: AbortSignal): Promise<RecordedSamClip> {
   const totalStartedAt = performance.now();
   let completedClip: RecordedSamClip | undefined;
   if (typeof MediaRecorder === "undefined") throw new Error("Este browser não consegue preparar excertos MP4 para o SAM 3.1.");
@@ -92,7 +94,13 @@ export async function recordSamTrackingClip(video: HTMLVideoElement, duration: 2
   const stream = canvas.captureStream(0);
   const canvasTrack = stream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack | undefined;
   if (!canvasTrack || typeof canvasTrack.requestFrame !== "function") throw new Error("Este browser não permite enviar cada fotograma do tracking de forma explícita.");
-  const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8_500_000 });
+  // Preserve the source pixels/resolution. Only the transport bitrate is
+  // adapted for longer intervals so the MP4 remains within Vercel's 4 MB cap.
+  const targetBitrate = Math.max(
+    MIN_RECORDING_BITRATE,
+    Math.min(MAX_RECORDING_BITRATE, Math.floor(MAX_BYTES * 8 * .86 / duration)),
+  );
+  const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: targetBitrate });
   const chunks: Blob[] = [];
   const sourceFrameTimes: number[] = [];
   recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
@@ -192,7 +200,7 @@ export async function recordSamTrackingClip(video: HTMLVideoElement, duration: 2
 const clipCache = new WeakMap<HTMLVideoElement, Map<string, RecordedSamClip>>();
 const MAX_CACHED_CLIPS_PER_VIDEO = 3;
 
-function clipCacheKey(video: HTMLVideoElement, duration: 2 | 3, sourceStartTime: number) {
+function clipCacheKey(video: HTMLVideoElement, duration: number, sourceStartTime: number) {
   return [video.currentSrc || video.src, video.videoWidth, video.videoHeight, video.duration.toFixed(4), sourceStartTime.toFixed(4), duration].join("|");
 }
 
@@ -200,7 +208,7 @@ function clipCacheKey(video: HTMLVideoElement, duration: 2 | 3, sourceStartTime:
  * Reuses only a byte-identical, already prepared interval from the same video element/source.
  * The cache is memory-only, bounded and never changes the source resolution or frame count.
  */
-export async function prepareSamTrackingClip(video: HTMLVideoElement, duration: 2 | 3, sourceStartTime: number, signal?: AbortSignal) {
+export async function prepareSamTrackingClip(video: HTMLVideoElement, duration: number, sourceStartTime: number, signal?: AbortSignal) {
   if (signal?.aborted) throw new DOMException("Tracking cancelado.", "AbortError");
   const startedAt = performance.now();
   const key = clipCacheKey(video, duration, sourceStartTime);

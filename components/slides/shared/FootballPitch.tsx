@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, type CSSProperties } from "react";
+import { useRef, type CSSProperties, type ReactNode } from "react";
 import type { SlidePlayer } from "@/types/slide";
 
 interface Props {
@@ -18,6 +18,10 @@ interface Props {
   ballPosition?: { x: number; y: number };
   showBall?: boolean;
   interactive?: boolean;
+  /** Content placed above the pitch but below player and ball tokens. */
+  overlay?: ReactNode;
+  selectedPlayerIds?: string[];
+  selectionMode?: boolean;
   onMove?: (playerId: string, position: { x: number; y: number }) => void;
   onSelectPlayer?: (playerId: string) => void;
   onMoveBall?: (position: { x: number; y: number }) => void;
@@ -38,6 +42,9 @@ export function FootballPitch({
   ballPosition,
   showBall = false,
   interactive = true,
+  overlay,
+  selectedPlayerIds = [],
+  selectionMode = false,
   onMove,
   onSelectPlayer,
   onMoveBall,
@@ -88,10 +95,11 @@ export function FootballPitch({
       <div className="pitch-spot" />
       <div className="penalty-area left"><i /></div>
       <div className="penalty-area right"><i /></div>
+      {overlay}
       {players.map((player) => (
         <button
           key={player.id}
-          className={`pitch-player label-${labelMode} ${interactive ? "interactive" : ""}`}
+          className={`pitch-player label-${labelMode} ${interactive ? "interactive" : ""}${selectedPlayerIds.includes(player.id) ? " selected" : ""}`}
           style={{
             left: `${player.position.x * 100}%`,
             top: `${player.position.y * 100}%`,
@@ -101,7 +109,7 @@ export function FootballPitch({
           } as CSSProperties}
           onPointerDown={(event) => {
             onSelectPlayer?.(player.id);
-            if (onMove) beginDrag(event, (position) => onMove(player.id, position));
+            if (!selectionMode && onMove) beginDrag(event, (position) => onMove(player.id, position));
           }}
           title={`${player.number} · ${player.name}`}
         >

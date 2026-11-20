@@ -411,6 +411,7 @@ function BoardProperties({ content, onChange }: { content: BoardSlideContent; on
     const id = createId();
     const sourcePositions = lastMovement?.playerPositions ?? Object.fromEntries(content.players.map((player) => [player.id, player.position]));
     const sourceMarks = lastMovement?.marks ?? content.tacticalMarks ?? [];
+    const retainPreviousDrawings = !sourceMarks.length || window.confirm("Manter os desenhos da etapa anterior nesta nova etapa?");
     onChange({
       ...content,
       activeMovementId: id,
@@ -419,7 +420,10 @@ function BoardProperties({ content, onChange }: { content: BoardSlideContent; on
         name: `Movimento ${movements.length + 1}`,
         playerPositions: Object.fromEntries(content.players.map((player) => [player.id, sourcePositions[player.id] ?? player.position])),
         ballPosition: lastMovement?.ballPosition ?? content.ballPosition ?? { x: .5, y: .5 },
-        marks: sourceMarks.map((mark) => ({ ...mark, points: mark.points.map((point) => ({ ...point })) })),
+        marks: retainPreviousDrawings ? sourceMarks.map((mark) => ({ ...mark, points: mark.points.map((point) => ({ ...point })), playerIds: mark.playerIds ? [...mark.playerIds] : undefined })) : [],
+        // New movements intentionally play in two phases. Old projects have this
+        // field undefined and retain the original simultaneous behaviour.
+        drawAfterMovement: true,
       }],
     });
   };
@@ -477,7 +481,7 @@ function BoardProperties({ content, onChange }: { content: BoardSlideContent; on
     <Section title="MOVIMENTOS">
       <p className="property-help">Escolha uma etapa e mova os jogadores ou a bola no campo. A apresentação anima automaticamente entre as posições.</p>
       <div className="board-movement-list"><button type="button" className={!activeMovement ? "active" : ""} onClick={() => onChange({ ...content, activeMovementId: undefined })}><span>0</span><strong>Formação inicial</strong></button>{movements.map((movement, index) => <div key={movement.id} className={movement.id === content.activeMovementId ? "active" : ""}><button type="button" onClick={() => onChange({ ...content, activeMovementId: movement.id })}><span>{index + 1}</span><strong>{movement.name}</strong></button><button type="button" onClick={() => moveMovement(index, -1)} disabled={index === 0} title="Mover etapa para cima">↑</button><button type="button" onClick={() => moveMovement(index, 1)} disabled={index === movements.length - 1} title="Mover etapa para baixo">↓</button><button type="button" onClick={() => removeMovement(movement.id)} title="Remover movimento"><Trash2 size={10} /></button></div>)}</div>
-      {activeMovement && <label className="slide-prop-field vertical"><span>Nome da etapa</span><input value={activeMovement.name} onChange={(event) => updateMovement(activeMovement.id, { name: event.target.value })} /></label>}
+      {activeMovement && <><label className="slide-prop-field vertical"><span>Nome da etapa</span><input value={activeMovement.name} onChange={(event) => updateMovement(activeMovement.id, { name: event.target.value })} /></label><label className="slide-check-field"><input type="checkbox" checked={activeMovement.drawAfterMovement === true} onChange={(event) => updateMovement(activeMovement.id, { drawAfterMovement: event.target.checked })} /> Mostrar desenhos novos depois do movimento</label><p className="property-help">Nas etapas novas esta opção começa ativa. As apresentações antigas mantêm o comportamento original.</p></>}
       <button type="button" className="report-add-property" onClick={addMovement}><Plus size={12} /> Adicionar movimento</button>
       <label className="slide-prop-field"><span>Tempo do movimento</span><div><input type="number" min={.15} max={10} step={.1} value={content.movementDuration ?? 1.2} onChange={(event) => onChange({ ...content, movementDuration: Math.max(.15, Number(event.target.value)) })} /><i>s</i></div></label>
       <label className="slide-prop-field"><span>Pausa entre etapas</span><div><input type="number" min={0} max={10} step={.1} value={content.movementHoldDuration ?? .65} onChange={(event) => onChange({ ...content, movementHoldDuration: Math.max(0, Number(event.target.value)) })} /><i>s</i></div></label>
@@ -490,7 +494,11 @@ function BoardProperties({ content, onChange }: { content: BoardSlideContent; on
       </div>}
       {selectedMark?.type === "text" && <label className="slide-prop-field vertical"><span>Texto</span><input value={selectedMark.text ?? ""} onChange={(event) => updateSelectedMark({ text: event.target.value })} /></label>}
       <ColorPaletteField label="Traço" value={selectedMark?.color ?? content.markColor ?? "#fff23d"} onChange={(color) => selectedMark ? updateSelectedMark({ color }) : onChange({ ...content, markColor: color })} />
-      <ColorPaletteField label="Preenchimento" value={selectedMark?.fillColor ?? content.markFillColor ?? "#fff23d"} onChange={(fillColor) => selectedMark ? updateSelectedMark({ fillColor }) : onChange({ ...content, markFillColor: fillColor })} opacity={selectedMark?.opacity ?? content.markOpacity ?? 1} onOpacityChange={(opacity) => selectedMark ? updateSelectedMark({ opacity }) : onChange({ ...content, markOpacity: opacity })} />
+      <ColorPaletteField label="Preenchimento" value={selectedMark?.fillColor ?? content.markFillColor ?? "#fff23d"} onChange={(fillColor) => selectedMark ? updateSelectedMark({ fillColor }) : onChange({ ...content, markFillColor: fillColor })} />
+      <label className="slide-prop-field"><span>Opacidade</span><div><input type="range" min={0} max={1} step={.05} value={selectedMark?.opacity ?? content.markOpacity ?? 1} onChange={(event) => {
+        const opacity = Number(event.target.value);
+        selectedMark ? updateSelectedMark({ opacity }) : onChange({ ...content, markOpacity: opacity });
+      }} /><i>{Math.round((selectedMark?.opacity ?? content.markOpacity ?? 1) * 100)}%</i></div></label>
       <label className="slide-prop-field"><span>Espessura</span><div><input type="range" min={1} max={16} step={1} value={selectedMark?.strokeWidth ?? content.markStrokeWidth ?? 5} onChange={(event) => selectedMark ? updateSelectedMark({ strokeWidth: Number(event.target.value) }) : onChange({ ...content, markStrokeWidth: Number(event.target.value) })} /><i>{selectedMark?.strokeWidth ?? content.markStrokeWidth ?? 5}px</i></div></label>
       <label className="slide-check-field"><input type="checkbox" checked={selectedMark?.dashed ?? content.markDashed ?? false} onChange={(event) => selectedMark ? updateSelectedMark({ dashed: event.target.checked }) : onChange({ ...content, markDashed: event.target.checked })} /> Linha tracejada</label>
       <p className="property-help">{isWrittenReportProduct(APP_PRODUCT.variant) ? "No Relatório Escrito, a barra do campo também inclui cone e escada plana. Selecione um e clique no campo para o colocar; depois pode movê-lo ou redimensioná-lo pelos pontos verdes. " : ""}Use a barra sobre o campo para criar objetos. Com a seta selecionada, clique num objeto para o mover, alterar o tamanho pelos pontos verdes ou editar as propriedades aqui.</p>

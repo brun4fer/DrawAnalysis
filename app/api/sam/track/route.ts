@@ -3,6 +3,7 @@ import { MetaSamError } from "@/lib/metaSamServer";
 import { MAX_SAM_TRACK_VIDEO_BYTES, requestMetaSamTracking, validateTrackPrompt } from "@/lib/metaSamTrackingServer";
 import type { SamErrorResponse } from "@/types/sam";
 import type { SamTrackingStreamEvent } from "@/types/samTracking";
+import { isSupportedSamTrackingDuration } from "@/lib/samTrackingLimits";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -43,7 +44,7 @@ export async function POST(request: Request) {
     if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 16_384 || height > 16_384
       || !Number.isFinite(frameRate) || frameRate < 1 || frameRate > 240
       || !Number.isInteger(frameCount) || frameCount < 2 || frameCount > 1_000
-      || (duration !== 2 && duration !== 3)) {
+      || !isSupportedSamTrackingDuration(duration)) {
       throw new MetaSamError("As propriedades do excerto são inválidas.", "INVALID_TRACK_METADATA", 400, false);
     }
     let promptValue: unknown;

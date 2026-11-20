@@ -21,6 +21,7 @@ import { SamClientError, segmentFrameAtPoint, segmentFrameInBox } from "@/lib/sa
 import { prepareSamTrackingClip } from "@/lib/samClipRecorder";
 import { trackSamPlayer } from "@/lib/samTrackingClient";
 import { buildSamPlayerTracking, trimSamPlayerTracking } from "@/utils/samTracking";
+import { isSupportedSamTrackingDuration, MAX_SAM_TRACKING_SECONDS } from "@/lib/samTrackingLimits";
 import { applyFavoriteData } from "@/utils/toolFavorites";
 import { DrawingShape } from "./DrawingShape";
 import { ManualPlayerMaskEditor } from "./ManualPlayerMaskEditor";
@@ -52,7 +53,8 @@ interface SamMaskSession {
   frame: HTMLCanvasElement;
   sample?: PlayerTrack["samples"][number];
   trackId?: string;
-  trackingDuration?: 2 | 3;
+  trackingDuration?: number;
+  trackingTrackIds?: string[];
   message?: string;
   retryable?: boolean;
   selectionMode?: "point" | "box";
@@ -328,6 +330,12 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
   const activeVideoContent = activeSlide?.content.kind === "video" ? activeSlide.content : null;
   const activeFreezeFrames = activeVideoContent?.freezeFrames;
   const activeFreezeFramesRef = useRef(activeFreezeFrames);
+  const samTrackingCandidates = samMaskSession?.sample?.mask
+    ? (activeVideoContent?.playerTracks ?? []).flatMap((track) => {
+        const seed = track.samples.find((candidate) => Math.abs(candidate.time - samMaskSession.sample!.time) < .05 && candidate.mask);
+        return seed ? [{ id: track.id, name: track.name }] : [];
+      })
+    : [];
 
   useEffect(() => { activeFreezeFramesRef.current = activeFreezeFrames; }, [activeFreezeFrames]);
 
@@ -487,8 +495,10 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         labelOffsetY: sample.bbox.height + clamp(labelFontSize * .9, .012, .028),
         label: { visible: true, number: "", position: "", name: track.name.toUpperCase(), color: "#ffffff", fontSize: labelFontSize },
         ringDesign: showMovementArrow ? "pitchSegmented" : "broadcast",
-        spinEnabled: !showMovementArrow,
-        spinSpeed: 1,
+        // SAM-associated rings remain independent from the movement arrow and
+        // keep their own subtle rotation while following the player.
+        spinEnabled: true,
+        spinSpeed: showMovementArrow ? .58 : 1,
         showRing: true,
         splashEnabled: false,
         splashSpeed: 1,
@@ -659,7 +669,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     samAbortRef.current?.abort();
     samAbortRef.current = null;
     setSamMaskSession((session) => session?.trackId && session.sample
-      ? { ...session, phase: "confirmed", message: "Identificação guardada · escolha 2 ou 3 segundos para tentar novamente" }
+      ? { ...session, phase: "confirmed", message: `Identificação guardada · escolha entre 1 e ${MAX_SAM_TRACKING_SECONDS} segundos para tentar novamente` }
       : null);
   };
 
@@ -804,10 +814,28 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       { kind: "identifyPlayer", center: sample.foot, radiusX: dimensions.radiusX, radiusY: dimensions.radiusY },
       { target: { kind: "player", trackId: track.id, anchor: "feet", referenceFoot: sample.foot }, trackingEnabled: false, keepTool: true },
     );
-    setSamMaskSession({ ...session, phase: "confirmed", trackId: track.id, message: `${track.name} · máscara guardada · tracking opcional` });
+    setSamMaskSession({
+      ...session,
+      phase: "confirmed",
+      trackId: track.id,
+      trackingTrackIds: [track.id],
+      message: `${track.name} · máscara guardada · tracking opcional`,
+    });
   };
 
-  const startSamTracking = async (trackingDuration: 2 | 3) => {
+  const toggleSamTrackingPlayer = (candidateTrackId: string) => {
+    setSamMaskSession((session) => {
+      if (!session?.trackId || session.phase === "tracking") return session;
+      const selected = new Set(session.trackingTrackIds?.length ? session.trackingTrackIds : [session.trackId]);
+      // The just-confirmed player anchors this review panel and remains selected.
+      if (candidateTrackId === session.trackId) selected.add(candidateTrackId);
+      else if (selected.has(candidateTrackId)) selected.delete(candidateTrackId);
+      else selected.add(candidateTrackId);
+      return { ...session, trackingTrackIds: [...selected] };
+    });
+  };
+
+  const startSingleSamTracking = async (trackingDuration: number) => {
     const session = samMaskSession;
     const sample = session?.sample;
     const trackId = session?.trackId;
@@ -907,14 +935,150 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     }
   };
 
-  const playSamTracking = async () => {
-    const trackId = samMaskSession?.trackId;
+  const startSamTracking = async (trackingDuration: number) => {
+    const session = samMaskSession;
+    const primarySample = session?.sample;
+    const primaryTrackId = session?.trackId;
     const video = getVideoElement?.();
-    const tracking = activeVideoContent?.playerTracks?.find((track) => track.id === trackId)?.samTracking;
-    if (!video || !tracking) return;
-    video.currentTime = tracking.sourceStartTime;
+    if (!session || !primarySample?.mask || !primaryTrackId || !video || session.phase === "tracking") return;
+    if (!isSupportedSamTrackingDuration(trackingDuration)) {
+      setSamMaskSession({ ...session, message: `Escolha uma duração inteira entre 1 e ${MAX_SAM_TRACKING_SECONDS} segundos.` });
+      return;
+    }
+    const selectedIds = [...new Set(session.trackingTrackIds?.length ? session.trackingTrackIds : [primaryTrackId])];
+    if (selectedIds.length === 1) {
+      await startSingleSamTracking(trackingDuration);
+      return;
+    }
+
+    const sourceStart = timelineTimeToSource(primarySample.time, activeFreezeFrames).sourceTime;
+    const works = selectedIds.flatMap((id) => {
+      const track = activeVideoContent?.playerTracks?.find((candidate) => candidate.id === id);
+      const sample = id === primaryTrackId
+        ? primarySample
+        : track?.samples.find((candidate) => Math.abs(candidate.time - primarySample.time) < .05 && candidate.mask);
+      return track && sample?.mask ? [{ id, track, sample }] : [];
+    });
+    if (!works.length) {
+      setSamMaskSession({ ...session, message: "Nenhum dos jogadores selecionados tem uma máscara confirmada neste fotograma." });
+      return;
+    }
+
+    const controller = new AbortController();
+    samAbortRef.current?.abort();
+    samAbortRef.current = controller;
+    const startedAt = performance.now();
+    const completed: string[] = [];
+    const failures: string[] = [];
+    setSamMaskSession({ ...session, phase: "tracking", trackingDuration, message: `A preparar ${trackingDuration} s para ${works.length} jogadores…` });
+    try {
+      video.pause();
+      const clip = await prepareSamTrackingClip(video, trackingDuration, sourceStart, controller.signal);
+      let aggregate = {
+        requestParseMs: 0, metaUploadMs: 0, metaProcessingMs: 0, maskConversionMs: 0,
+        browserTransferMs: 0, responseOverheadMs: 0, clientConversionMs: 0,
+      };
+      for (let index = 0; index < works.length; index += 1) {
+        if (controller.signal.aborted || samAbortRef.current !== controller) return;
+        const { id, track, sample } = works[index];
+        const existing = track.samTracking;
+        if (existing?.frameTimes?.length && existing.duration >= trackingDuration && Math.abs(existing.sourceStartTime - sourceStart) < .04) {
+          const reused = existing.duration === trackingDuration
+            ? existing
+            : trimSamPlayerTracking(existing, trackingDuration, sourceTimeToTimeline(sourceStart + trackingDuration, activeFreezeFrames));
+          if (reused !== existing) setPlayerSamTracking(id, reused);
+          completed.push(track.name);
+          continue;
+        }
+        const bounds = sample.mask!.bounds;
+        const seed = id === primaryTrackId
+          ? session.click
+          : { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+        setSamMaskSession((current) => current?.trackId === primaryTrackId && current.phase === "tracking"
+          ? { ...current, message: `SAM 3.1 · jogador ${index + 1}/${works.length} · ${track.name}` }
+          : current);
+        try {
+          const execution = await trackSamPlayer(clip, {
+            point: {
+              x: Math.max(0, Math.min(clip.width - 1, Math.floor(seed.x * clip.width))),
+              y: Math.max(0, Math.min(clip.height - 1, Math.floor(seed.y * clip.height))),
+            },
+            bounds: {
+              left: Math.max(0, Math.floor(bounds.x * clip.width)),
+              top: Math.max(0, Math.floor(bounds.y * clip.height)),
+              right: Math.min(clip.width, Math.ceil((bounds.x + bounds.width) * clip.width)),
+              bottom: Math.min(clip.height, Math.ceil((bounds.y + bounds.height) * clip.height)),
+            },
+          }, {
+            signal: controller.signal,
+            onProgress: (progress) => setSamMaskSession((current) => current?.trackId === primaryTrackId && current.phase === "tracking"
+              ? { ...current, message: `SAM 3.1 · jogador ${index + 1}/${works.length} · ${trackingProgressMessage(progress)}` }
+              : current),
+          });
+          if (controller.signal.aborted || samAbortRef.current !== controller) return;
+          const conversionStartedAt = performance.now();
+          const tracking = buildSamPlayerTracking(execution.result, clip.sourceStartTime, sample.bbox, activeFreezeFrames, clip.sourceFrameTimes);
+          if (!tracking.frames.length) throw new SamClientError("O jogador perdeu a identidade logo no início do intervalo.", "IDENTITY_LOST", true);
+          setPlayerSamTracking(id, tracking);
+          completed.push(track.name);
+          const server = execution.result.timings;
+          const requestParseMs = server?.requestParseMs ?? 0;
+          const serverStreamMs = (server?.metaUploadMs ?? 0) + (server?.metaProcessingMs ?? 0) + (server?.maskConversionMs ?? 0);
+          aggregate = {
+            requestParseMs: aggregate.requestParseMs + requestParseMs,
+            metaUploadMs: aggregate.metaUploadMs + (server?.metaUploadMs ?? 0),
+            metaProcessingMs: aggregate.metaProcessingMs + (server?.metaProcessingMs ?? 0),
+            maskConversionMs: aggregate.maskConversionMs + (server?.maskConversionMs ?? 0),
+            browserTransferMs: aggregate.browserTransferMs + Math.max(0, execution.timings.browserUploadMs - requestParseMs),
+            responseOverheadMs: aggregate.responseOverheadMs + Math.max(0, execution.timings.responseStreamMs - serverStreamMs),
+            clientConversionMs: aggregate.clientConversionMs + performance.now() - conversionStartedAt,
+          };
+        } catch (error) {
+          if (controller.signal.aborted) return;
+          failures.push(`${track.name}: ${error instanceof Error ? error.message : "falhou"}`);
+        }
+      }
+      if (!completed.length) throw new Error(failures[0] ?? "Não foi possível concluir o tracking SAM 3.1.");
+      setSamMaskSession({
+        ...session,
+        phase: "tracked",
+        trackingDuration,
+        message: `${completed.length}/${works.length} jogadores sincronizados${failures.length ? ` · ${failures.length} falhou` : ""}`,
+        performance: {
+          totalMs: performance.now() - startedAt,
+          clipPreparationMs: clip.timings.preparationMs,
+          clipCaptureMs: clip.timings.captureMs,
+          clipFinalizeMs: clip.timings.finalizeMs,
+          clipRestoreMs: clip.timings.restoreMs,
+          ...aggregate,
+          previewPreparationMs: 0,
+          reusedClip: clip.timings.reused,
+          reusedTracking: false,
+        },
+      });
+    } catch (error) {
+      if (controller.signal.aborted || samAbortRef.current !== controller) return;
+      const message = error instanceof Error ? error.message : "Não foi possível concluir o tracking SAM 3.1.";
+      setSamMaskSession({ ...session, phase: "confirmed", trackingDuration, message });
+    } finally {
+      if (samAbortRef.current === controller) samAbortRef.current = null;
+    }
+  };
+
+  const playSamTracking = async () => {
+    const trackIds = samMaskSession?.trackingTrackIds?.length
+      ? samMaskSession.trackingTrackIds
+      : samMaskSession?.trackId ? [samMaskSession.trackId] : [];
+    const video = getVideoElement?.();
+    const trackings = (activeVideoContent?.playerTracks ?? [])
+      .filter((track) => trackIds.includes(track.id))
+      .flatMap((track) => track.samTracking ? [track.samTracking] : []);
+    if (!video || !trackings.length) return;
+    const sourceStartTime = Math.min(...trackings.map((tracking) => tracking.sourceStartTime));
+    const sourceEndTime = Math.max(...trackings.map((tracking) => tracking.sourceStartTime + tracking.duration));
+    video.currentTime = sourceStartTime;
     const stopAtEnd = () => {
-      if (video.currentTime < tracking.sourceStartTime + tracking.duration - .01) return;
+      if (video.currentTime < sourceEndTime - .01) return;
       video.pause();
       video.removeEventListener("timeupdate", stopAtEnd);
     };
@@ -1803,6 +1967,10 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         onRepeat={repeatSamIdentification}
         onTrack={startSamTracking}
         onPlay={playSamTracking}
+        trackingCandidates={samTrackingCandidates}
+        selectedTrackingIds={samMaskSession.trackingTrackIds ?? (samMaskSession.trackId ? [samMaskSession.trackId] : [])}
+        primaryTrackingId={samMaskSession.trackId}
+        onToggleTrackingPlayer={toggleSamTrackingPlayer}
       />
     )}
     {detectionEffect && (

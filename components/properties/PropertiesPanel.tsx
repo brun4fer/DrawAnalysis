@@ -268,7 +268,7 @@ export function PropertiesPanel() {
               <FieldLabel>Modelo</FieldLabel>
               <select value={object.data.ringDesign ?? "segmented"} onChange={(event) => {
                 const ringDesign = event.target.value as PlayerRingDesign;
-                updatePlayerRingAppearance({ ringDesign, ...(ringDesign === "pitchSegmented" ? { spinEnabled: false, splashEnabled: false } : {}) });
+                updatePlayerRingAppearance({ ringDesign, ...(ringDesign === "pitchSegmented" ? { splashEnabled: false } : {}) });
               }}>
                 <option value="segmented">Segmentado 3D</option>
                 <option value="doubleLine">Duplo fino</option>

@@ -66,7 +66,7 @@ export async function requestMetaSamTracking(input: {
   frame: { width: number; height: number };
   frameRate: number;
   frameCount: number;
-  duration: 2 | 3;
+  duration: number;
   prompt: SamTrackPrompt;
 }, apiKey: string, signal: AbortSignal, onProgress?: (progress: SamTrackingProgress) => void): Promise<SamTrackResult> {
   const serverStartedAt = performance.now();

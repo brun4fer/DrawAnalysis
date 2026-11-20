@@ -20,7 +20,7 @@ export interface SamTrackFrameResult {
 export interface SamTrackResult {
   frame: { width: number; height: number };
   frameRate: number;
-  duration: 2 | 3;
+  duration: number;
   frames: SamTrackFrameResult[];
   requestId?: string;
   timings?: SamTrackServerTimings;

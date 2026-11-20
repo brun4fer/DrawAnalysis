@@ -23,7 +23,7 @@ export interface SlidePlayer {
   size?: number;
 }
 
-export type TacticalBoardMarkType = "arrow" | "line" | "circle" | "rectangle" | "zone" | "free" | "text" | "cone" | "flat-ladder";
+export type TacticalBoardMarkType = "arrow" | "line" | "circle" | "rectangle" | "zone" | "free" | "text" | "cone" | "flat-ladder" | "player-link" | "player-polygon";
 
 export interface TacticalBoardMark {
   id: string;
@@ -35,6 +35,12 @@ export interface TacticalBoardMark {
   opacity: number;
   dashed?: boolean;
   text?: string;
+  /**
+   * Optional stable player references used by the linked line and polygon
+   * tools. Coordinates remain stored in `points` as a safe visual fallback
+   * for old projects or if a referenced player is later removed.
+   */
+  playerIds?: string[];
 }
 
 export interface TacticalMovement {
@@ -43,6 +49,11 @@ export interface TacticalMovement {
   playerPositions: Record<string, Point>;
   ballPosition: Point;
   marks: TacticalBoardMark[];
+  /**
+   * New movements can reveal their drawings after player motion finishes.
+   * Undefined deliberately preserves the historical, during-motion reveal.
+   */
+  drawAfterMovement?: boolean;
 }
 
 export interface CaptionSegment {
