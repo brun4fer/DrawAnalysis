@@ -6,11 +6,6 @@ import type { PlayerTrackSample, Point } from "@/types/drawing";
 import type { SamTrackingPerformanceReport } from "@/types/samTracking";
 import { MAX_SAM_TRACKING_SECONDS, MIN_SAM_TRACKING_SECONDS } from "@/lib/samTrackingLimits";
 
-export interface SamTrackingCandidate {
-  id: string;
-  name: string;
-}
-
 interface Props {
   phase: "loading" | "review" | "error" | "confirmed" | "tracking" | "tracked";
   click: Point;
@@ -24,10 +19,7 @@ interface Props {
   onTrack: (duration: number) => void;
   onPlay: () => void;
   performance?: SamTrackingPerformanceReport;
-  trackingCandidates?: SamTrackingCandidate[];
   selectedTrackingIds?: string[];
-  primaryTrackingId?: string;
-  onToggleTrackingPlayer?: (trackId: string) => void;
 }
 
 function formatDuration(value: number) {
@@ -37,7 +29,7 @@ function formatDuration(value: number) {
 const subscribeToDebugMode = () => () => undefined;
 const performanceDebugSnapshot = () => new URLSearchParams(window.location.search).has("samTrackingTimings");
 
-export function SamMaskReview({ phase, click, sample, message, retryable, onConfirm, onCancel, onCancelTracking, onRepeat, onTrack, onPlay, performance, trackingCandidates = [], selectedTrackingIds = [], primaryTrackingId, onToggleTrackingPlayer }: Props) {
+export function SamMaskReview({ phase, click, sample, message, retryable, onConfirm, onCancel, onCancelTracking, onRepeat, onTrack, onPlay, performance, selectedTrackingIds = [] }: Props) {
   const showPerformanceDebug = useSyncExternalStore(subscribeToDebugMode, performanceDebugSnapshot, () => false);
   const [customDuration, setCustomDuration] = useState("4");
   const mask = sample?.mask;
@@ -120,23 +112,10 @@ export function SamMaskReview({ phase, click, sample, message, retryable, onConf
             : <button type="button" onClick={onCancel}><X size={14} /> Fechar</button>}
         </div>
       </div>
-      {(phase === "confirmed" || phase === "tracked") && trackingCandidates.length > 1 && (
+      {(phase === "confirmed" || phase === "tracked") && selectedTrackingIds.length > 1 && (
         <div className="sam-tracking-player-picker" onPointerDown={(event) => event.stopPropagation()}>
-          <span>Jogadores para tracking ({selectedTrackingIds.length})</span>
-          <div>
-            {trackingCandidates.map((candidate) => (
-              <label key={candidate.id}>
-                <input
-                  type="checkbox"
-                  checked={selectedTrackingIds.includes(candidate.id)}
-                  disabled={candidate.id === primaryTrackingId}
-                  onChange={() => onToggleTrackingPlayer?.(candidate.id)}
-                />
-                {candidate.name}{candidate.id === primaryTrackingId ? " (principal)" : ""}
-              </label>
-            ))}
-          </div>
-          <small>Processados por ordem, com o mesmo intervalo e fotograma inicial.</small>
+          <span>{selectedTrackingIds.length} jogadores selecionados</span>
+          <small>As máscaras foram confirmadas no mesmo fotograma e serão processadas por ordem, com o mesmo intervalo.</small>
         </div>
       )}
       {phase === "tracked" && performance && showPerformanceDebug && (

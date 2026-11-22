@@ -60,6 +60,16 @@ interface SamMaskSession {
   selectionMode?: "point" | "box";
   performance?: SamTrackingPerformanceReport;
 }
+interface SamTrackingSelection {
+  trackId: string;
+  sample: PlayerTrack["samples"][number];
+  frame: HTMLCanvasElement;
+  click: Point;
+}
+interface SamTrackingBatch {
+  time: number;
+  selections: SamTrackingSelection[];
+}
 
 const labelFor = (kind: DrawingObject["type"]) => ({
   identifyPlayer: "Jogador", playerLabel: "Etiqueta", playerRing: "Ring", ghost: "Ghost", spotlight: "Spotlight", zoom: "Zoom", ellipse: "Círculo", arrow: "Seta", longBallArrow: "Bola longa", line: "Linha", glimpse: "Visão", triangle: "Triângulo",
@@ -315,6 +325,9 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
   const [pendingGhost, setPendingGhost] = useState<IdentifiedPlayer | null>(null);
   const [manualMaskSession, setManualMaskSession] = useState<ManualMaskSession | null>(null);
   const [samMaskSession, setSamMaskSession] = useState<SamMaskSession | null>(null);
+  // Confirmed PlayerTracks are persisted separately. This state only retains
+  // the masks the analyst wants to process together in one tracking request.
+  const [samTrackingBatch, setSamTrackingBatch] = useState<SamTrackingBatch | null>(null);
   const [samSelectionMode, setSamSelectionMode] = useState<"point" | "box">("point");
   const [samBoxDraft, setSamBoxDraft] = useState<{ start: Point; current: Point } | null>(null);
   const [ghostTransformPreview, setGhostTransformPreview] = useState<Record<string, ObjectTransform>>({});
@@ -330,13 +343,6 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
   const activeVideoContent = activeSlide?.content.kind === "video" ? activeSlide.content : null;
   const activeFreezeFrames = activeVideoContent?.freezeFrames;
   const activeFreezeFramesRef = useRef(activeFreezeFrames);
-  const samTrackingCandidates = samMaskSession?.sample?.mask
-    ? (activeVideoContent?.playerTracks ?? []).flatMap((track) => {
-        const seed = track.samples.find((candidate) => Math.abs(candidate.time - samMaskSession.sample!.time) < .05 && candidate.mask);
-        return seed ? [{ id: track.id, name: track.name }] : [];
-      })
-    : [];
-
   useEffect(() => { activeFreezeFramesRef.current = activeFreezeFrames; }, [activeFreezeFrames]);
 
   useEffect(() => {
@@ -347,6 +353,12 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     const animationFrame = window.requestAnimationFrame(() => setSamMaskSession(null));
     return () => window.cancelAnimationFrame(animationFrame);
   }, [samMaskSession, tool]);
+
+  useEffect(() => {
+    if (tool === "sam31") return;
+    const animationFrame = window.requestAnimationFrame(() => setSamTrackingBatch(null));
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [tool]);
 
   useEffect(() => {
     if (tool === "sam31") return;
@@ -662,6 +674,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     samAbortRef.current = null;
     setSamBoxDraft(null);
     setSamMaskSession(null);
+    setSamTrackingBatch(null);
     setTool("select");
   };
 
@@ -814,25 +827,41 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       { kind: "identifyPlayer", center: sample.foot, radiusX: dimensions.radiusX, radiusY: dimensions.radiusY },
       { target: { kind: "player", trackId: track.id, anchor: "feet", referenceFoot: sample.foot }, trackingEnabled: false, keepTool: true },
     );
+    const selection: SamTrackingSelection = { trackId: track.id, sample, frame: session.frame, click: session.click };
+    setSamTrackingBatch((current) => {
+      // One request tracks one source clip. Seeking to another moment starts a
+      // fresh batch instead of mixing masks that do not share a start frame.
+      if (!current || Math.abs(current.time - sample.time) >= .05) {
+        return { time: sample.time, selections: [selection] };
+      }
+      return { ...current, selections: [...current.selections, selection] };
+    });
+    // Return to the paused frame to select another player. The toolbar keeps
+    // confirmed masks selected until the analyst starts the batch.
+    setSamMaskSession(null);
+    setDetectionMessage(`${track.name} · máscara confirmada e selecionada para tracking`);
+    window.setTimeout(() => setDetectionMessage(null), 1800);
+  };
+
+  const openSamTrackingBatch = () => {
+    const selections = samTrackingBatch?.selections ?? [];
+    const primary = selections[0];
+    if (!primary) return;
     setSamMaskSession({
-      ...session,
       phase: "confirmed",
-      trackId: track.id,
-      trackingTrackIds: [track.id],
-      message: `${track.name} · máscara guardada · tracking opcional`,
+      click: primary.click,
+      frame: primary.frame,
+      sample: primary.sample,
+      trackId: primary.trackId,
+      trackingTrackIds: selections.map((selection) => selection.trackId),
+      message: `${selections.length} máscara${selections.length === 1 ? "" : "s"} confirmada${selections.length === 1 ? "" : "s"} · escolha a duração do tracking`,
     });
   };
 
-  const toggleSamTrackingPlayer = (candidateTrackId: string) => {
-    setSamMaskSession((session) => {
-      if (!session?.trackId || session.phase === "tracking") return session;
-      const selected = new Set(session.trackingTrackIds?.length ? session.trackingTrackIds : [session.trackId]);
-      // The just-confirmed player anchors this review panel and remains selected.
-      if (candidateTrackId === session.trackId) selected.add(candidateTrackId);
-      else if (selected.has(candidateTrackId)) selected.delete(candidateTrackId);
-      else selected.add(candidateTrackId);
-      return { ...session, trackingTrackIds: [...selected] };
-    });
+  const clearSamTrackingBatch = () => {
+    setSamTrackingBatch(null);
+    setDetectionMessage("Seleção de máscaras limpa.");
+    window.setTimeout(() => setDetectionMessage(null), 1600);
   };
 
   const startSingleSamTracking = async (trackingDuration: number) => {
@@ -1902,6 +1931,36 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         ))}
         {tool === "text" && <Text text="Clique para adicionar texto" x={16} y={16} fill="#fff" opacity={0.5} fontSize={13} />}
         {tool === "line" && <Text text="Clique nos jogadores/pontos · duplo clique ou Enter para terminar" x={16} y={16} fill="#fff" opacity={0.68} fontSize={13} />}
+        {tool === "sam31" && !samMaskSession && samTrackingBatch?.selections.map((selection, index) => (
+          <Group key={selection.trackId} listening={false}>
+            <Rect
+              x={selection.sample.bbox.x * width}
+              y={selection.sample.bbox.y * height}
+              width={selection.sample.bbox.width * width}
+              height={selection.sample.bbox.height * height}
+              stroke="#a3ff12"
+              strokeWidth={1.5}
+              dash={[5, 4]}
+              cornerRadius={3}
+            />
+            <Rect
+              x={selection.sample.bbox.x * width}
+              y={Math.max(2, selection.sample.bbox.y * height - 17)}
+              width={16}
+              height={15}
+              fill="#a3ff12"
+              cornerRadius={3}
+            />
+            <Text
+              text={String(index + 1)}
+              x={selection.sample.bbox.x * width + 5}
+              y={Math.max(3, selection.sample.bbox.y * height - 15)}
+              fill="#0a1308"
+              fontSize={9}
+              fontStyle="bold"
+            />
+          </Group>
+        ))}
       </Layer>
     </Stage>
     <PlayerOcclusionCanvas
@@ -1922,7 +1981,9 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       <div className="sam-selection-mode" onPointerDown={(event) => event.stopPropagation()}>
         <div>
           <strong>SAM 3.1</strong>
-          <small>{samSelectionMode === "box" ? "Arraste uma caixa à volta do corpo completo" : "Clique no centro do jogador"}</small>
+          <small>{samTrackingBatch?.selections.length
+            ? `${samTrackingBatch.selections.length} máscara${samTrackingBatch.selections.length === 1 ? "" : "s"} selecionada${samTrackingBatch.selections.length === 1 ? "" : "s"} · selecione mais ou confirme para tracking`
+            : samSelectionMode === "box" ? "Arraste uma caixa à volta do corpo completo" : "Clique no centro do jogador"}</small>
         </div>
         <div className="sam-selection-mode-actions">
           <button
@@ -1935,6 +1996,10 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
             className={samSelectionMode === "box" ? "active" : ""}
             onClick={() => { setSamBoxDraft(null); setSamSelectionMode("box"); }}
           >Selecionar por caixa</button>
+          {samTrackingBatch?.selections.length ? <>
+            <button type="button" className="active" onClick={openSamTrackingBatch}>Confirmar máscaras ({samTrackingBatch.selections.length})</button>
+            <button type="button" onClick={clearSamTrackingBatch}>Limpar</button>
+          </> : null}
         </div>
       </div>
     )}
@@ -1968,10 +2033,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         onRepeat={repeatSamIdentification}
         onTrack={startSamTracking}
         onPlay={playSamTracking}
-        trackingCandidates={samTrackingCandidates}
         selectedTrackingIds={samMaskSession.trackingTrackIds ?? (samMaskSession.trackId ? [samMaskSession.trackId] : [])}
-        primaryTrackingId={samMaskSession.trackId}
-        onToggleTrackingPlayer={toggleSamTrackingPlayer}
       />
     )}
     {detectionEffect && (
