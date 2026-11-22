@@ -69,7 +69,7 @@ export function DrawingPreviewCanvas({ drawings, playerTracks, currentTime, widt
         ))}
       </Layer>
     </Stage>
-    <PlayerOcclusionCanvas ref={occlusionCanvasRef} drawings={drawings} playerTracks={playerTracks} width={width} height={height} getVideoElement={getVideoElement} />
+    <PlayerOcclusionCanvas ref={occlusionCanvasRef} drawings={drawings} playerTracks={playerTracks} currentTime={currentTime} width={width} height={height} getVideoElement={getVideoElement} />
     <ZoomLensCanvas ref={zoomCanvasRef} drawings={drawings} currentTime={currentTime} width={width} height={height} getVideoElement={getVideoElement} />
     <PlayerLabelOverlay ref={labelStageRef} drawings={drawings} playerTracks={playerTracks} currentTime={currentTime} width={width} height={height} />
     </>

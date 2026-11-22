@@ -6,9 +6,9 @@ import { ensureMediaWorkspace } from "@/lib/media-workspace";
 export async function GET() {
   try {
     const account = await requireWorkspace();
-    const { mediaWorkspace } = await ensureMediaWorkspace(account);
+    const { appId, mediaWorkspace } = await ensureMediaWorkspace(account);
     const records = await mediaPrisma.mediaAsset.findMany({
-      where: { mediaWorkspaceId: mediaWorkspace.id, storageStatus: "READY" },
+      where: { mediaWorkspaceId: mediaWorkspace.id, createdByAppId: appId, storageStatus: "READY" },
       select: {
         id: true,
         fileName: true,

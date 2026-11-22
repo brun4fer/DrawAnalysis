@@ -1,7 +1,6 @@
 "use client";
 
-import { forwardRef, useCallback, useEffect, useState } from "react";
-import { useEditorStore } from "@/store/useEditorStore";
+import { forwardRef, useCallback, useEffect, useRef, useState } from "react";
 import type { DrawingObject, ObjectTransform, PlayerTrack } from "@/types/drawing";
 import { drawMovedPlayer, drawPlayerForeground, hidePlayerOriginal, shouldCompositePlayerForeground } from "@/utils/playerOcclusion";
 import { samplePlayerTrackAtTime, targetAvailableAtTime } from "@/utils/playerTracking";
@@ -73,15 +72,19 @@ interface Props {
   playerTracks?: PlayerTrack[];
   width: number;
   height: number;
+  /** Timeline owned by the caller (preview/export/editor). */
+  currentTime?: number;
   getVideoElement?: () => HTMLVideoElement | null;
   transformOverrides?: Record<string, ObjectTransform>;
   editingPreview?: boolean;
 }
 
-export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(function PlayerOcclusionCanvas({ drawings, playerTracks, width, height, getVideoElement, transformOverrides, editingPreview = false }, ref) {
+export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(function PlayerOcclusionCanvas({ drawings, playerTracks, width, height, currentTime, getVideoElement, transformOverrides, editingPreview = false }, ref) {
   const [maskRevision, setMaskRevision] = useState(0);
+  const lastRenderTimeRef = useRef(0);
   const redrawLoadedMask = useCallback(() => setMaskRevision((revision) => revision + 1), []);
   const drawAtTime = useCallback((renderTime: number) => {
+    lastRenderTimeRef.current = renderTime;
     const canvas = typeof ref === "object" ? ref?.current : null;
     const video = getVideoElement?.();
     const context = canvas?.getContext("2d");
@@ -164,14 +167,52 @@ export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(functi
         // The next video frame redraws this overlay automatically.
       }
     }
-  }, [drawings, editingPreview, getVideoElement, height, maskRevision, playerTracks, redrawLoadedMask, ref, transformOverrides, width]);
+  }, [drawings, editingPreview, getVideoElement, height, playerTracks, redrawLoadedMask, ref, transformOverrides, width]);
 
   useEffect(() => {
-    drawAtTime(useEditorStore.getState().currentTime);
-    return useEditorStore.subscribe((state, previous) => {
-      if (state.currentTime !== previous.currentTime) drawAtTime(state.currentTime);
+    // Mask PNGs are loaded asynchronously. Redraw the same decoded video
+    // frame once one becomes available instead of waiting for the next tick.
+    if (maskRevision > 0) drawAtTime(lastRenderTimeRef.current);
+  }, [drawAtTime, maskRevision]);
+
+  useEffect(() => {
+    // Preview and export own their playback clock. Rendering from the global
+    // editor clock left this layer on an old frame after a seek or pause.
+    if (currentTime !== undefined) {
+      drawAtTime(currentTime);
+      return;
+    }
+    // The editor still intentionally follows its shared timeline.
+    let unsubscribe: (() => void) | undefined;
+    let disposed = false;
+    void import("@/store/useEditorStore").then(({ useEditorStore }) => {
+      if (disposed) return;
+      drawAtTime(useEditorStore.getState().currentTime);
+      unsubscribe = useEditorStore.subscribe((state, previous) => {
+        if (state.currentTime !== previous.currentTime) drawAtTime(state.currentTime);
+      });
     });
-  }, [drawAtTime]);
+    return () => { disposed = true; unsubscribe?.(); };
+  }, [currentTime, drawAtTime]);
+
+  useEffect(() => {
+    if (currentTime === undefined) return;
+    const video = getVideoElement?.();
+    if (!video) return;
+    // A seek is asynchronous: drawing only when React updates the timeline can
+    // composite the player cutout over the previous decoded video frame.
+    const redrawDecodedFrame = () => drawAtTime(currentTime);
+    video.addEventListener("loadeddata", redrawDecodedFrame);
+    video.addEventListener("seeked", redrawDecodedFrame);
+    video.addEventListener("timeupdate", redrawDecodedFrame);
+    video.addEventListener("pause", redrawDecodedFrame);
+    return () => {
+      video.removeEventListener("loadeddata", redrawDecodedFrame);
+      video.removeEventListener("seeked", redrawDecodedFrame);
+      video.removeEventListener("timeupdate", redrawDecodedFrame);
+      video.removeEventListener("pause", redrawDecodedFrame);
+    };
+  }, [currentTime, drawAtTime, getVideoElement]);
 
   return <canvas ref={ref} className="player-occlusion-canvas" width={width} height={height} />;
 });

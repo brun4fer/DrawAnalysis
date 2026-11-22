@@ -33,6 +33,10 @@ export interface TacticalBoardMark {
   fillColor: string;
   strokeWidth: number;
   opacity: number;
+  /** Separate fill strength so tactical areas remain readable on the pitch. */
+  fillOpacity?: number;
+  /** Rotation in degrees for text placed on the board. */
+  rotation?: number;
   dashed?: boolean;
   text?: string;
   /**

@@ -31,9 +31,9 @@ export async function GET(request: Request) {
   const diagnosticId = randomUUID();
   try {
     const account = await requireWorkspace();
-    const { mediaWorkspace } = await ensureMediaWorkspace(account);
+    const { appId, mediaWorkspace } = await ensureMediaWorkspace(account);
     const asset = await mediaPrisma.mediaAsset.findFirst({
-      where: { mediaWorkspaceId: mediaWorkspace.id, storageStatus: "READY" },
+      where: { mediaWorkspaceId: mediaWorkspace.id, createdByAppId: appId, storageStatus: "READY" },
       orderBy: { uploadedAt: "desc" },
       select: { storageKey: true, mimeType: true, fileSize: true, uploadedAt: true },
     });

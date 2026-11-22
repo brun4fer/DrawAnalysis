@@ -52,6 +52,8 @@ interface MarkDrag {
   mark: TacticalBoardMark;
   start: Point;
   pointIndex?: number;
+  rotationCenter?: { x: number; y: number };
+  rotationStartAngle?: number;
   preview: TacticalBoardMark;
 }
 
@@ -72,7 +74,37 @@ function pointFromPointer(event: React.PointerEvent<SVGSVGElement>): Point {
   return pointFromClient(event.currentTarget, event.clientX, event.clientY);
 }
 
+function textGeometry(mark: TacticalBoardMark) {
+  const start = svgPoint(mark.points[0] ?? { x: 0, y: 0 });
+  const fontSize = Math.max(2, mark.strokeWidth * .58);
+  // SVG cannot measure text synchronously before it is painted. This estimate
+  // matches the heavy tactical-board font closely and only defines the editor
+  // selection frame/rotation handle; it never changes the saved text itself.
+  const width = Math.max(fontSize * 1.4, (mark.text || "TEXTO").length * fontSize * .64);
+  const height = fontSize * 1.28;
+  const x = start.x - .8;
+  const y = start.y - height;
+  return {
+    start,
+    x,
+    y,
+    width: width + 1.6,
+    height: height + 1.1,
+    center: { x: start.x + width / 2, y: start.y - height / 2 },
+    handleY: y - 3.4,
+  };
+}
+
 function draggedMarkAt(drag: MarkDrag, point: Point): TacticalBoardMark {
+  if (drag.rotationCenter && drag.rotationStartAngle !== undefined) {
+    const current = svgPoint(point);
+    const angle = Math.atan2(current.y - drag.rotationCenter.y, current.x - drag.rotationCenter.x);
+    let delta = (angle - drag.rotationStartAngle) * 180 / Math.PI;
+    // Use the shortest arc when the pointer crosses -180/180 degrees.
+    if (delta > 180) delta -= 360;
+    if (delta < -180) delta += 360;
+    return { ...drag.mark, rotation: (drag.mark.rotation ?? 0) + delta };
+  }
   if (drag.pointIndex !== undefined) {
     return {
       ...drag.mark,
@@ -172,7 +204,7 @@ function svgPoint(point: Point) {
   return { x: point.x * 100, y: point.y * FIELD_HEIGHT };
 }
 
-function BoardMark({ mark, markerPrefix, revealOpacity = 1, revealProgress = 1, editable = false, selected = false, onMove, onMovePoint, onSelect }: {
+function BoardMark({ mark, markerPrefix, revealOpacity = 1, revealProgress = 1, editable = false, selected = false, onMove, onMovePoint, onRotate, onSelect }: {
   mark: TacticalBoardMark;
   markerPrefix: string;
   revealOpacity?: number;
@@ -181,6 +213,7 @@ function BoardMark({ mark, markerPrefix, revealOpacity = 1, revealProgress = 1, 
   selected?: boolean;
   onMove?: (event: React.PointerEvent<SVGGElement>) => void;
   onMovePoint?: (event: React.PointerEvent<SVGCircleElement>, pointIndex: number) => void;
+  onRotate?: (event: React.PointerEvent<SVGCircleElement>) => void;
   onSelect?: (event: React.PointerEvent<SVGGElement>) => void;
 }) {
   const start = svgPoint(mark.points[0] ?? { x: 0, y: 0 });
@@ -195,6 +228,8 @@ function BoardMark({ mark, markerPrefix, revealOpacity = 1, revealProgress = 1, 
     vectorEffect: "non-scaling-stroke" as const,
     opacity,
   };
+  const textBox = mark.type === "text" ? textGeometry(mark) : null;
+  const rotation = mark.rotation ?? 0;
   // Equipment is much smaller than a zone or an arrow. Keep its outline legible
   // without allowing the general tactical-line width to cover the whole object.
   const equipmentStroke = { ...common, strokeWidth: Math.max(.45, Math.min(1.9, mark.strokeWidth * .16)) };
@@ -231,17 +266,19 @@ function BoardMark({ mark, markerPrefix, revealOpacity = 1, revealProgress = 1, 
       <path d={`M ${x} ${railY[0]} L ${x} ${railY[1]} M ${x + width} ${railY[0]} L ${x + width} ${railY[1]}`} stroke="#11181d" strokeWidth={Math.max(.4, equipmentStroke.strokeWidth * .85)} />
     </g>;
   } else if (mark.type === "circle") {
-    shape = <ellipse cx={start.x} cy={start.y} rx={Math.abs(end.x - start.x)} ry={Math.abs(end.y - start.y)} fill={hexToRgba(mark.fillColor, opacity * .24)} {...common} />;
+    shape = <ellipse cx={start.x} cy={start.y} rx={Math.abs(end.x - start.x)} ry={Math.abs(end.y - start.y)} fill={hexToRgba(mark.fillColor, opacity * (mark.fillOpacity ?? .38))} {...common} />;
   } else if (mark.type === "rectangle" || mark.type === "zone") {
-    shape = <rect x={Math.min(start.x, end.x)} y={Math.min(start.y, end.y)} width={Math.abs(end.x - start.x)} height={Math.abs(end.y - start.y)} rx={mark.type === "zone" ? 1.4 : .25} fill={hexToRgba(mark.fillColor, opacity * (mark.type === "zone" ? .24 : .14))} {...common} strokeDasharray={mark.type === "zone" ? "10 7" : common.strokeDasharray} />;
+    shape = <rect x={Math.min(start.x, end.x)} y={Math.min(start.y, end.y)} width={Math.abs(end.x - start.x)} height={Math.abs(end.y - start.y)} rx={mark.type === "zone" ? 1.4 : .25} fill={hexToRgba(mark.fillColor, opacity * (mark.fillOpacity ?? (mark.type === "zone" ? .42 : .32)))} {...common} strokeDasharray={mark.type === "zone" ? "10 7" : common.strokeDasharray} />;
   } else if (mark.type === "text") {
-    shape = <text x={start.x} y={start.y} fill={mark.color} opacity={opacity} fontSize={Math.max(2, mark.strokeWidth * .58)} fontWeight="800" paintOrder="stroke" stroke="#00000080" strokeWidth=".35">{mark.text || "TEXTO"}</text>;
+    shape = <text x={start.x} y={start.y} fill={mark.color} opacity={opacity} fontSize={Math.max(2, mark.strokeWidth * .58)} fontWeight="800" paintOrder="stroke" stroke="#00000080" strokeWidth=".35" transform={`rotate(${rotation} ${textBox?.center.x ?? start.x} ${textBox?.center.y ?? start.y})`}>{mark.text || "TEXTO"}</text>;
   } else if (mark.type === "player-polygon") {
     const points = mark.points.map((point) => { const value = svgPoint(point); return `${value.x},${value.y}`; }).join(" ");
-    shape = <polygon points={points} fill={hexToRgba(mark.fillColor, opacity * .24)} {...common} />;
+    // Player polygons are the neutral white area requested for tactical
+    // schemes. The separate player-link tool remains blue.
+    shape = <polygon points={points} fill={hexToRgba("#ffffff", opacity * (mark.fillOpacity ?? .28))} {...common} stroke="#ffffff" />;
   } else if (mark.type === "player-link") {
     const points = mark.points.map((point) => { const value = svgPoint(point); return `${value.x},${value.y}`; }).join(" ");
-    shape = <polyline points={points} fill="none" {...common} />;
+    shape = <polyline points={points} fill="none" {...common} stroke="#2b68ff" />;
   } else {
     const points = mark.points.map((point) => { const value = svgPoint(point); return `${value.x},${value.y}`; }).join(" ");
     shape = mark.type === "free"
@@ -265,7 +302,12 @@ function BoardMark({ mark, markerPrefix, revealOpacity = 1, revealProgress = 1, 
     <g className={`tactical-board-mark${editable || onSelect ? " is-editable" : ""}${selected ? " selected" : ""}`} onPointerDown={editable ? onMove : onSelect}>
       {shape}
       {selected && <>
-        <rect className="tactical-mark-selection" x={minimumX - .8} y={minimumY - .8} width={Math.max(1.6, maximumX - minimumX + 1.6)} height={Math.max(1.6, maximumY - minimumY + 1.6)} fill="none" vectorEffect="non-scaling-stroke" />
+        {textBox ? <g transform={`rotate(${rotation} ${textBox.center.x} ${textBox.center.y})`}>
+          <rect className="tactical-mark-selection" x={textBox.x} y={textBox.y} width={textBox.width} height={textBox.height} fill="none" vectorEffect="non-scaling-stroke" />
+          <line className="tactical-mark-rotation-line" x1={textBox.center.x} y1={textBox.y} x2={textBox.center.x} y2={textBox.handleY + .9} vectorEffect="non-scaling-stroke" />
+          <circle className="tactical-mark-rotation-handle" cx={textBox.center.x} cy={textBox.handleY} r="1.35" vectorEffect="non-scaling-stroke" onPointerDown={onRotate} />
+          <path className="tactical-mark-rotation-icon" d={`M ${textBox.center.x - .48} ${textBox.handleY + .03} A .54 .54 0 1 1 ${textBox.center.x + .35} ${textBox.handleY - .42} M ${textBox.center.x + .55} ${textBox.handleY - .56} l -.04 .48 l -.43 -.18`} fill="none" vectorEffect="non-scaling-stroke" />
+        </g> : <rect className="tactical-mark-selection" x={minimumX - .8} y={minimumY - .8} width={Math.max(1.6, maximumX - minimumX + 1.6)} height={Math.max(1.6, maximumY - minimumY + 1.6)} fill="none" vectorEffect="non-scaling-stroke" />}
         {editablePointIndices.map((pointIndex) => {
           const point = convertedPoints[pointIndex];
           return <circle key={pointIndex} className="tactical-mark-handle" cx={point.x} cy={point.y} r=".72" vectorEffect="non-scaling-stroke" onPointerDown={(event) => onMovePoint?.(event, pointIndex)} />;
@@ -337,10 +379,11 @@ export function TacticalBoardSlide({ content, interactive = true, onChange, pres
       type: tool,
       playerIds: [...linkedPlayerIds],
       points,
-      color: content.markColor ?? "#fff23d",
-      fillColor: content.markFillColor ?? "#fff23d",
+      color: tool === "player-polygon" ? "#ffffff" : tool === "player-link" ? "#2b68ff" : content.markColor ?? "#fff23d",
+      fillColor: tool === "player-polygon" ? "#ffffff" : content.markFillColor ?? "#fff23d",
       strokeWidth: content.markStrokeWidth ?? 5,
       opacity: content.markOpacity ?? 1,
+      fillOpacity: tool === "player-polygon" ? .28 : undefined,
       dashed: content.markDashed ?? false,
     };
     updateMarks([...state.marks, mark], mark.id);
@@ -357,6 +400,26 @@ export function TacticalBoardSlide({ content, interactive = true, onChange, pres
     const start = pointFromClient(svg, event.clientX, event.clientY);
     selectMark(mark.id);
     setMarkDrag({ mark, start, pointIndex, preview: mark });
+  };
+
+  const beginMarkRotation = (event: React.PointerEvent<SVGCircleElement>, mark: TacticalBoardMark) => {
+    if (!interactive || tool !== "move" || mark.type !== "text") return;
+    const svg = event.currentTarget.ownerSVGElement;
+    if (!svg) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const start = pointFromClient(svg, event.clientX, event.clientY);
+    const pointer = svgPoint(start);
+    const center = textGeometry(mark).center;
+    selectMark(mark.id);
+    setMarkDrag({
+      mark,
+      start,
+      rotationCenter: center,
+      rotationStartAngle: Math.atan2(pointer.y - center.y, pointer.x - center.x),
+      preview: mark,
+    });
   };
 
   const updatePlayerPosition = (playerId: string, position: Point) => {
@@ -467,6 +530,7 @@ export function TacticalBoardSlide({ content, interactive = true, onChange, pres
           selected={interactive && content.selectedMarkId === mark.id}
           onMove={(event) => beginMarkDrag(event, mark)}
           onMovePoint={(event, pointIndex) => beginMarkDrag(event, mark, pointIndex)}
+          onRotate={(event) => beginMarkRotation(event, mark)}
           onSelect={interactive && tool === "move" ? (event) => {
             event.preventDefault();
             event.stopPropagation();

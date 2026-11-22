@@ -221,7 +221,10 @@ Copie `.env.example` para um ficheiro local ignorado pelo Git e configure:
 - `MEDIA_DATABASE_URL` e `MEDIA_DIRECT_URL`: catálogo partilhado;
 - `MEDIA_R2_*`: credenciais R2 usadas para leitura e autorização de uploads multipart;
 - `MEDIA_ALLOWED_ORIGINS`: origens explícitas autorizadas pela política CORS do R2;
-- `MEDIA_LIBRARY_APP_ID`: mantenha `draw-analysis`.
+- `MEDIA_LIBRARY_APP_ID`: identificador único desta instalação/produto. Deve
+  coincidir com o respetivo `APP_VARIANT` (por exemplo `tactidraw`, `gameplan`
+  ou `opponent-player-video-analysis`). É este valor que separa a biblioteca
+  Cloud de cada software, mesmo usando o mesmo bucket R2.
 
 Numa base nova, execute `npm run db:push`, `npm run db:seed` e `npm run dev`.
 Numa base já usada por clientes, aplique a migração específica acima em vez de

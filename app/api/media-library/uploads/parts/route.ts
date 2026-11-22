@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 export async function POST(request: Request) {
   try {
     const account = await requireWorkspace();
-    const { mediaWorkspace } = await ensureMediaWorkspace(account);
+    const { appId, mediaWorkspace } = await ensureMediaWorkspace(account);
     const body = await request.json();
     const assetId = typeof body.assetId === "string" ? body.assetId : "";
     const uploadId = typeof body.uploadId === "string" ? body.uploadId : "";
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
       return Response.json({ error: "O pedido de upload multipart não é válido." }, { status: 400 });
     }
     const asset = await mediaPrisma.mediaAsset.findFirst({
-      where: { id: assetId, mediaWorkspaceId: mediaWorkspace.id, storageStatus: "UPLOADING" },
+      where: { id: assetId, mediaWorkspaceId: mediaWorkspace.id, createdByAppId: appId, storageStatus: "UPLOADING" },
     });
     if (!asset?.uploadId || asset.uploadId !== uploadId) {
       return Response.json({ error: "Este upload já não está ativo." }, { status: 400 });

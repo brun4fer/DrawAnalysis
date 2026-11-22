@@ -12,6 +12,9 @@ export async function GET(_: Request, context: Context) {
     const { mediaWorkspace } = await ensureMediaWorkspace(account);
     const { assetId } = await context.params;
     const asset = await mediaPrisma.mediaAsset.findFirst({
+      // The Cloud list is product-specific, but an existing presentation may
+      // still reference a video selected before that separation existed. Keep
+      // those saved projects playable for the same account/workspace.
       where: { id: assetId, mediaWorkspaceId: mediaWorkspace.id, storageStatus: "READY" },
       select: { id: true, fileName: true, storageKey: true, durationSeconds: true },
     });

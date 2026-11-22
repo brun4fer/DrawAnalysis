@@ -1908,6 +1908,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       ref={occlusionCanvasRef}
       drawings={drawings}
       playerTracks={activeSlide?.content.kind === "video" ? activeSlide.content.playerTracks : undefined}
+      currentTime={currentTime}
       width={width}
       height={height}
       getVideoElement={getVideoElement}

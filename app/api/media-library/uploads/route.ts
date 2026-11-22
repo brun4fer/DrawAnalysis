@@ -53,6 +53,7 @@ export async function POST(request: Request) {
     const existing = await mediaPrisma.mediaAsset.findFirst({
       where: {
         mediaWorkspaceId: mediaWorkspace.id,
+        createdByAppId: appId,
         fileName,
         fileSize: BigInt(fileSize),
         durationSeconds: { gte: durationSeconds - .1, lte: durationSeconds + .1 },
@@ -84,7 +85,10 @@ export async function POST(request: Request) {
     }
 
     const assetId = randomUUID();
-    const storageKey = `workspaces/${mediaWorkspace.id}/assets/${assetId}/video`;
+    // R2 object prefixes are the folder structure visible in the bucket. Keep
+    // every product library isolated while retaining the account/workspace
+    // boundary below it.
+    const storageKey = `libraries/${appId}/workspaces/${mediaWorkspace.id}/assets/${assetId}/video`;
     const uploadId = await createMediaMultipartUpload(storageKey, mimeType);
     created = { id: assetId, key: storageKey, uploadId };
     const asset = await mediaPrisma.mediaAsset.create({
@@ -118,12 +122,12 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const account = await requireWorkspace();
-    const { mediaWorkspace } = await ensureMediaWorkspace(account);
+    const { appId, mediaWorkspace } = await ensureMediaWorkspace(account);
     const body = await request.json().catch(() => ({}));
     const assetId = typeof body.assetId === "string" ? body.assetId : "";
     const uploadId = typeof body.uploadId === "string" ? body.uploadId : "";
     const asset = await mediaPrisma.mediaAsset.findFirst({
-      where: { id: assetId, mediaWorkspaceId: mediaWorkspace.id, storageStatus: "UPLOADING" },
+      where: { id: assetId, mediaWorkspaceId: mediaWorkspace.id, createdByAppId: appId, storageStatus: "UPLOADING" },
     });
     if (asset?.uploadId && (!uploadId || uploadId === asset.uploadId)) {
       await abortMediaMultipartUpload(asset.storageKey, asset.uploadId).catch(() => undefined);
