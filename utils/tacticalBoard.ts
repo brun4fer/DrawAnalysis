@@ -11,12 +11,22 @@ export function isPlayerLinkedMark(mark: TacticalBoardMark) {
   return mark.type === "player-link" || mark.type === "player-polygon";
 }
 
-export function resolvedTacticalMark(mark: TacticalBoardMark, positions: Record<string, Point>): TacticalBoardMark {
+/**
+ * Resolves positions (and, when supplied, token colours) for a mark attached
+ * to players. This also makes older links and polygons use the players'
+ * current team colour instead of their formerly fixed white/blue colour.
+ */
+export function resolvedTacticalMark(
+  mark: TacticalBoardMark,
+  positions: Record<string, Point>,
+  playerColors?: Record<string, string>,
+): TacticalBoardMark {
   if (!isPlayerLinkedMark(mark) || !mark.playerIds?.length) return mark;
   const linkedPoints = mark.playerIds.map((playerId) => positions[playerId]).filter((point): point is Point => Boolean(point));
-  return linkedPoints.length >= (mark.type === "player-polygon" ? 3 : 2)
-    ? { ...mark, points: linkedPoints }
-    : mark;
+  if (linkedPoints.length < (mark.type === "player-polygon" ? 3 : 2)) return mark;
+
+  const color = playerColors?.[mark.playerIds[0]];
+  return { ...mark, points: linkedPoints, ...(color ? { color, fillColor: color } : {}) };
 }
 
 /**

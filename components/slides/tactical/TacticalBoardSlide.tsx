@@ -342,12 +342,11 @@ export function TacticalBoardSlide({ content, interactive = true, onChange, pres
   const isLinkingPlayers = tool === "player-link" || tool === "player-polygon";
   const minimumLinkedPlayers = tool === "player-polygon" ? 3 : 2;
 
-  const linkedPlayerColor = linkedPlayerIds
-    .map((playerId) => content.players.find((player) => player.id === playerId))
-    .find((player): player is SlidePlayer => Boolean(player));
-  const selectedTeamColor = linkedPlayerColor
-    ? linkedPlayerColor.buttonColor ?? (linkedPlayerColor.team === "home" ? content.homeColor : content.awayColor)
-    : content.markColor ?? "#ffffff";
+  const playerColors = Object.fromEntries(content.players.map((player) => [
+    player.id,
+    player.buttonColor ?? (player.team === "home" ? content.homeColor : content.awayColor),
+  ]));
+  const selectedTeamColor = playerColors[linkedPlayerIds[0]] ?? content.markColor ?? "#ffffff";
 
   useEffect(() => {
     if (pendingText) textInputRef.current?.focus();
@@ -525,7 +524,7 @@ export function TacticalBoardSlide({ content, interactive = true, onChange, pres
     >
       <defs>{visibleMarks.filter((mark) => mark.type === "arrow").map((mark) => <marker key={mark.id} id={`${markerPrefix}-${mark.id}`} markerWidth="3.2" markerHeight="3.2" refX="2.8" refY="1.6" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L3.2,1.6 L0,3.2 Z" fill={mark.color} opacity={mark.opacity} /></marker>)}</defs>
       {visibleMarks.map((mark) => {
-        const resolvedMark = resolvedTacticalMark(mark, state.positions);
+        const resolvedMark = resolvedTacticalMark(mark, state.positions, playerColors);
         const playerLinked = isPlayerLinkedMark(mark);
         return <BoardMark
           key={mark.id}
@@ -584,6 +583,7 @@ export function TacticalBoardSlide({ content, interactive = true, onChange, pres
 
         {interactive && isLinkingPlayers && <div className="tactical-link-builder">
           <span>{tool === "player-polygon" ? "Polígono" : "Ligação"}: {linkedPlayerIds.length}/{minimumLinkedPlayers} jogadores</span>
+          {linkedPlayerIds.length > 0 && <i aria-label="Cor dos jogadores selecionados" style={{ backgroundColor: selectedTeamColor }} />}
           <button type="button" onClick={createPlayerLinkedMark} disabled={linkedPlayerIds.length < minimumLinkedPlayers} title="Criar ligação"><Check size={13} /></button>
           <button type="button" onClick={() => setLinkedPlayerIds([])} disabled={!linkedPlayerIds.length} title="Limpar seleção"><X size={13} /></button>
         </div>}
