@@ -400,6 +400,11 @@ function BoardProperties({ content, onChange }: { content: BoardSlideContent; on
     if (!selectedMark) return;
     updateStageMarks(stageMarks.map((mark) => mark.id === selectedMark.id ? { ...mark, ...patch } : mark), selectedMark.id);
   };
+  const updateSelectedMarkColour = (patch: Partial<NonNullable<typeof selectedMark>>) => {
+    if (!selectedMark) return;
+    const isPlayerLinked = selectedMark.type === "player-link" || selectedMark.type === "player-polygon";
+    updateSelectedMark({ ...patch, ...(isPlayerLinked ? { usePlayerColor: false } : {}) });
+  };
   const removeSelectedMark = () => {
     if (!selectedMark) return;
     updateStageMarks(stageMarks.filter((mark) => mark.id !== selectedMark.id), undefined);
@@ -495,8 +500,9 @@ function BoardProperties({ content, onChange }: { content: BoardSlideContent; on
         <div><button type="button" onClick={() => onChange({ ...content, selectedMarkId: undefined })} title="Terminar edição"><X size={11} /></button><button type="button" onClick={removeSelectedMark} title="Eliminar objeto"><Trash2 size={11} /></button></div>
       </div>}
       {selectedMark?.type === "text" && <label className="slide-prop-field vertical"><span>Texto</span><input value={selectedMark.text ?? ""} onChange={(event) => updateSelectedMark({ text: event.target.value })} /></label>}
-      <ColorPaletteField label="Traço" value={selectedMark?.color ?? content.markColor ?? "#ffffff"} onChange={(color) => selectedMark ? updateSelectedMark({ color }) : onChange({ ...content, markColor: color })} />
-      <ColorPaletteField label="Preenchimento" value={selectedMark?.fillColor ?? content.markFillColor ?? "#ffffff"} onChange={(fillColor) => selectedMark ? updateSelectedMark({ fillColor }) : onChange({ ...content, markFillColor: fillColor })} />
+      <ColorPaletteField label="Traço" value={selectedMark?.color ?? content.markColor ?? "#ffffff"} onChange={(color) => selectedMark ? updateSelectedMarkColour({ color }) : onChange({ ...content, markColor: color })} />
+      <ColorPaletteField label="Preenchimento" value={selectedMark?.fillColor ?? content.markFillColor ?? "#ffffff"} onChange={(fillColor) => selectedMark ? updateSelectedMarkColour({ fillColor }) : onChange({ ...content, markFillColor: fillColor })} />
+      {selectedMark && (selectedMark.type === "player-link" || selectedMark.type === "player-polygon") && selectedMark.usePlayerColor === false && <button type="button" className="board-reset-player" onClick={() => updateSelectedMark({ usePlayerColor: true })}>Usar cor dos jogadores</button>}
       <label className="slide-prop-field"><span>Opacidade</span><div><input type="range" min={0} max={1} step={.05} value={selectedMark?.opacity ?? content.markOpacity ?? 1} onChange={(event) => {
         const opacity = Number(event.target.value);
         selectedMark ? updateSelectedMark({ opacity }) : onChange({ ...content, markOpacity: opacity });

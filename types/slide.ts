@@ -45,6 +45,12 @@ export interface TacticalBoardMark {
    * for old projects or if a referenced player is later removed.
    */
   playerIds?: string[];
+  /**
+   * Linked marks initially inherit the colour of their selected players.
+   * Once the analyst changes a colour in the properties panel this is set to
+   * false, preserving that intentional custom style.
+   */
+  usePlayerColor?: boolean;
 }
 
 export interface TacticalMovement {

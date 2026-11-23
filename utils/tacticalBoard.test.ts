@@ -29,6 +29,16 @@ test("linked polygons use the colour of their selected player group", () => {
   assert.equal(resolved.fillColor, "#f45d32");
 });
 
+test("a manually recoloured linked mark keeps its custom colours", () => {
+  const resolved = resolvedTacticalMark(
+    { ...linkedLine, usePlayerColor: false, color: "#ffffff", fillColor: "#202020" },
+    { left: { x: .2, y: .3 }, right: { x: .8, y: .7 } },
+    { left: "#f45d32", right: "#f45d32" },
+  );
+  assert.equal(resolved.color, "#ffffff");
+  assert.equal(resolved.fillColor, "#202020");
+});
+
 test("new arrows reveal progressively and removed marks fade", () => {
   const arrow: TacticalBoardMark = { ...linkedLine, id: "arrow", type: "arrow", points: [{ x: .1, y: .1 }, { x: .9, y: .9 }] };
   const entering = resolveTacticalMarkTransition([], [arrow], .5, false);

@@ -25,7 +25,7 @@ export function resolvedTacticalMark(
   const linkedPoints = mark.playerIds.map((playerId) => positions[playerId]).filter((point): point is Point => Boolean(point));
   if (linkedPoints.length < (mark.type === "player-polygon" ? 3 : 2)) return mark;
 
-  const color = playerColors?.[mark.playerIds[0]];
+  const color = mark.usePlayerColor === false ? undefined : playerColors?.[mark.playerIds[0]];
   return { ...mark, points: linkedPoints, ...(color ? { color, fillColor: color } : {}) };
 }
 

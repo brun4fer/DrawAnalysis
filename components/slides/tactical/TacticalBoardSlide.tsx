@@ -382,6 +382,7 @@ export function TacticalBoardSlide({ content, interactive = true, onChange, pres
       id: createId(),
       type: tool,
       playerIds: [...linkedPlayerIds],
+      usePlayerColor: true,
       points,
       // Linked shapes inherit the real token colour (including an individual
       // player override), rather than an unrelated hard-coded blue or white.
