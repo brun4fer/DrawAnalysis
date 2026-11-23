@@ -8,10 +8,10 @@ interface Props {
   playing?: boolean;
 }
 
-function TeamIdentity({ side, name, crest }: { side: "home" | "away"; name: string; crest?: string }) {
+function TeamIdentity({ side, name, crest, offsetX = 0, offsetY = 0 }: { side: "home" | "away"; name: string; crest?: string; offsetX?: number; offsetY?: number }) {
   return (
     <section className={`match-team-card ${side}`}>
-      <div className="match-team-crest">
+      <div className="match-team-crest" style={{ "--match-crest-offset-x": `${offsetX}px`, "--match-crest-offset-y": `${offsetY}px` } as CSSProperties}>
         {crest ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={crest} alt={`Emblema ${name}`} />
@@ -59,7 +59,7 @@ export function KickoffSlide({ content, playbackTime, playing }: Props) {
       <i className="match-side-band home" /><i className="match-side-band away" />
 
       <div className="match-presentation-content">
-        <TeamIdentity side="home" name={content.homeClubName} crest={content.homeCrest} />
+        <TeamIdentity side="home" name={content.homeClubName} crest={content.homeCrest} offsetX={content.homeCrestOffsetX} offsetY={content.homeCrestOffsetY} />
         <div className="match-information">
           {(content.competitionLogo || content.competitionName) && <div className="match-competition">
             {content.competitionLogo ? (
@@ -70,7 +70,7 @@ export function KickoffSlide({ content, playbackTime, playing }: Props) {
           {content.matchday && <strong>{content.matchday}</strong>}
           {(content.matchDate || content.matchTime) && <p>{content.matchDate && <span>{content.matchDate}</span>}{content.matchTime && <b>{content.matchTime}</b>}</p>}
         </div>
-        <TeamIdentity side="away" name={content.awayClubName} crest={content.awayCrest} />
+        <TeamIdentity side="away" name={content.awayClubName} crest={content.awayCrest} offsetX={content.awayCrestOffsetX} offsetY={content.awayCrestOffsetY} />
       </div>
     </article>
   );

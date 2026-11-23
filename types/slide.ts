@@ -305,6 +305,10 @@ export interface MatchPresentationSlideContent {
   overlayOpacity?: number;
   panelOpacity?: number;
   crestScale?: number;
+  homeCrestOffsetX?: number;
+  homeCrestOffsetY?: number;
+  awayCrestOffsetX?: number;
+  awayCrestOffsetY?: number;
   designVersion?: number;
 }
 

@@ -29,7 +29,7 @@ export function TopBar({ filename, isVideoSlide, onOpen, onPreview, onCapture, o
   return (
     <header className="topbar">
       <div className="brand"><span className="brand-mark">{APP_PRODUCT.mark}</span><span>{APP_PRODUCT.brandLead}<strong>{APP_PRODUCT.brandStrong}</strong></span></div>
-      <a className="topbar-text-action" href={PORTAL_URL} title="Voltar ao All-in-One Football Ecosystem"><ArrowLeft size={15} /> All-in-One</a>
+      <a className="topbar-text-action" href={PORTAL_URL} target="_blank" rel="noreferrer" title="Abrir o All-in-One Football Ecosystem fora desta aplicação"><ArrowLeft size={15} /> All-in-One</a>
       <button className="project-chip" onClick={onProjects} title="Abrir projetos"><span className="status-dot ready" />{projectName} · {slides.length} slides</button>
       <div className="topbar-spacer" />
       <button className="topbar-text-action" onClick={onProjects}><FolderOpen size={15} /> Projetos</button>

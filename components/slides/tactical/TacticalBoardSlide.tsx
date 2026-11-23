@@ -273,12 +273,10 @@ function BoardMark({ mark, markerPrefix, revealOpacity = 1, revealProgress = 1, 
     shape = <text x={start.x} y={start.y} fill={mark.color} opacity={opacity} fontSize={Math.max(2, mark.strokeWidth * .58)} fontWeight="800" paintOrder="stroke" stroke="#00000080" strokeWidth=".35" transform={`rotate(${rotation} ${textBox?.center.x ?? start.x} ${textBox?.center.y ?? start.y})`}>{mark.text || "TEXTO"}</text>;
   } else if (mark.type === "player-polygon") {
     const points = mark.points.map((point) => { const value = svgPoint(point); return `${value.x},${value.y}`; }).join(" ");
-    // Player polygons are the neutral white area requested for tactical
-    // schemes. The separate player-link tool remains blue.
-    shape = <polygon points={points} fill={hexToRgba("#ffffff", opacity * (mark.fillOpacity ?? .28))} {...common} stroke="#ffffff" />;
+    shape = <polygon points={points} fill={hexToRgba(mark.fillColor, opacity * (mark.fillOpacity ?? .28))} {...common} stroke={mark.color} />;
   } else if (mark.type === "player-link") {
     const points = mark.points.map((point) => { const value = svgPoint(point); return `${value.x},${value.y}`; }).join(" ");
-    shape = <polyline points={points} fill="none" {...common} stroke="#2b68ff" />;
+    shape = <polyline points={points} fill="none" {...common} stroke={mark.color} />;
   } else {
     const points = mark.points.map((point) => { const value = svgPoint(point); return `${value.x},${value.y}`; }).join(" ");
     shape = mark.type === "free"
@@ -344,6 +342,13 @@ export function TacticalBoardSlide({ content, interactive = true, onChange, pres
   const isLinkingPlayers = tool === "player-link" || tool === "player-polygon";
   const minimumLinkedPlayers = tool === "player-polygon" ? 3 : 2;
 
+  const linkedPlayerColor = linkedPlayerIds
+    .map((playerId) => content.players.find((player) => player.id === playerId))
+    .find((player): player is SlidePlayer => Boolean(player));
+  const selectedTeamColor = linkedPlayerColor
+    ? linkedPlayerColor.buttonColor ?? (linkedPlayerColor.team === "home" ? content.homeColor : content.awayColor)
+    : content.markColor ?? "#ffffff";
+
   useEffect(() => {
     if (pendingText) textInputRef.current?.focus();
   }, [pendingText]);
@@ -379,8 +384,10 @@ export function TacticalBoardSlide({ content, interactive = true, onChange, pres
       type: tool,
       playerIds: [...linkedPlayerIds],
       points,
-      color: tool === "player-polygon" ? "#ffffff" : tool === "player-link" ? "#2b68ff" : content.markColor ?? "#fff23d",
-      fillColor: tool === "player-polygon" ? "#ffffff" : content.markFillColor ?? "#fff23d",
+      // Linked shapes inherit the real token colour (including an individual
+      // player override), rather than an unrelated hard-coded blue or white.
+      color: selectedTeamColor,
+      fillColor: selectedTeamColor,
       strokeWidth: content.markStrokeWidth ?? 5,
       opacity: content.markOpacity ?? 1,
       fillOpacity: tool === "player-polygon" ? .28 : undefined,
@@ -447,7 +454,7 @@ export function TacticalBoardSlide({ content, interactive = true, onChange, pres
     if (!pendingText || !text) return;
     const mark: TacticalBoardMark = {
       id: createId(), type: "text", points: [pendingText.point], text,
-      color: content.markColor ?? "#fff23d", fillColor: content.markFillColor ?? "#fff23d",
+      color: content.markColor ?? "#ffffff", fillColor: content.markFillColor ?? "#ffffff",
       strokeWidth: content.markStrokeWidth ?? 5, opacity: content.markOpacity ?? 1, dashed: false,
     };
     updateMarks([...state.marks, mark], mark.id);
@@ -475,7 +482,7 @@ export function TacticalBoardSlide({ content, interactive = true, onChange, pres
     event.currentTarget.setPointerCapture(event.pointerId);
     setDraft({
       id: createId(), type: tool, points: tool === "free" ? [point] : [point, point],
-      color: content.markColor ?? "#fff23d", fillColor: content.markFillColor ?? "#fff23d",
+      color: content.markColor ?? "#ffffff", fillColor: content.markFillColor ?? "#ffffff",
       strokeWidth: content.markStrokeWidth ?? 5, opacity: content.markOpacity ?? 1, dashed: content.markDashed ?? false,
     });
   };
