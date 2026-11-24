@@ -178,7 +178,7 @@ export function VideoSlidePreview({ content, slideName, playbackTime, playing = 
             setCurrentTime(sourceTimeToTimeline(sourceTime, freezes));
           }}
         />
-        <div className="preview-drawing-overlay"><DrawingPreviewCanvas drawings={content.drawings} playerTracks={content.playerTracks} currentTime={currentTime} width={size.width} height={size.height} getVideoElement={getVideoElement} /></div>
+        <div className="preview-drawing-overlay"><DrawingPreviewCanvas drawings={content.drawings ?? []} playerTracks={content.playerTracks} currentTime={currentTime} width={size.width} height={size.height} getVideoElement={getVideoElement} /></div>
       </div>
     </div>
   );

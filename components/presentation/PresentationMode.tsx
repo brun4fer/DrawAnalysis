@@ -202,7 +202,10 @@ export function PresentationMode({ onClose }: Props) {
   return (
     <div className="presentation-mode presentation-builder-preview presentation-clean" aria-label="Pré-visualização em ecrã inteiro. Use as setas para navegar e Espaço para reproduzir ou pausar vídeos.">
       <div className="presentation-content">
-        <SlideRenderer slide={slide} interactive={false} presentationTime={active.elapsed} presentationPlaying={playing} />
+        {/* A video preview owns media, drawing and timeline state. Remount it
+            when the presentation moves to another slide so a decoded frame or
+            overlay from the previous slide can never be reused. */}
+        <SlideRenderer key={slide.id} slide={slide} interactive={false} presentationTime={active.elapsed} presentationPlaying={playing} />
       </div>
     </div>
   );

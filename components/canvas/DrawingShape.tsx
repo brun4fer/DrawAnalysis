@@ -297,11 +297,13 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
       }
       node.getLayer()?.batchDraw();
     };
-    updateTrackedPosition(useEditorStore.getState().currentTime);
-    return useEditorStore.subscribe((state, previous) => {
-      if (state.currentTime !== previous.currentTime) updateTrackedPosition(state.currentTime);
-    });
-  }, [editingPreview, height, object, playerTracks, width]);
+    // `currentTime` belongs to the caller. In the editor it is the editor
+    // timeline, while in Preview/export it is the presentation timeline. The
+    // previous store subscription always read the editor clock, causing SAM
+    // attached drawings to be hidden or positioned on an old instant whenever
+    // a presentation was paused or played independently from the editor.
+    updateTrackedPosition(currentTime);
+  }, [currentTime, editingPreview, height, object, playerTracks, width]);
 
   const samRingClipFunc = object.data.kind === "playerRing"
     && object.target?.kind === "player"

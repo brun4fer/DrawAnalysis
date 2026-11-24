@@ -38,7 +38,7 @@ export function SlideRenderer({ slide, videoEditor, interactive = true, onConten
     return () => observer.disconnect();
   }, [content.kind]);
 
-  if (content.kind === "video") return <div className="slide-renderer-video-shell">{videoEditor ?? <VideoSlidePreview content={content} slideName={slide.name} playbackTime={presentationTime} playing={presentationPlaying} controls={presentationTime === undefined} />}{showCaption && <SlideCaption slide={slide} />}</div>;
+  if (content.kind === "video") return <div className="slide-renderer-video-shell">{videoEditor ?? <VideoSlidePreview key={`${slide.id}:${content.sourceUrl}`} content={content} slideName={slide.name} playbackTime={presentationTime} playing={presentationPlaying} controls={presentationTime === undefined} />}{showCaption && <SlideCaption slide={slide} />}</div>;
 
   const rendered = (() => {
     switch (content.kind) {
