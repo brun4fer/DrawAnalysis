@@ -1,6 +1,6 @@
 import type { DrawingObject, PlayerTrack, Point } from "./drawing";
 
-export type SlideType = "title" | "text" | "lineup" | "team-overview" | "written-report" | "player-profile" | "video" | "kickoff" | "tactical-board" | "image";
+export type SlideType = "title" | "text" | "lineup" | "team-overview" | "written-report" | "player-profile" | "video" | "kickoff" | "tactical-board" | "image" | "training-exercise" | "training-plan";
 export type SlideAlignment = "left" | "center" | "right";
 export type SlideBackgroundMediaType = "image" | "video";
 export type CrestCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
@@ -361,7 +361,71 @@ export interface ImageSlideContent {
   drawings: DrawingObject[];
 }
 
-export type SlideContent = TitleSlideContent | TextSlideContent | LineupSlideContent | TeamOverviewSlideContent | WrittenReportSlideContent | PlayerProfileSlideContent | VideoSlideContent | MatchPresentationSlideContent | BoardSlideContent | ImageSlideContent;
+export type TrainingExerciseObjectType = "player" | "arrow" | "zigzag-arrow" | "line" | "pole" | "cone" | "goal" | "ball" | "text";
+
+/**
+ * Coordinates are expressed as percentages of the pitch. Keeping the object
+ * format deliberately small makes training sessions portable across exports
+ * and avoids sharing any tactical-board state with the other products.
+ */
+export interface TrainingExerciseObject {
+  id: string;
+  type: TrainingExerciseObjectType;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation?: number;
+  color?: string;
+  label?: string;
+  strokeWidth?: number;
+  opacity?: number;
+  dashed?: boolean;
+  fontSize?: number;
+  fontFamily?: "sans" | "condensed" | "heavy";
+  shadow?: boolean;
+}
+
+export interface TrainingExerciseSlideContent {
+  kind: "training-exercise";
+  title?: string;
+  description?: string;
+  pitchColor: string;
+  pitchLineColor: string;
+  objects: TrainingExerciseObject[];
+  selectedObjectId?: string;
+}
+
+export type TrainingPlanLayout = "session-grid" | "overview-grid" | "timeline";
+
+export interface TrainingPlanText {
+  id: string;
+  text: string;
+  x: number;
+  y: number;
+  color: string;
+  fontSize: number;
+  fontFamily?: "sans" | "condensed" | "heavy";
+  shadow?: boolean;
+}
+
+export interface TrainingPlanSlideContent {
+  kind: "training-plan";
+  exerciseSlideIds: string[];
+  layout: TrainingPlanLayout;
+  texts: TrainingPlanText[];
+  selectedTextId?: string;
+  backgroundColor?: string;
+}
+
+export interface TrainingSessionDetails {
+  date: string;
+  season: string;
+  microcycle: string;
+  trainingUnit: string;
+}
+
+export type SlideContent = TitleSlideContent | TextSlideContent | LineupSlideContent | TeamOverviewSlideContent | WrittenReportSlideContent | PlayerProfileSlideContent | VideoSlideContent | MatchPresentationSlideContent | BoardSlideContent | ImageSlideContent | TrainingExerciseSlideContent | TrainingPlanSlideContent;
 
 export interface AnalysisSlide {
   id: string;

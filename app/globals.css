@@ -656,6 +656,27 @@ input[type="range"] { accent-color: var(--lime); }
 .powerpoint-export-video-frame, .powerpoint-export-video-frame > video, .powerpoint-export-drawing-layer { width: 1280px; height: 720px; }.powerpoint-export-video-frame { position: relative; overflow: hidden; background: #000; }.powerpoint-export-video-frame > video { display: block; object-fit: fill; }.powerpoint-export-drawing-layer { position: absolute; inset: 0; }
 @keyframes powerpoint-spin { to { transform: rotate(360deg); } }
 
+/* Training Exercises variant: scoped controls shared by the exercise and plan slides. */
+.training-object-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.training-object-grid .report-add-property { min-height: 34px; justify-content: flex-start; font-size: 11px; }
+.checkbox-field { display: flex; align-items: center; gap: 8px; min-height: 30px; color: var(--text-muted); font-size: 12px; cursor: pointer; }
+.checkbox-field input { accent-color: var(--accent); }
+.training-plan-selector { display: grid; gap: 4px; max-height: 180px; overflow: auto; padding-right: 3px; }
+.training-plan-text-controls { display: grid; gap: 8px; margin-top: 10px; }
+.slide-mini.training-exercise { background: repeating-linear-gradient(90deg, #257e2d 0 7px, #319237 7px 14px); }
+.slide-mini.training-exercise::before { content: ""; position: absolute; inset: 9px; border: 1px solid rgba(255,255,255,.85); border-radius: 2px; }
+.slide-mini.training-plan { background: #f1f3ee; display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 6px; box-sizing: border-box; }
+.slide-mini.training-plan i { background: #3a8835; border: 1px solid #cfd5ca; }
+.training-session-modal { max-width: 620px; }
+.training-session-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 20px 0; }
+.training-session-fields label { display: grid; gap: 7px; color: #aeb9b4; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.training-session-fields input { min-width: 0; border: 1px solid rgba(255,255,255,.14); border-radius: 8px; background: #0d1715; color: #fff; padding: 11px; font: inherit; text-transform: none; letter-spacing: normal; }
+.training-session-modal footer { display: flex; justify-content: space-between; gap: 10px; }
+.training-session-modal footer button { border: 1px solid rgba(255,255,255,.16); border-radius: 8px; padding: 10px 14px; color: #dce7e1; background: transparent; }
+.training-session-modal footer .primary { background: #6fe8f4; border-color: #6fe8f4; color: #082023; font-weight: 800; }
+.training-session-modal footer .primary:disabled { opacity: .45; }
+.modal-plan-selector { max-height: 260px; margin: 18px 0; padding: 12px; border: 1px solid rgba(255,255,255,.1); border-radius: 9px; }
+
 @media (max-width: 900px) {
   .editor-grid { grid-template-columns: 188px minmax(380px, 1fr) 250px; }
   .tool-sidebar { grid-template-columns: 62px minmax(0, 126px); }

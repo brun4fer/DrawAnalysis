@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { FolderOpen, Plus, RefreshCw, Trash2, X } from "lucide-react";
-import type { AnalysisSlide } from "@/types/slide";
+import type { AnalysisSlide, TrainingSessionDetails } from "@/types/slide";
 import type { DrawingObject } from "@/types/drawing";
 import { isPresentationData, prepareSlidesForStorage } from "@/utils/presentationData";
 
@@ -13,7 +13,7 @@ interface Props {
   selectedSlideId: string | null;
   activeDrawings: DrawingObject[];
   onClose: () => void;
-  onOpen: (project: { id: string; name: string; slides: AnalysisSlide[] }) => void;
+  onOpen: (project: { id: string; name: string; slides: AnalysisSlide[]; trainingSession?: TrainingSessionDetails }) => void;
   onResolveMissingVideo?: (slideId: string) => void;
   onPrepareForSave?: () => Promise<AnalysisSlide[]>;
 }
@@ -84,7 +84,8 @@ export function ProjectLibraryModal({ slides, selectedSlideId, activeDrawings, o
       const result = await response.json() as { project?: ProjectRecord; error?: string };
       if (!response.ok || !result.project) throw new Error(result.error || "Não foi possível abrir o projeto.");
       if (!isPresentationData(result.project.data)) throw new Error("Este projeto não contém uma apresentação válida.");
-      onOpen({ id: result.project.id, name: result.project.name, slides: result.project.data.slides });
+      const source = result.project.data as { slides: AnalysisSlide[]; trainingSession?: TrainingSessionDetails };
+      onOpen({ id: result.project.id, name: result.project.name, slides: source.slides, trainingSession: source.trainingSession });
       onClose();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Não foi possível abrir o projeto.");

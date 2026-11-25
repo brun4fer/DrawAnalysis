@@ -243,5 +243,19 @@ export function createSlide(type: SlideType, index: number): AnalysisSlide {
       },
     };
     case "image": return { ...base, name: "Imagem", content: { kind: "image", fit: "contain", drawings: [] } };
+    case "training-exercise": return {
+      ...base,
+      name: "Exercise",
+      caption: "",
+      duration: 6,
+      content: { kind: "training-exercise", title: "EXERCISE", description: "", pitchColor: "#2f922d", pitchLineColor: "#ffffff", objects: [] },
+    };
+    case "training-plan": return {
+      ...base,
+      name: "Training plan",
+      caption: "",
+      duration: 8,
+      content: { kind: "training-plan", exerciseSlideIds: [], layout: "session-grid", texts: [], backgroundColor: "#ffffff" },
+    };
   }
 }

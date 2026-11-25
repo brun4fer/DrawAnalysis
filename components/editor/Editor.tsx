@@ -16,12 +16,14 @@ import { SlidePropertiesPanel } from "@/components/slides/SlidePropertiesPanel";
 import { StaticSlideFooter } from "@/components/slides/StaticSlideFooter";
 import { CloudLibraryModal, type CloudAssetSelection } from "@/components/cloud/CloudLibraryModal";
 import { ProjectLibraryModal } from "@/components/projects/ProjectLibraryModal";
+import { TrainingSessionSetupModal } from "@/components/training/TrainingSessionSetupModal";
+import { TrainingPlanSelectModal } from "@/components/training/TrainingPlanSelectModal";
 import { useEditorStore } from "@/store/useEditorStore";
 import { TOOLS } from "@/components/tools/toolDefinitions";
 import { createSlide } from "@/utils/slideFactory";
 import { prepareSlidesForStorage } from "@/utils/presentationData";
-import type { AnalysisSlide, SlideType } from "@/types/slide";
-import { APP_PRODUCT } from "@/lib/product";
+import type { AnalysisSlide, SlideType, TrainingSessionDetails } from "@/types/slide";
+import { APP_PRODUCT, isTrainingExercisesProduct } from "@/lib/product";
 import { type CloudUploadStatus, type CloudVideoAsset, uploadCloudVideo } from "@/utils/cloudVideoUpload";
 import { resolveCloudPlayback } from "@/utils/cloudPlayback";
 
@@ -50,6 +52,9 @@ export function Editor() {
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [account, setAccount] = useState<Account | null>(null);
   const [notice, setNotice] = useState("");
+  const [trainingSession, setTrainingSession] = useState<TrainingSessionDetails | null>(null);
+  const [trainingSetupOpen, setTrainingSetupOpen] = useState(false);
+  const [trainingPlanSelectOpen, setTrainingPlanSelectOpen] = useState(false);
   const [automaticUploads, setAutomaticUploads] = useState<Record<string, AutomaticUpload>>({});
   const {
     selectedId, removeDrawing, undo, redo, setTool,
@@ -71,6 +76,10 @@ export function Editor() {
       }
     });
   }, [loadFavorites, router]);
+
+  useEffect(() => {
+    if (isTrainingExercisesProduct(APP_PRODUCT.variant) && account && !projectId && !trainingSession) setTrainingSetupOpen(true);
+  }, [account, projectId, trainingSession]);
 
   useEffect(() => {
     const sourceUrls = sourceUrlsRef.current;
@@ -227,6 +236,7 @@ export function Editor() {
   };
 
   const addNewSlide = (type: SlideType) => {
+    if (type === "training-plan") { setPickerOpen(false); setTrainingPlanSelectOpen(true); return; }
     addSlide(createSlide(type, slides.length));
     setPickerOpen(false);
   };
@@ -253,7 +263,8 @@ export function Editor() {
     setSaveState("saving");
     setNotice("");
     try {
-      const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: projectName, data: { slides: prepareSlidesForStorage(projectSlides, { selectedSlideId, drawings }) } }) });
+      const data = { slides: prepareSlidesForStorage(projectSlides, { selectedSlideId, drawings }), ...(isTrainingExercisesProduct(APP_PRODUCT.variant) && trainingSession ? { trainingSession } : {}) };
+      const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: projectName, data }) });
       const result = await response.json() as { error?: string };
       if (!response.ok) throw new Error(result.error || "Não foi possível guardar a apresentação.");
       setSaveState("saved");
@@ -293,7 +304,7 @@ export function Editor() {
     router.refresh();
   }
 
-  const openStoredProject = (project: { id: string; name: string; slides: AnalysisSlide[] }) => {
+  const openStoredProject = (project: { id: string; name: string; slides: AnalysisSlide[]; trainingSession?: TrainingSessionDetails }) => {
     const localVideo = slides.find((slide) => slide.content.kind === "video" && slide.content.fileName.trim() && !slide.content.mediaAssetId);
     if (localVideo && !window.confirm("Existe um vídeo apenas local na apresentação atual. Se abrir outro projeto agora, terá de o selecionar novamente.\n\nOK: abrir o outro projeto\nCancelar: guardar o vídeo na cloud")) {
       setSelectedSlideId(localVideo.id);
@@ -305,6 +316,8 @@ export function Editor() {
     localFilesRef.current.clear();
     setProjectId(project.id);
     setProjectName(project.name);
+    setTrainingSession(project.trainingSession ?? null);
+    setTrainingSetupOpen(false);
     replacePresentation(project.slides);
     setSaveState("idle");
   };
@@ -371,7 +384,7 @@ export function Editor() {
             </div>
           ) : (
             <div className="static-editor-grid">
-              <SlideRenderer slide={selectedSlide} onContentChange={(content) => updateSlide(selectedSlide.id, { content })} />
+              <SlideRenderer slide={selectedSlide} trainingSession={trainingSession} onContentChange={(content) => updateSlide(selectedSlide.id, { content })} />
               <SlidePropertiesPanel />
             </div>
           )
@@ -379,9 +392,22 @@ export function Editor() {
       </div>
       {isVideoSlide ? <Timeline /> : <StaticSlideFooter />}
       {pickerOpen && <SlideTypePicker onSelect={addNewSlide} onClose={() => setPickerOpen(false)} />}
+      {trainingSetupOpen && <TrainingSessionSetupModal onOpenProjects={() => { setTrainingSetupOpen(false); setProjectsOpen(true); }} onCreate={(session) => {
+        setTrainingSession(session);
+        setTrainingSetupOpen(false);
+        setProjectName(`Training ${session.date} · MC ${session.microcycle} · TU ${session.trainingUnit}`);
+        void (async () => {
+          const storedSlides = prepareSlidesForStorage(useEditorStore.getState().slides);
+          const response = await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: `Training ${session.date} · MC ${session.microcycle} · TU ${session.trainingUnit}`, data: { slides: storedSlides, trainingSession: session } }) });
+          const result = await response.json() as { project?: { id: string; name: string }; error?: string };
+          if (!response.ok || !result.project) { setNotice(result.error || "Could not create the training project."); return; }
+          setProjectId(result.project.id); setProjectName(result.project.name); setSaveState("saved");
+        })();
+      }} />}
+      {trainingPlanSelectOpen && <TrainingPlanSelectModal slides={slides} onCancel={() => setTrainingPlanSelectOpen(false)} onConfirm={(exerciseSlideIds) => { const plan = createSlide("training-plan", slides.length); if (plan.content.kind === "training-plan") plan.content.exerciseSlideIds = exerciseSlideIds; addSlide(plan); setTrainingPlanSelectOpen(false); }} />}
       {cloudOpen && <CloudLibraryModal localFile={selectedSlide ? localFilesRef.current.get(selectedSlide.id) : null} backgroundUpload={selectedSlide ? automaticUploads[selectedSlide.id] : undefined} onSelect={selectCloudAsset} onClose={() => setCloudOpen(false)} />}
       {projectsOpen && <ProjectLibraryModal slides={slides} selectedSlideId={selectedSlideId} activeDrawings={drawings} onPrepareForSave={ensureLocalVideosInCloud} onClose={() => setProjectsOpen(false)} onResolveMissingVideo={(slideId) => { setProjectsOpen(false); setSelectedSlideId(slideId); setCloudOpen(true); }} onOpen={openStoredProject} />}
-      {presenting && <PresentationMode onClose={closePreview} />}
+      {presenting && <PresentationMode onClose={closePreview} trainingSession={trainingSession} />}
       {videoExportOpen && <VideoExport slides={slides} selectedSlideId={selectedSlideId} projectName={projectName} onClose={closeVideoExport} />}
       {pdfExportOpen && <PdfExport slides={slides} projectName={projectName} onClose={closePdfExport} />}
     </main>

@@ -1,9 +1,9 @@
 "use client";
 
-import { AlignLeft, ClipboardList, ClipboardType, Film, ImageIcon, Landmark, LayoutTemplate, Presentation, ShieldHalf, UserRoundSearch, X } from "lucide-react";
+import { AlignLeft, ClipboardList, ClipboardType, Dumbbell, Film, ImageIcon, Landmark, LayoutPanelTop, LayoutTemplate, Presentation, ShieldHalf, UserRoundSearch, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { SlideType } from "@/types/slide";
-import { APP_PRODUCT, isWrittenReportProduct, supportsPlayerProfile } from "@/lib/product";
+import { APP_PRODUCT, isTrainingExercisesProduct, isWrittenReportProduct, supportsPlayerProfile } from "@/lib/product";
 
 interface Props { onSelect: (type: SlideType) => void; onClose: () => void }
 
@@ -20,11 +20,16 @@ const choices: Array<{ type: SlideType; label: string; description: string; icon
   { type: "image", label: "Imagem", description: "Fotografia ou frame externo para analisar", icon: ImageIcon },
 ];
 
+const trainingChoices: Array<{ type: SlideType; label: string; description: string; icon: LucideIcon }> = [
+  { type: "training-exercise", label: "Exercise", description: "Football pitch to create one training exercise", icon: Dumbbell },
+  { type: "training-plan", label: "Training plan", description: "Organise selected exercises into a session plan", icon: LayoutPanelTop },
+];
+
 export function SlideTypePicker({ onSelect, onClose }: Props) {
   const isWrittenReport = isWrittenReportProduct(APP_PRODUCT.variant);
-  const visibleChoices = (supportsPlayerProfile(APP_PRODUCT.variant)
+  const visibleChoices = (isTrainingExercisesProduct(APP_PRODUCT.variant) ? trainingChoices : (supportsPlayerProfile(APP_PRODUCT.variant)
     ? choices
-    : choices.filter((choice) => choice.type !== "player-profile"))
+    : choices.filter((choice) => choice.type !== "player-profile")))
     // Existing video slides keep rendering/editing normally. This only removes the
     // creation template from Written Report.
     .filter((choice) => !isWrittenReport || choice.type !== "video")

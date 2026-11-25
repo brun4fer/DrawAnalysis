@@ -1,6 +1,6 @@
 "use client";
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import type { AnalysisSlide, SlideContent } from "@/types/slide";
+import type { AnalysisSlide, SlideContent, TrainingSessionDetails } from "@/types/slide";
 import { TitleSlide } from "./title/TitleSlide";
 import { TextSlide } from "./text/TextSlide";
 import { LineupSlide } from "./lineup/LineupSlide";
@@ -11,6 +11,7 @@ import { VideoSlidePreview } from "./video/VideoSlidePreview";
 import { WrittenReportSlide } from "./report/WrittenReportSlide";
 import { TeamOverviewSlide } from "./team-overview/TeamOverviewSlide";
 import { PlayerProfileSlide } from "./player-profile/PlayerProfileSlide";
+import { TrainingExerciseSlide, TrainingPlanSlide } from "./training/TrainingExerciseSlide";
 import { SlideCaption } from "./SlideCaption";
 
 interface Props {
@@ -21,9 +22,10 @@ interface Props {
   presentationTime?: number;
   presentationPlaying?: boolean;
   showCaption?: boolean;
+  trainingSession?: TrainingSessionDetails | null;
 }
 
-export function SlideRenderer({ slide, videoEditor, interactive = true, onContentChange, presentationTime, presentationPlaying, showCaption = true }: Props) {
+export function SlideRenderer({ slide, videoEditor, interactive = true, onContentChange, presentationTime, presentationPlaying, showCaption = true, trainingSession }: Props) {
   const stageRef = useRef<HTMLDivElement>(null);
   const [slideScale, setSlideScale] = useState(1);
   const content = slide.content;
@@ -51,6 +53,8 @@ export function SlideRenderer({ slide, videoEditor, interactive = true, onConten
       case "kickoff": return <KickoffSlide content={content} playbackTime={presentationTime} playing={presentationPlaying} />;
       case "tactical-board": return <TacticalBoardSlide content={content} interactive={interactive} onChange={(value) => onContentChange?.(value)} presentationTime={presentationTime} />;
       case "image": return <ImageSlide content={content} />;
+      case "training-exercise": return <TrainingExerciseSlide content={content} interactive={interactive} onChange={(value) => onContentChange?.(value)} session={trainingSession} />;
+      case "training-plan": return <TrainingPlanSlide content={content} interactive={interactive} onChange={(value) => onContentChange?.(value)} session={trainingSession} />;
     }
   })();
 

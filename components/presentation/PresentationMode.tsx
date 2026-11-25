@@ -4,8 +4,9 @@ import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { useEditorStore } from "@/store/useEditorStore";
 import { SlideRenderer } from "@/components/slides/SlideRenderer";
 import { getSlidePresentationDuration } from "@/utils/videoTimeline";
+import type { TrainingSessionDetails } from "@/types/slide";
 
-interface Props { onClose: () => void }
+interface Props { onClose: () => void; trainingSession?: TrainingSessionDetails | null }
 
 const PRESENTATION_TICK_MS = 1000 / 30;
 const MAX_TICK_DELTA_SECONDS = .1;
@@ -42,7 +43,7 @@ function tacticalStepRange(content: { movements?: unknown[]; movementDuration?: 
     : { start: movementStart + travel, end: movementStart + travel + hold };
 }
 
-export function PresentationMode({ onClose }: Props) {
+export function PresentationMode({ onClose, trainingSession }: Props) {
   const { slides, selectedSlideId } = useEditorStore();
   const durations = useMemo(() => slides.map(getSlidePresentationDuration), [slides]);
   const totalDuration = durations.reduce((total, duration) => total + duration, 0);
@@ -205,7 +206,7 @@ export function PresentationMode({ onClose }: Props) {
         {/* A video preview owns media, drawing and timeline state. Remount it
             when the presentation moves to another slide so a decoded frame or
             overlay from the previous slide can never be reused. */}
-        <SlideRenderer key={slide.id} slide={slide} interactive={false} presentationTime={active.elapsed} presentationPlaying={playing} />
+        <SlideRenderer key={slide.id} slide={slide} interactive={false} trainingSession={trainingSession} presentationTime={active.elapsed} presentationPlaying={playing} />
       </div>
     </div>
   );

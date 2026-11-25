@@ -9,6 +9,11 @@ test("normalizes both opponent-player variants", () => {
   assert.equal(normalizeProductVariant("player-video-analysis"), "opponent-player-video-analysis");
 });
 
+test("normalizes the training exercises product independently", () => {
+  assert.equal(normalizeProductVariant("training-exercises"), "training-exercises");
+  assert.equal(normalizeProductVariant("training-planner"), "training-exercises");
+});
+
 test("normalizes the game review deployment aliases", () => {
   assert.equal(normalizeProductVariant("game-review"), "game-review");
   assert.equal(normalizeProductVariant("match-review"), "game-review");

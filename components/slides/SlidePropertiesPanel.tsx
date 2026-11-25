@@ -8,13 +8,14 @@ import { createId } from "@/utils/id";
 import { CaptionControls } from "./CaptionControls";
 import { ColorPalettePicker } from "@/components/ui/ColorPalettePicker";
 import { APP_PRODUCT, isWrittenReportProduct } from "@/lib/product";
+import { TrainingExerciseProperties, TrainingPlanProperties } from "./training/TrainingExerciseProperties";
 
 export function SlidePropertiesPanel() {
   const { slides, selectedSlideId, updateSlide } = useEditorStore();
   const slide = slides.find((item) => item.id === selectedSlideId);
   if (!slide) return <aside className="properties-panel"><div className="no-selection"><Layers3 size={26} /><strong>Adicione um slide</strong></div></aside>;
   const setContent = (content: SlideContent) => updateSlide(slide.id, { content });
-  const slideTypeLabel = slide.type === "text" ? "Conclusão" : slide.type === "team-overview" ? "Dados gerais da equipa" : slide.type === "written-report" ? "Esquema tático + descrição" : slide.type === "player-profile" ? "Player profile" : slide.type === "kickoff" ? "Apresentação de jogo" : slide.type;
+  const slideTypeLabel = slide.type === "text" ? "Conclusão" : slide.type === "team-overview" ? "Dados gerais da equipa" : slide.type === "written-report" ? "Esquema tático + descrição" : slide.type === "player-profile" ? "Player profile" : slide.type === "kickoff" ? "Apresentação de jogo" : slide.type === "training-exercise" ? "Exercise" : slide.type === "training-plan" ? "Training plan" : slide.type;
 
   return (
     <aside className="properties-panel slide-properties">
@@ -29,6 +30,8 @@ export function SlidePropertiesPanel() {
       {slide.content.kind === "kickoff" && <MatchPresentationProperties content={slide.content} onChange={setContent} />}
       {slide.content.kind === "tactical-board" && <BoardProperties content={slide.content} onChange={setContent} />}
       {slide.content.kind === "image" && <ImageProperties content={slide.content} onChange={setContent} />}
+      {slide.content.kind === "training-exercise" && <TrainingExerciseProperties content={slide.content} onChange={setContent} />}
+      {slide.content.kind === "training-plan" && <TrainingPlanProperties content={slide.content} onChange={setContent} />}
       {slide.content.kind === "video" && <section className="property-section"><h3>VÍDEO / PLAY</h3><div className="video-slide-info"><span>{slide.content.fileName || "Nenhum vídeo carregado"}</span><small>As ferramentas de vídeo e as propriedades dos desenhos aparecem quando este slide está ativo.</small></div></section>}
       <section className="property-section">
         <h3>APRESENTAÇÃO</h3>

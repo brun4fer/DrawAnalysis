@@ -260,6 +260,25 @@ export function normalizePresentationSlides(slides: AnalysisSlide[]) {
         markDashed: normalized.content.markDashed ?? false,
       };
     }
+    if (normalized.content.kind === "training-exercise") {
+      normalized.content = {
+        ...normalized.content,
+        title: normalized.content.title ?? normalized.name ?? "EXERCISE",
+        description: normalized.content.description ?? "",
+        pitchColor: normalized.content.pitchColor ?? "#2f922d",
+        pitchLineColor: normalized.content.pitchLineColor ?? "#ffffff",
+        objects: normalized.content.objects ?? [],
+      };
+    }
+    if (normalized.content.kind === "training-plan") {
+      normalized.content = {
+        ...normalized.content,
+        exerciseSlideIds: (normalized.content.exerciseSlideIds ?? []).slice(0, 4),
+        layout: "session-grid",
+        texts: normalized.content.texts ?? [],
+        backgroundColor: normalized.content.backgroundColor ?? "#ffffff",
+      };
+    }
     return normalized;
   });
 }

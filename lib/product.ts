@@ -8,7 +8,8 @@ export type ProductVariant =
   | "our-player-performance-report"
   | "our-player-video-analysis"
   | "collective-training-video-analysis"
-  | "individual-training-video-analysis";
+  | "individual-training-video-analysis"
+  | "training-exercises";
 
 export function normalizeProductVariant(value?: string): ProductVariant {
   const normalized = value?.trim().toLowerCase();
@@ -21,6 +22,7 @@ export function normalizeProductVariant(value?: string): ProductVariant {
   if (["our-player-video-analysis", "our-players-video-analysis"].includes(normalized ?? "")) return "our-player-video-analysis";
   if (["collective-training-video-analysis", "training-collective-video-analysis"].includes(normalized ?? "")) return "collective-training-video-analysis";
   if (["individual-training-video-analysis", "training-individual-video-analysis"].includes(normalized ?? "")) return "individual-training-video-analysis";
+  if (["training-exercises", "training-exercise", "training-planner"].includes(normalized ?? "")) return "training-exercises";
   return "tactidraw";
 }
 
@@ -35,6 +37,10 @@ export function supportsPlayerProfile(variant: ProductVariant) {
 /** Features intentionally exclusive to the team written-report product. */
 export function isWrittenReportProduct(variant: ProductVariant) {
   return variant === "written-report";
+}
+
+export function isTrainingExercisesProduct(variant: ProductVariant) {
+  return variant === "training-exercises";
 }
 
 export const APP_VARIANT = normalizeProductVariant(process.env.NEXT_PUBLIC_APP_VARIANT);
@@ -139,6 +145,16 @@ const PRODUCTS = {
     iconPath: "/tactidraw-icon.svg",
     description: "Individual training video analysis and presentations for our players.",
     defaultProjectName: "Untitled individual training analysis",
+  },
+  "training-exercises": {
+    variant: "training-exercises",
+    name: "Training Exercises",
+    brandLead: "Training ",
+    brandStrong: "Exercises",
+    mark: "TE",
+    iconPath: "/tactidraw-icon.svg",
+    description: "Create football training exercises, session plans and presentation-ready practice boards.",
+    defaultProjectName: "Untitled training session",
   },
 } as const satisfies Record<ProductVariant, {
   variant: ProductVariant;

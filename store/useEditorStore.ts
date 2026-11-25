@@ -8,7 +8,7 @@ import { createSlide } from "@/utils/slideFactory";
 import { sourceTimeToTimeline } from "@/utils/videoTimeline";
 import { normalizePresentationSlides } from "@/utils/presentationData";
 import { favoriteFromDrawing, isToolFavorite } from "@/utils/toolFavorites";
-import { APP_PRODUCT, supportsPlayerProfile } from "@/lib/product";
+import { APP_PRODUCT, isTrainingExercisesProduct, supportsPlayerProfile } from "@/lib/product";
 
 interface Snapshot { drawings: DrawingObject[]; slides: AnalysisSlide[] }
 
@@ -75,6 +75,8 @@ const initialSlide = supportsPlayerProfile(APP_PRODUCT.variant)
   ? { ...createSlide("player-profile", 0), id: "initial-player-profile-slide" }
   : APP_PRODUCT.variant === "written-report"
     ? { ...createSlide("written-report", 0), id: "initial-written-report-slide" }
+    : isTrainingExercisesProduct(APP_PRODUCT.variant)
+      ? { ...createSlide("training-exercise", 0), id: "initial-training-exercise-slide", name: "Exercise 1" }
     : { ...createSlide("video", 0), id: "initial-video-slide", name: "Vídeo / Jogada" };
 const DEFAULT_FAVORITES_KEY = `${APP_PRODUCT.variant}:tool-favorites`;
 
