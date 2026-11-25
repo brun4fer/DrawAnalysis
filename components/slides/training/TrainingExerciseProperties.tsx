@@ -38,10 +38,15 @@ export function TrainingExerciseProperties({ content, onChange }: { content: Tra
     </Section>
     {selected && <Section title={TRAINING_OBJECT_LABELS[selected.type].toUpperCase()}>
       {(selected.type === "player" || selected.type === "text") && <label className="slide-prop-field vertical"><span>{selected.type === "player" ? "Player name" : "Text"}</span><textarea rows={selected.type === "text" ? 3 : 1} value={selected.label ?? ""} onChange={(event) => update({ label: event.target.value })} /></label>}
-      <ColorField label="Colour" value={selected.color ?? "#ffffff"} onChange={(color) => update({ color })} />
-      <Range label="Size / length" value={selected.width} min={selected.type === "text" ? 0 : 1} max={selected.type === "goal" ? 20 : 40} step={.25} suffix="%" onChange={(width) => update({ width })} />
-      {!["player", "ball", "cone", "text"].includes(selected.type) && <Range label="Height" value={selected.height} min={0} max={30} step={.25} suffix="%" onChange={(height) => update({ height })} />}
-      {!["player", "ball", "cone", "goal", "text"].includes(selected.type) && <Range label="Line thickness" value={selected.strokeWidth ?? 1.2} min={.3} max={5} step={.1} suffix="px" onChange={(strokeWidth) => update({ strokeWidth })} />}
+      <ColorField label={selected.type === "player" ? "Player colour" : selected.type === "text" ? "Text colour" : "Colour"} value={selected.color ?? "#ffffff"} onChange={(color) => update({ color })} />
+      {selected.type === "player" && <><Range label="Player size" value={selected.width} min={2} max={12} step={.25} suffix="%" onChange={(width) => update({ width, height: width })} /><ColorField label="Name colour" value={selected.labelColor ?? "#ffffff"} onChange={(labelColor) => update({ labelColor })} /><label className="checkbox-field"><input type="checkbox" checked={selected.labelBackgroundEnabled ?? false} onChange={(event) => update({ labelBackgroundEnabled: event.target.checked })} /> Name background</label>{selected.labelBackgroundEnabled && <ColorField label="Background colour" value={selected.labelBackgroundColor ?? "#111111"} onChange={(labelBackgroundColor) => update({ labelBackgroundColor })} />}</>}
+      {(selected.type === "arrow" || selected.type === "line" || selected.type === "zigzag-arrow") && <Range label="Length" value={selected.width} min={2} max={50} step={.25} suffix="%" onChange={(width) => update({ width })} />}
+      {selected.type === "zigzag-arrow" && <Range label="Zig-zag height" value={selected.height} min={1} max={24} step={.25} suffix="%" onChange={(height) => update({ height })} />}
+      {selected.type === "pole" && <><Range label="Pole width" value={selected.width} min={.8} max={8} step={.2} suffix="%" onChange={(width) => update({ width })} /><Range label="Pole height" value={selected.height} min={2} max={30} step={.25} suffix="%" onChange={(height) => update({ height })} /></>}
+      {selected.type === "cone" && <><Range label="Cone width" value={selected.width} min={1} max={14} step={.2} suffix="%" onChange={(width) => update({ width })} /><Range label="Cone depth" value={selected.height} min={.8} max={10} step={.2} suffix="%" onChange={(height) => update({ height })} /></>}
+      {selected.type === "goal" && <><Range label="Goal width" value={selected.width} min={1} max={28} step={.25} suffix="%" onChange={(width) => update({ width })} /><Range label="Goal height" value={selected.height} min={2} max={34} step={.25} suffix="%" onChange={(height) => update({ height })} /></>}
+      {selected.type === "ball" && <Range label="Ball size" value={selected.width} min={1} max={10} step={.2} suffix="%" onChange={(width) => update({ width, height: width })} />}
+      {["line", "arrow", "zigzag-arrow"].includes(selected.type) && <Range label="Line thickness" value={selected.strokeWidth ?? 1.2} min={.3} max={5} step={.1} suffix="px" onChange={(strokeWidth) => update({ strokeWidth })} />}
       {selected.type === "text" && <>
         <Range label="Font size" value={selected.fontSize ?? 3} min={1} max={9} step={.2} suffix="%" onChange={(fontSize) => update({ fontSize })} />
         <label className="slide-prop-field"><span>Font style</span><select value={selected.fontFamily ?? "heavy"} onChange={(event) => update({ fontFamily: event.target.value as TrainingExerciseObject["fontFamily"] })}><option value="heavy">Heavy</option><option value="sans">Sans</option><option value="condensed">Condensed</option></select></label>
@@ -49,7 +54,7 @@ export function TrainingExerciseProperties({ content, onChange }: { content: Tra
       </>}
       {["line", "arrow", "zigzag-arrow"].includes(selected.type) && <label className="checkbox-field"><input type="checkbox" checked={selected.dashed ?? false} onChange={(event) => update({ dashed: event.target.checked })} /> Dashed line</label>}
       <Range label="Opacity" value={selected.opacity ?? 1} min={.1} max={1} step={.05} suffix="%" onChange={(opacity) => update({ opacity })} />
-      <Range label="Rotation" value={selected.rotation ?? 0} min={-180} max={180} suffix="°" onChange={(rotation) => update({ rotation })} />
+      {["line", "arrow", "zigzag-arrow", "pole", "goal", "text"].includes(selected.type) && <Range label="Rotation" value={selected.rotation ?? 0} min={-180} max={180} suffix="°" onChange={(rotation) => update({ rotation })} />}
       <button type="button" className="report-remove-property" onClick={() => onChange({ ...content, objects: content.objects.filter((object) => object.id !== selected.id), selectedObjectId: undefined })}><Trash2 size={12} /> Remove object</button>
     </Section>}
   </>;

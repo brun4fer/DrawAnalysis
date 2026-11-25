@@ -76,7 +76,16 @@ function TrainingObject({ object, selected, onPointerDown }: { object: TrainingE
   const cls = `${styles.object}${selected ? ` ${styles.selected}` : ""}`;
   const strokeProps = { stroke: color, strokeWidth: object.strokeWidth ?? 1.3, strokeDasharray: object.dashed ? "2 1.5" : undefined, opacity, fill: "none" };
   const transform = `rotate(${object.rotation ?? 0} ${x} ${y})`;
-  if (object.type === "player") return <g className={cls} transform={transform} onPointerDown={onPointerDown} opacity={opacity}><circle cx={x} cy={y} r={Math.max(1.7, w / 2)} fill={color} stroke="#ffffff" strokeWidth=".35" /><text className={styles.name} x={x} y={y + w / 2 + 2.1} textAnchor="middle" fontSize="1.65" fill="#ffffff">{object.label || "PLAYER"}</text></g>;
+  if (object.type === "player") {
+    const label = object.label || "PLAYER";
+    const labelY = y + w / 2 + 2.1;
+    const labelWidth = Math.max(5.2, label.length * .98 + 1.25);
+    return <g className={cls} transform={transform} onPointerDown={onPointerDown} opacity={opacity}>
+      <circle cx={x} cy={y} r={Math.max(1.7, w / 2)} fill={color} stroke="#ffffff" strokeWidth=".35" />
+      {object.labelBackgroundEnabled ? <rect x={x - labelWidth / 2} y={labelY - 1.55} width={labelWidth} height={2.15} rx=".38" fill={object.labelBackgroundColor || "#111111"} /> : null}
+      <text className={styles.name} x={x} y={labelY} textAnchor="middle" fontSize="1.65" fill={object.labelColor || "#ffffff"}>{label}</text>
+    </g>;
+  }
   if (object.type === "pole") return <g className={cls} transform={transform} onPointerDown={onPointerDown} opacity={opacity}><ellipse cx={x} cy={y + h / 2 - .4} rx={w / 2} ry={Math.max(.7, h * .11)} fill="#171717" /><path d={`M${x} ${y + h / 2 - .55}V${y - h / 2}`} stroke={color} strokeWidth={Math.max(.6, w * .32)} strokeLinecap="round" /><path d={`M${x + .32} ${y + h / 2 - .8}V${y - h / 2 + .35}`} stroke="#ff7666" strokeWidth=".16" /></g>;
   if (object.type === "cone") return <g className={cls} transform={transform} onPointerDown={onPointerDown} opacity={opacity}><ellipse cx={x} cy={y} rx={w / 2} ry={Math.max(.75, h / 2)} fill={color} /><ellipse cx={x} cy={y} rx={w * .21} ry={Math.max(.25, h * .2)} fill="#4c9633" stroke="#ff6a55" strokeWidth=".18" /><ellipse cx={x} cy={y + h * .08} rx={w * .43} ry={Math.max(.4, h * .34)} fill="none" stroke="#ff8273" strokeWidth=".16" /></g>;
   if (object.type === "goal") return <g className={cls} transform={transform} onPointerDown={onPointerDown} opacity={opacity}><rect x={x - w / 2} y={y - h / 2} width={w} height={h} fill="url(#goal-net)" stroke={color} strokeWidth=".35" /><path d={`M${x - w / 2} ${y - h / 2}h${w}M${x - w / 2} ${y + h / 2}h${w}`} stroke="#ffffff" strokeWidth=".35" /></g>;
@@ -86,11 +95,20 @@ function TrainingObject({ object, selected, onPointerDown }: { object: TrainingE
     const points = Array.from({ length: 7 }, (_, index) => `${x - w / 2 + index * (w / 6)},${y + (index % 2 ? -h / 2 : h / 2)}`).join(" ");
     return <g className={cls} transform={transform} onPointerDown={onPointerDown}><polyline points={points} {...strokeProps} markerEnd="url(#training-arrow-head)" /></g>;
   }
-  if (object.type === "line") return <g className={cls} transform={transform} onPointerDown={onPointerDown}><line x1={x - w / 2} y1={y - h / 2} x2={x + w / 2} y2={y + h / 2} {...strokeProps} /></g>;
-  return <g className={cls} transform={transform} onPointerDown={onPointerDown}><line x1={x - w / 2} y1={y + h / 2} x2={x + w / 2} y2={y - h / 2} {...strokeProps} markerEnd="url(#training-arrow-head)" /></g>;
+  if (object.type === "line") return <g className={cls} transform={transform} onPointerDown={onPointerDown}><line x1={x - w / 2} y1={y} x2={x + w / 2} y2={y} {...strokeProps} /></g>;
+  return <g className={cls} transform={transform} onPointerDown={onPointerDown}><line x1={x - w / 2} y1={y} x2={x + w / 2} y2={y} {...strokeProps} markerEnd="url(#training-arrow-head)" /></g>;
 }
 
 interface PlanProps { content: TrainingPlanSlideContent; interactive?: boolean; onChange?: (content: TrainingPlanSlideContent) => void; session?: TrainingSessionDetails | null; }
+
+function descriptionFontSize(description: string) {
+  if (description.length > 900) return 5.5;
+  if (description.length > 650) return 6.5;
+  if (description.length > 450) return 7.5;
+  if (description.length > 280) return 9;
+  if (description.length > 150) return 11;
+  return 14;
+}
 
 export function TrainingPlanSlide({ content, interactive = false, onChange, session }: PlanProps) {
   const slides = useEditorStore((state) => state.slides);
@@ -113,7 +131,11 @@ export function TrainingPlanSlide({ content, interactive = false, onChange, sess
   return <div ref={planRef} className={styles.plan} style={{ background: content.backgroundColor ?? "#ffffff" }} onPointerMove={moveText} onPointerUp={() => { dragRef.current = null; }} onPointerLeave={() => { dragRef.current = null; }}>
     <header className={styles.planHeader}><span><b>SEASON</b>{session?.season || "—"}</span><span><b>DATE</b>{session?.date || "—"}</span><span><b>MICROCYCLE</b>{session?.microcycle || "—"}</span><span><b>TRAINING UNIT</b>{session?.trainingUnit || "—"}</span></header>
     {exercises.length ? <div className={`${styles.planGrid} ${content.layout === "overview-grid" ? styles.overviewGrid : content.layout === "timeline" ? styles.timeline : styles.sessionGrid}`}>
-      {exercises.map((exercise, index) => <div className={styles.exerciseTile} key={exercise.id}><strong>{index + 1}. {(exercise.content as TrainingExerciseSlideContent).title || exercise.name}</strong><div className={styles.planExercise}><TrainingExerciseSlide content={exercise.content as TrainingExerciseSlideContent} miniature /><p>{(exercise.content as TrainingExerciseSlideContent).description || "—"}</p></div></div>)}
+      {exercises.map((exercise, index) => {
+        const exerciseContent = exercise.content as TrainingExerciseSlideContent;
+        const description = exerciseContent.description || "—";
+        return <div className={styles.exerciseTile} key={exercise.id}><strong>{index + 1}. {exercise.name}</strong><div className={styles.planExercise}><TrainingExerciseSlide content={exerciseContent} miniature /><p style={{ fontSize: `${descriptionFontSize(description)}px` }}>{description}</p></div></div>;
+      })}
     </div> : <div className={styles.emptyPlan}>Select exercise slides in the panel to build the training plan.</div>}
     {content.texts.map((text) => <div key={text.id} className={`${styles.planText}${content.selectedTextId === text.id ? ` ${styles.planTextSelected}` : ""}`} style={{ left: `${text.x}%`, top: `${text.y}%`, color: text.color, fontSize: `${text.fontSize}px`, fontWeight: text.fontFamily === "heavy" ? 900 : text.fontFamily === "condensed" ? 700 : 500, fontFamily: text.fontFamily === "condensed" ? "Arial Narrow, Arial, sans-serif" : "Inter, Arial, sans-serif", textShadow: text.shadow ? "1px 2px 2px rgba(0,0,0,.3)" : undefined }} onPointerDown={(event) => beginTextDrag(event, text.id, text.x, text.y)}>{text.text}</div>)}
   </div>;

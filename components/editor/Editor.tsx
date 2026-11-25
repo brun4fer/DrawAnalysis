@@ -48,6 +48,7 @@ export function Editor() {
   const [videoExportOpen, setVideoExportOpen] = useState(false);
   const [pdfExportOpen, setPdfExportOpen] = useState(false);
   const [projectId, setProjectId] = useState<string | null>(null);
+  const shouldOpenTrainingSetupRef = useRef(!projectId);
   const [projectName, setProjectName] = useState<string>(APP_PRODUCT.defaultProjectName);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [account, setAccount] = useState<Account | null>(null);
@@ -72,14 +73,11 @@ export function Editor() {
       if (response.ok) {
         const result = await response.json() as Account;
         setAccount(result);
+        if (isTrainingExercisesProduct(APP_PRODUCT.variant) && shouldOpenTrainingSetupRef.current) setTrainingSetupOpen(true);
         loadFavorites(`${APP_PRODUCT.variant}:tool-favorites:${result.workspace.id}:${result.user.id}`);
       }
     });
   }, [loadFavorites, router]);
-
-  useEffect(() => {
-    if (isTrainingExercisesProduct(APP_PRODUCT.variant) && account && !projectId && !trainingSession) setTrainingSetupOpen(true);
-  }, [account, projectId, trainingSession]);
 
   useEffect(() => {
     const sourceUrls = sourceUrlsRef.current;

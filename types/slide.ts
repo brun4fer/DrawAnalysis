@@ -378,6 +378,10 @@ export interface TrainingExerciseObject {
   rotation?: number;
   color?: string;
   label?: string;
+  /** Player labels stay clean by default; the background is opt-in. */
+  labelColor?: string;
+  labelBackgroundEnabled?: boolean;
+  labelBackgroundColor?: string;
   strokeWidth?: number;
   opacity?: number;
   dashed?: boolean;

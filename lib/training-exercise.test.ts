@@ -7,7 +7,14 @@ test("training exercise objects use portable percentage coordinates", () => {
   assert.equal(player.type, "player");
   assert.equal(player.x, 50);
   assert.equal(player.y, 50);
+  assert.equal(player.labelBackgroundEnabled, false);
+  assert.equal(player.labelColor, "#ffffff");
   assert.ok(player.id.length > 0);
+});
+
+test("training exercise text starts without a visual shadow", () => {
+  const text = createTrainingExerciseObject("text");
+  assert.equal(text.shadow, false);
 });
 
 test("training exercise positions stay inside the pitch", () => {
