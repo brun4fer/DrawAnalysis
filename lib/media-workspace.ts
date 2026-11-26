@@ -8,6 +8,19 @@ function mediaAppId() {
   return value;
 }
 
+/**
+ * `draw-analysis` was the original identifier for the base TactiDraw
+ * deployment.  The deployment was later renamed to `tactidraw`.  They are
+ * the same product library, so keep the old records visible while new uploads
+ * use the current identifier.  Other products deliberately remain isolated.
+ */
+export function mediaLibraryAppIds(appId = mediaAppId()) {
+  if (appId === "draw-analysis" || appId === "tactidraw") {
+    return ["draw-analysis", "tactidraw"];
+  }
+  return [appId];
+}
+
 export async function ensureMediaWorkspace(account: LocalAccount) {
   const appId = mediaAppId();
   const key = { appId_externalWorkspaceId: { appId, externalWorkspaceId: account.workspace.id } };

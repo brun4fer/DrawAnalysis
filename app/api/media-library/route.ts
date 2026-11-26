@@ -1,14 +1,14 @@
 import { handleApiError } from "@/lib/api";
 import { requireWorkspace } from "@/lib/auth";
 import { mediaPrisma } from "@/lib/media-prisma";
-import { ensureMediaWorkspace } from "@/lib/media-workspace";
+import { ensureMediaWorkspace, mediaLibraryAppIds } from "@/lib/media-workspace";
 
 export async function GET() {
   try {
     const account = await requireWorkspace();
     const { appId, mediaWorkspace } = await ensureMediaWorkspace(account);
     const records = await mediaPrisma.mediaAsset.findMany({
-      where: { mediaWorkspaceId: mediaWorkspace.id, createdByAppId: appId, storageStatus: "READY" },
+      where: { mediaWorkspaceId: mediaWorkspace.id, createdByAppId: { in: mediaLibraryAppIds(appId) }, storageStatus: "READY" },
       select: {
         id: true,
         fileName: true,

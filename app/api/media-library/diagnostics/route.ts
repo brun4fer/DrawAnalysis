@@ -3,7 +3,7 @@ import { handleApiError } from "@/lib/api";
 import { requireWorkspace } from "@/lib/auth";
 import { mediaPrisma } from "@/lib/media-prisma";
 import { probeMediaCors } from "@/lib/media-r2";
-import { ensureMediaWorkspace } from "@/lib/media-workspace";
+import { ensureMediaWorkspace, mediaLibraryAppIds } from "@/lib/media-workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,7 +33,7 @@ export async function GET(request: Request) {
     const account = await requireWorkspace();
     const { appId, mediaWorkspace } = await ensureMediaWorkspace(account);
     const asset = await mediaPrisma.mediaAsset.findFirst({
-      where: { mediaWorkspaceId: mediaWorkspace.id, createdByAppId: appId, storageStatus: "READY" },
+      where: { mediaWorkspaceId: mediaWorkspace.id, createdByAppId: { in: mediaLibraryAppIds(appId) }, storageStatus: "READY" },
       orderBy: { uploadedAt: "desc" },
       select: { storageKey: true, mimeType: true, fileSize: true, uploadedAt: true },
     });
