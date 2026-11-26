@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { CheckCircle2, FileVideo2, LoaderCircle, X, XCircle } from "lucide-react";
 import { DrawingPreviewCanvas } from "@/components/canvas/DrawingPreviewCanvas";
 import { APP_PRODUCT } from "@/lib/product";
@@ -17,9 +18,11 @@ interface Props {
   onClose: () => void;
 }
 
-const EXPORT_WIDTH = 1280;
-const EXPORT_HEIGHT = 720;
-const FPS = 25;
+// Export at Full HD. The old 720p/25fps canvas made fine text visibly soft and
+// made normal video movement look less fluid than the source.
+const EXPORT_WIDTH = 1920;
+const EXPORT_HEIGHT = 1080;
+const FPS = 30;
 const TACTICAL_EXPORT_MOVEMENT_HOLD = 2;
 
 const nextPaint = () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
@@ -348,7 +351,7 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
       const audioTrack = audioDestinationRef.current?.stream.getAudioTracks()[0];
       if (audioTrack) outputStream.addTrack(audioTrack);
       const chunks: Blob[] = [];
-      const recorder = new MediaRecorder(outputStream, { mimeType: format.mime, videoBitsPerSecond: 4_500_000, audioBitsPerSecond: 128_000 });
+      const recorder = new MediaRecorder(outputStream, { mimeType: format.mime, videoBitsPerSecond: 12_000_000, audioBitsPerSecond: 192_000 });
       recorderRef.current = recorder;
       let recorderFailure: Error | null = null;
       const stopped = new Promise<Blob>((resolve, reject) => {
@@ -423,8 +426,13 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
                   catch (caught) { throw new Error(`Falha ao reproduzir o slide ${index + 1}: ${describeError(caught)}`); }
                 }
               }
-              setTimelineTime(timelineStart + elapsed);
-              await nextPaint();
+              // Commit the overlay clock before painting the canvas. The old
+              // two-frame React wait plus another RAF meant the exporter was
+              // only drawing roughly one frame every three screen frames,
+              // producing choppy output and occasional drawings missing on a
+              // paused frame.
+              flushSync(() => setTimelineTime(timelineStart + elapsed));
+              await waitFrame();
               drawVideoFrame(canvas, video, slide);
               updateProgress(elapsed, `A renderizar slide ${index + 1}/${exportSlides.length} · ${Math.round(elapsed / duration * 100)}%`);
               if (elapsed >= duration) break;
@@ -607,7 +615,7 @@ export function VideoExport({ slides, selectedSlideId, projectName, onClose }: P
         <video ref={videoRef} crossOrigin="anonymous" playsInline preload="auto" style={{ display: activeVideo ? "block" : "none", width: EXPORT_WIDTH, height: EXPORT_HEIGHT, objectFit: "fill" }} />
         {renderSlide && activeVideo ? (
           <div className="powerpoint-export-drawing-layer">
-            <DrawingPreviewCanvas drawings={activeVideo.drawings} playerTracks={activeVideo.playerTracks} currentTime={timelineTime} width={EXPORT_WIDTH} height={EXPORT_HEIGHT} getVideoElement={getVideoElement} registerCapture={registerOverlayCapture} />
+            <DrawingPreviewCanvas drawings={activeVideo.drawings} playerTracks={activeVideo.playerTracks} currentTime={timelineTime} width={EXPORT_WIDTH} height={EXPORT_HEIGHT} getVideoElement={getVideoElement} registerCapture={registerOverlayCapture} freezeFrames={activeVideo.freezeFrames} />
           </div>
         ) : renderSlide ? <SlideRenderer slide={renderSlide} interactive={false} showCaption={false} presentationTime={renderSlide.content.kind === "tactical-board" ? renderPresentationTime : undefined} /> : null}
       </div>

@@ -449,7 +449,7 @@ export function PdfExport({ slides, projectName, onClose }: Props) {
         <video ref={videoRef} crossOrigin="anonymous" muted playsInline preload="auto" style={{ display: activeVideo ? "block" : "none", width: EXPORT_WIDTH, height: EXPORT_HEIGHT, objectFit: "fill" }} />
         {renderSlide && activeVideo ? (
           <div className="powerpoint-export-drawing-layer">
-            <DrawingPreviewCanvas drawings={activeVideo.drawings} playerTracks={activeVideo.playerTracks} currentTime={timelineTime} width={EXPORT_WIDTH} height={EXPORT_HEIGHT} getVideoElement={getVideoElement} registerCapture={registerOverlayCapture} />
+            <DrawingPreviewCanvas drawings={activeVideo.drawings} playerTracks={activeVideo.playerTracks} currentTime={timelineTime} width={EXPORT_WIDTH} height={EXPORT_HEIGHT} getVideoElement={getVideoElement} registerCapture={registerOverlayCapture} freezeFrames={activeVideo.freezeFrames} />
           </div>
         ) : renderSlide ? <SlideRenderer slide={renderSlide} interactive={false} showCaption={false} presentationTime={renderSlide.content.kind === "tactical-board" ? 0 : undefined} /> : null}
       </div>

@@ -1,6 +1,6 @@
 import { decodeMaskToRaster } from "@meta-sam/parser";
 import type { NormalizedBox, PlayerTrack, Point, SamPlayerTracking, SamTrackingFrame } from "@/types/drawing";
-import { resolveSamTrackingFrameAtTime } from "@/utils/samTracking";
+import { resolveSamTrackingFrameAtSourceTime, resolveSamTrackingFrameAtTime } from "@/utils/samTracking";
 import type { SamTrackingFrameResolution } from "@/utils/samTracking";
 
 export interface SamTrackedPlayerFrameState {
@@ -65,7 +65,7 @@ interface FootTrajectory {
 const contactCache = new Map<string, Point | null>();
 const rasterCache = new Map<string, Uint8Array | null>();
 const localMaskRunCache = new Map<string, NormalizedBox[]>();
-const trajectoryCache = new WeakMap<SamPlayerTracking, FootTrajectory>();
+const trajectoryCache = new WeakMap<SamPlayerTracking, { timeline?: FootTrajectory; source?: FootTrajectory }>();
 
 function maskKey(frame: SamTrackingFrame) {
   return `${frame.mask.encoding}:${frame.mask.width}x${frame.mask.height}:${frame.mask.payload}`;
@@ -573,14 +573,16 @@ function trajectoryJitter(samples: FootTrajectorySample[], key: "raw" | "stable"
   return total;
 }
 
-function buildFootTrajectory(tracking: SamPlayerTracking): FootTrajectory {
-  const cached = trajectoryCache.get(tracking);
+function buildFootTrajectory(tracking: SamPlayerTracking, clock: "timeline" | "source" = "timeline"): FootTrajectory {
+  const cached = trajectoryCache.get(tracking)?.[clock];
   if (cached) return cached;
   const samples = [...tracking.frames]
     .sort((left, right) => left.frameIndex - right.frameIndex)
     .map((frame): FootTrajectorySample | undefined => {
       const raw = groundPointForFrame(frame);
-      const time = tracking.frameTimes?.[frame.frameIndex] ?? frame.time;
+      const time = clock === "source"
+        ? tracking.sourceFrameTimes?.[frame.frameIndex] ?? frame.sourceTime ?? frame.time
+        : tracking.frameTimes?.[frame.frameIndex] ?? frame.time;
       if (!raw || !Number.isFinite(time)) return undefined;
       return {
         frameIndex: frame.frameIndex,
@@ -680,12 +682,14 @@ function buildFootTrajectory(tracking: SamPlayerTracking): FootTrajectory {
       stableJitter: trajectoryJitter(corrected, "stable"),
     },
   };
-  trajectoryCache.set(tracking, trajectory);
+  const cache = trajectoryCache.get(tracking) ?? {};
+  cache[clock] = trajectory;
+  trajectoryCache.set(tracking, cache);
   return trajectory;
 }
 
-function trajectoryPointAtTime(tracking: SamPlayerTracking, time: number) {
-  const trajectory = buildFootTrajectory(tracking);
+function trajectoryPointAtTime(tracking: SamPlayerTracking, time: number, clock: "timeline" | "source" = "timeline") {
+  const trajectory = buildFootTrajectory(tracking, clock);
   if (!trajectory.samples.length) return undefined;
   const afterIndex = trajectory.samples.findIndex((sample) => sample.time >= time);
   if (afterIndex < 0) {
@@ -726,17 +730,19 @@ export function samTrackedPlayerMovement(track: PlayerTrack): SamTrackedPlayerMo
  * The recorded, stabilised ground path. Consumers can visualise this path but
  * must not mutate it: it is the same path the tracked Ring already follows.
  */
-export function samTrackedPlayerPath(track: PlayerTrack): SamTrackedPlayerPathPoint[] {
+export function samTrackedPlayerPath(track: PlayerTrack, clock: "timeline" | "source" = "timeline"): SamTrackedPlayerPathPoint[] {
   if (!track.samTracking) return [];
-  return buildFootTrajectory(track.samTracking).samples.map((sample) => ({
+  return buildFootTrajectory(track.samTracking, clock).samples.map((sample) => ({
     time: sample.time,
     foot: { ...sample.stable },
   }));
 }
 
-export function samTrackedPlayerFrameStateAtTime(track: PlayerTrack, currentTime: number): SamTrackedPlayerFrameState | undefined {
+export function samTrackedPlayerFrameStateAtTime(track: PlayerTrack, currentTime: number, sourceTime?: number): SamTrackedPlayerFrameState | undefined {
   const tracking = track.samTracking;
-  const resolution = resolveSamTrackingFrameAtTime(tracking, currentTime);
+  const resolution = sourceTime === undefined
+    ? resolveSamTrackingFrameAtTime(tracking, currentTime)
+    : resolveSamTrackingFrameAtSourceTime(tracking, sourceTime);
   if (!tracking || !resolution.frame || !resolution.bounds || (resolution.mode !== "exact" && resolution.mode !== "interpolated")) return undefined;
   return {
     frame: resolution.frame,
@@ -746,15 +752,15 @@ export function samTrackedPlayerFrameStateAtTime(track: PlayerTrack, currentTime
   };
 }
 
-export function samTrackedPlayerStateAtTime(track: PlayerTrack, currentTime: number): SamTrackedPlayerState | undefined {
+export function samTrackedPlayerStateAtTime(track: PlayerTrack, currentTime: number, sourceTime?: number): SamTrackedPlayerState | undefined {
   const tracking = track.samTracking;
-  const frameState = samTrackedPlayerFrameStateAtTime(track, currentTime);
+  const frameState = samTrackedPlayerFrameStateAtTime(track, currentTime, sourceTime);
   if (!tracking || !frameState) return undefined;
   // Mask lookup remains frame-exact, while the already calculated Ring path
   // is interpolated using the original media timestamps. This makes movement
   // continuous at display refresh rates above the source FPS without changing
   // SAM frames, tracking synchronisation or making additional API requests.
-  const trajectoryState = trajectoryPointAtTime(tracking, currentTime);
+  const trajectoryState = trajectoryPointAtTime(tracking, sourceTime ?? currentTime, sourceTime === undefined ? "timeline" : "source");
   if (!trajectoryState) return undefined;
   const { raw: rawFoot, stable: foot } = trajectoryState;
   return { ...frameState, rawFoot, foot };

@@ -31,6 +31,9 @@ export function VideoSlidePreview({ content, slideName, playbackTime, playing = 
   const [mediaReady, setMediaReady] = useState(false);
   const controlled = playbackTime !== undefined;
   const getVideoElement = useCallback(() => videoRef.current, []);
+  const syncTimelineFromSource = useCallback((sourceTime: number) => {
+    setCurrentTime(sourceTimeToTimeline(sourceTime, freezes));
+  }, [freezes]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -120,7 +123,7 @@ export function VideoSlidePreview({ content, slideName, playbackTime, playing = 
       playFreeze(nextFreeze);
       return;
     }
-    setCurrentTime(sourceTimeToTimeline(sourceTime, freezes));
+    syncTimelineFromSource(sourceTime);
     if (!video.paused) animationRef.current = requestAnimationFrame(syncDrawings);
   };
 
@@ -154,9 +157,15 @@ export function VideoSlidePreview({ content, slideName, playbackTime, playing = 
             video.currentTime = Math.min(video.duration, initialSourceTime);
             lastSourceTimeRef.current = content.startTime;
             completedFreezesRef.current.clear();
-            setCurrentTime(sourceTimeToTimeline(initialSourceTime, freezes));
+            syncTimelineFromSource(initialSourceTime);
             if (!controlled || playing) void video.play().catch(() => undefined);
             else video.pause();
+          }}
+          onLoadedData={(event) => {
+            // `loadedmetadata` is not enough to guarantee that the paused
+            // frame is paintable. Re-sync after data arrives so drawings stay
+            // visible on a still image in Preview.
+            if (!controlled) syncTimelineFromSource(event.currentTarget.currentTime);
           }}
           onPlay={() => {
             if (controlled) return;
@@ -167,7 +176,10 @@ export function VideoSlidePreview({ content, slideName, playbackTime, playing = 
             if (controlled) return;
             if (holdingFreezeRef.current) return;
             if (animationRef.current !== null) cancelAnimationFrame(animationRef.current);
-            setCurrentTime(sourceTimeToTimeline(videoRef.current?.currentTime ?? content.startTime, freezes));
+            syncTimelineFromSource(videoRef.current?.currentTime ?? content.startTime);
+          }}
+          onSeeking={(event) => {
+            if (!controlled && !holdingFreezeRef.current) syncTimelineFromSource(event.currentTarget.currentTime);
           }}
           onSeeked={(event) => {
             if (controlled) return;
@@ -175,10 +187,10 @@ export function VideoSlidePreview({ content, slideName, playbackTime, playing = 
             const sourceTime = event.currentTarget.currentTime;
             lastSourceTimeRef.current = sourceTime;
             completedFreezesRef.current = new Set(freezes.filter((freeze) => freeze.sourceTime < sourceTime).map((freeze) => freeze.id));
-            setCurrentTime(sourceTimeToTimeline(sourceTime, freezes));
+            syncTimelineFromSource(sourceTime);
           }}
         />
-        <div className="preview-drawing-overlay"><DrawingPreviewCanvas drawings={content.drawings ?? []} playerTracks={content.playerTracks} currentTime={currentTime} width={size.width} height={size.height} getVideoElement={getVideoElement} /></div>
+        <div className="preview-drawing-overlay"><DrawingPreviewCanvas drawings={content.drawings ?? []} playerTracks={content.playerTracks} currentTime={currentTime} width={size.width} height={size.height} getVideoElement={getVideoElement} freezeFrames={content.freezeFrames} /></div>
       </div>
     </div>
   );

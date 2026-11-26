@@ -8,7 +8,7 @@ import type { DrawingData, DrawingObject, ObjectTransform, PlayerTrack, Point } 
 import { useEditorStore } from "@/store/useEditorStore";
 import { flattenPoints } from "@/utils/coordinates";
 import { automaticLongBallControl, buildCurvedArrowGeometry, buildPolylineArrowGeometry, quadraticPointAt } from "@/utils/curvedArrowGeometry";
-import { playerGroundPoint, samplePlayerTrackAtTime, targetAvailableAtTime, targetOffsetAtTime } from "@/utils/playerTracking";
+import { followsSamTracking, playerGroundPoint, samplePlayerTrackAtTime, targetAvailableAtTime, targetOffsetAtTime } from "@/utils/playerTracking";
 import { samTrackedPlayerFrameStateAtTime, samTrackedPlayerMaskRuns, samTrackedPlayerPath, samTrackedPlayerStateAtTime } from "@/utils/samTrackedPlayer";
 import type { SamTrackedPlayerMaskRun } from "@/utils/samTrackedPlayer";
 import { getObjectStateAtTime, resolvedDrawingAnimation } from "@/utils/temporalRenderer";
@@ -25,6 +25,14 @@ interface Props {
   renderMode?: "all" | "base" | "playerLabel";
   editingPreview?: boolean;
   targetOffset?: Point;
+  /** Original media clock when the caller is rendering a presentation with freeze frames. */
+  sourceTime?: number;
+  /**
+   * Timeline time with the active source-frame freeze collapsed to its first
+   * instant.  Only SAM-attached objects use this clock: their video frame,
+   * position and visual animation must all remain frozen together.
+   */
+  samTimelineTime?: number;
   playerTracks?: PlayerTrack[];
   allDrawings?: DrawingObject[];
   onTransformPreview?: (transform?: ObjectTransform) => void;
@@ -249,13 +257,20 @@ function partialLineSegments(segments: number[][], progress: number) {
   return visible;
 }
 
-export function DrawingShape({ object, width, height, currentTime, selected, canEdit, onSelect, onChange, renderMode = "all", editingPreview = false, targetOffset = { x: 0, y: 0 }, playerTracks, allDrawings, onTransformPreview }: Props) {
+export function DrawingShape({ object, width, height, currentTime, selected, canEdit, onSelect, onChange, renderMode = "all", editingPreview = false, targetOffset = { x: 0, y: 0 }, sourceTime, samTimelineTime, playerTracks, allDrawings, onTransformPreview }: Props) {
   const nodeRef = useRef<Konva.Group>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
   const samRingMaskRunsRef = useRef<SamTrackedPlayerMaskRun[]>([]);
   const [arrowPreviewData, setArrowPreviewData] = useState<ArrowDrawingData | null>(null);
   const [longBallPreviewData, setLongBallPreviewData] = useState<Extract<DrawingData, { kind: "longBallArrow" }> | null>(null);
-  const calculatedTemporalState = getObjectStateAtTime(object, currentTime);
+  const isSamFollowing = followsSamTracking(object, playerTracks);
+  // A presentation timeline continues while a freeze frame is on screen.  A
+  // SAM Ring, however, is tied to that source frame, so it must use the
+  // freeze-collapsed clock for *all* temporal state (not merely its offset).
+  const effectiveTemporalTime = isSamFollowing && samTimelineTime !== undefined
+    ? samTimelineTime
+    : currentTime;
+  const calculatedTemporalState = getObjectStateAtTime(object, effectiveTemporalTime);
   const temporalState = editingPreview
     ? { ...calculatedTemporalState, opacity: object.style.opacity, entryProgress: 1, exitProgress: 1 }
     : calculatedTemporalState;
@@ -273,15 +288,15 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
   }, [selected, arrowPreviewData, longBallPreviewData]);
 
   useEffect(() => {
-    if (!object.target?.followSamTracking || !playerTracks?.length) return;
+    if (!isSamFollowing || !playerTracks?.length) return;
     const updateTrackedPosition = (time: number) => {
       const node = nodeRef.current;
       if (!node) return;
-      const temporal = getObjectStateAtTime(object, time);
-      const available = temporal.visible && targetAvailableAtTime(object, playerTracks, time);
+      const temporal = getObjectStateAtTime(object, effectiveTemporalTime);
+      const available = temporal.visible && targetAvailableAtTime(object, playerTracks, time, sourceTime);
       node.visible(available);
       if (available) {
-        const offset = targetOffsetAtTime(object, playerTracks, time);
+        const offset = targetOffsetAtTime(object, playerTracks, time, sourceTime);
         const liveTransform = editingPreview ? object.transform : temporal.transform;
         node.position({
           x: (liveTransform.x + offset.x) * width,
@@ -289,7 +304,7 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         });
         if (object.data.kind === "playerRing" && object.target?.kind === "player") {
           const track = playerTracks.find((candidate) => candidate.id === object.target?.trackId);
-          const state = track ? samTrackedPlayerFrameStateAtTime(track, time) : undefined;
+          const state = track ? samTrackedPlayerFrameStateAtTime(track, time, sourceTime) : undefined;
           samRingMaskRunsRef.current = state ? samTrackedPlayerMaskRuns(state) : [];
         }
       } else if (object.data.kind === "playerRing") {
@@ -303,11 +318,11 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
     // attached drawings to be hidden or positioned on an old instant whenever
     // a presentation was paused or played independently from the editor.
     updateTrackedPosition(currentTime);
-  }, [currentTime, editingPreview, height, object, playerTracks, width]);
+  }, [currentTime, editingPreview, effectiveTemporalTime, height, isSamFollowing, object, playerTracks, sourceTime, width]);
 
   const samRingClipFunc = object.data.kind === "playerRing"
     && object.target?.kind === "player"
-    && object.target.followSamTracking
+    && isSamFollowing
     && renderMode === "base"
     ? (context: Konva.Context, container: Konva.Container): [CanvasFillRule] => {
       const inverse = container.getTransform().copy().invert();
@@ -518,7 +533,9 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
           ? .18 + temporalState.entryProgress * .82
           : 1;
         const spinSpeed = data.spinSpeed ?? 1;
-        const elapsed = Math.max(0, currentTime - object.startTime);
+        // Keep animated tracked Rings still while their source frame is
+        // frozen.  Non-SAM/manual Rings retain the normal presentation clock.
+        const elapsed = Math.max(0, (isSamFollowing ? effectiveTemporalTime : currentTime) - object.startTime);
         const outerRotation = data.spinEnabled === false ? 0 : elapsed * 48 * spinSpeed;
         const innerRotation = data.spinEnabled === false ? 0 : -elapsed * 72 * spinSpeed;
         const ringThickness = Math.max(0, Math.min(16, object.style.strokeWidth));
@@ -557,12 +574,13 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
           const trackedRingPlayer = object.target?.kind === "player" && data.showMovementArrow
             ? playerTracks?.find((track) => track.id === object.target?.trackId)
             : undefined;
-          const samPath = trackedRingPlayer ? samTrackedPlayerPath(trackedRingPlayer) : [];
+          const samPath = trackedRingPlayer ? samTrackedPlayerPath(trackedRingPlayer, sourceTime === undefined ? "timeline" : "source") : [];
           const samTracking = trackedRingPlayer?.samTracking;
-          const currentSamState = trackedRingPlayer ? samTrackedPlayerStateAtTime(trackedRingPlayer, currentTime) : undefined;
+          const currentSamState = trackedRingPlayer ? samTrackedPlayerStateAtTime(trackedRingPlayer, currentTime, sourceTime) : undefined;
           const currentFoot = currentSamState?.foot ?? samPath[0]?.foot;
+          const trackingClock = sourceTime ?? currentTime;
           const trackingProgress = samTracking
-            ? Math.max(0, Math.min(1, (currentTime - samTracking.startTime) / Math.max(.001, samTracking.endTime - samTracking.startTime)))
+            ? Math.max(0, Math.min(1, (trackingClock - (sourceTime === undefined ? samTracking.startTime : samTracking.sourceStartTime)) / Math.max(.001, sourceTime === undefined ? samTracking.endTime - samTracking.startTime : samTracking.duration)))
             : 0;
           // Start the path at the exact foot point the Ring is rendering at,
           // rather than trimming by a percentage of the travelled distance.
@@ -572,7 +590,7 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
             ? { x: (currentFoot.x - data.center.x) * width, y: (currentFoot.y - data.center.y) * height }
             : { x: 0, y: 0 };
           const futurePath = currentFoot
-            ? [currentFoot, ...samPath.filter((sample) => sample.time > currentTime).map((sample) => sample.foot)]
+            ? [currentFoot, ...samPath.filter((sample) => sample.time > trackingClock).map((sample) => sample.foot)]
             : [];
           const arrowPath = futurePath.flatMap((foot) => [foot.x * width - currentOffset.x, foot.y * height - currentOffset.y]);
           const visibleArrowPath = partialPolylinePoints(arrowPath, arrowReveal);
@@ -1223,20 +1241,6 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
           tacticalBodyWidth * 6.2,
           tacticalBodyWidth * 4.8,
         );
-        const groundControl = automaticLongBallControl(
-          start,
-          end,
-          Math.min(.014, Math.max(.003, data.curveHeight * .06)),
-          height,
-        );
-        const groundGeometry = buildCurvedArrowGeometry({
-          start,
-          control: groundControl,
-          end,
-          bodyWidth: bodyWidth * .9,
-          renderScale,
-          progress: drawProgress,
-        });
         const faceColor = solidColor(object.style.stroke, "#65d9ff");
         const shadowColor = solidColor(object.style.shadowColor, "#000000");
         const travelLength = Math.hypot(end.x - start.x, end.y - start.y);
@@ -1247,6 +1251,24 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
         const shadowX = (object.style.shadowOffsetX ?? 0) * .45;
         const shadowY = Math.max(1.5 * renderScale, (object.style.shadowOffsetY ?? 0) * .62);
         const shadowOpacity = Math.max(0, Math.min(.72, object.style.shadowOpacity * .58));
+        // The flight path is arched in the air; its shadow is deliberately a
+        // low projection *on* the pitch.  It must therefore not repeat the
+        // arc.  We pre-offset only the projected start and leave the end at
+        // the visible arrow tip, so the two arrowheads meet exactly.
+        const groundStart = { x: start.x - shadowX, y: start.y - shadowY };
+        const groundEnd = { x: end.x - shadowX, y: end.y - shadowY };
+        const groundControl = {
+          x: (groundStart.x + groundEnd.x) / 2,
+          y: (groundStart.y + groundEnd.y) / 2,
+        };
+        const groundGeometry = buildCurvedArrowGeometry({
+          start: groundStart,
+          control: groundControl,
+          end: groundEnd,
+          bodyWidth: bodyWidth * .9,
+          renderScale,
+          progress: drawProgress,
+        });
         const landingOpacity = Math.max(0, Math.min(1, (drawProgress - .78) / .22));
         const updatePoint = (key: "start" | "control" | "end", commit = false) => (event: Konva.KonvaEventObject<DragEvent>) => {
           event.cancelBubble = true;
@@ -1448,19 +1470,27 @@ export function DrawingShape({ object, width, height, currentTime, selected, can
             ? '"Arial Black", Impact, Inter, sans-serif'
             : "Inter, Arial, sans-serif";
         const textLetterSpacing = fontSize * (data.letterSpacing ?? 0);
-        const estimatedWidth = Math.max(fontSize, data.text.length * fontSize * .68);
-        const clipText = (node: ReactNode) => (
-          <Group
-            opacity={temporalState.opacity}
-            clipFunc={(context) => {
-              context.beginPath();
-              context.rect(x - 24, y - fontSize, (estimatedWidth + 54) * revealProgress, fontSize * 3.2);
-              context.closePath();
-            }}
-          >
-            {node}
-          </Group>
-        );
+        // A clipping window is only needed while the reveal animation runs.
+        // Keeping it on static text was cropping longer labels in preview and
+        // export (especially with the condensed/heavy font choices).
+        const estimatedWidth = Math.max(fontSize, data.text.length * (fontSize * 1.08 + Math.abs(textLetterSpacing)));
+        const clipText = (node: ReactNode) => {
+          if (resolvedDrawingAnimation(object).motion !== "reveal" || revealProgress >= .999) {
+            return <Group opacity={temporalState.opacity}>{node}</Group>;
+          }
+          return (
+            <Group
+              opacity={temporalState.opacity}
+              clipFunc={(context) => {
+                context.beginPath();
+                context.rect(x - 24, y - fontSize, (estimatedWidth + 54) * revealProgress, fontSize * 3.2);
+                context.closePath();
+              }}
+            >
+              {node}
+            </Group>
+          );
+        };
         if ((data.textDesign ?? "flat") === "flat") return clipText(
           <Text
             x={x}

@@ -457,6 +457,21 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const playerTracks = (activeSlide.content.playerTracks ?? []).map((track) => ({
       ...track,
       samples: track.samples.map((sample) => shiftTime(sample.time, false) ? { ...sample, time: sample.time + freezeDuration } : sample),
+      // Keep the presentation-time SAM metadata coherent when a pause is
+      // inserted after tracking has been generated. Source timestamps remain
+      // untouched; they identify the exact frozen video frame.
+      samTracking: track.samTracking ? {
+        ...track.samTracking,
+        startTime: shiftTime(track.samTracking.startTime, false)
+          ? track.samTracking.startTime + freezeDuration
+          : track.samTracking.startTime,
+        endTime: shiftTime(track.samTracking.endTime, true)
+          ? track.samTracking.endTime + freezeDuration
+          : track.samTracking.endTime,
+        frameTimes: track.samTracking.frameTimes?.map((time) =>
+          shiftTime(time, false) ? time + freezeDuration : time,
+        ),
+      } : undefined,
     }));
     const freezeFrames = [...existingFreezes, freeze].sort((left, right) => left.sourceTime - right.sourceTime);
     const slides = state.slides.map((slide) => slide.id === activeSlide.id && slide.content.kind === "video"

@@ -76,6 +76,7 @@ export function buildSamPlayerTracking(result: SamTrackResult, sourceStartTime: 
     duration: result.duration,
     frameRate: result.frameRate,
     frameTimes: sourceFrameTimes?.map((time) => sourceTimeToTimeline(time, freezeFrames)),
+    sourceFrameTimes: sourceFrameTimes ? [...sourceFrameTimes] : undefined,
     sourceWidth: result.frame.width,
     sourceHeight: result.frame.height,
     frames: accepted,
@@ -138,6 +139,63 @@ export function resolveSamTrackingFrameAtTime(tracking: SamPlayerTracking | unde
   }
   if (distance <= .75 / tracking.frameRate && closest) return { frame: closest, bounds: closest.bounds, expectedFrameIndex: closest.frameIndex, mode: "exact" };
   return { mode: "missing" };
+}
+
+/**
+ * Resolves a SAM mask against the original video clock. This is deliberately
+ * separate from the editor timeline: a freeze frame advances the presentation
+ * clock while the video remains on exactly the same source frame.
+ */
+export function resolveSamTrackingFrameAtSourceTime(tracking: SamPlayerTracking | undefined, sourceTime: number): SamTrackingFrameResolution {
+  if (!tracking || !tracking.frames.length) return { mode: "outside" };
+  if (tracking.sourceFrameTimes?.length) {
+    const sourceFrameTimes = tracking.sourceFrameTimes;
+    let expectedIndex = 0;
+    let expectedDistance = Number.POSITIVE_INFINITY;
+    sourceFrameTimes.forEach((frameTime, index) => {
+      const distance = Math.abs(frameTime - sourceTime);
+      if (distance < expectedDistance) { expectedIndex = index; expectedDistance = distance; }
+    });
+    const expectedTime = sourceFrameTimes[expectedIndex];
+    const previousTime = sourceFrameTimes[expectedIndex - 1];
+    const nextTime = sourceFrameTimes[expectedIndex + 1];
+    const directionalNeighbour = sourceTime < expectedTime ? previousTime : nextTime;
+    const fallbackNeighbour = sourceTime < expectedTime ? nextTime : previousTime;
+    const localInterval = directionalNeighbour === undefined
+      ? fallbackNeighbour === undefined ? Number.POSITIVE_INFINITY : Math.abs(fallbackNeighbour - expectedTime)
+      : Math.abs(directionalNeighbour - expectedTime);
+    const tolerance = Number.isFinite(localInterval) ? localInterval * .55 : .75 / tracking.frameRate;
+    if (expectedDistance > tolerance + .001) return { mode: "outside", expectedFrameIndex: expectedIndex };
+    const exact = tracking.frames.find((frame) => frame.frameIndex === expectedIndex);
+    if (exact) return { frame: exact, bounds: exact.bounds, expectedFrameIndex: expectedIndex, mode: "exact" };
+    const before = [...tracking.frames].reverse().find((frame) => frame.frameIndex < expectedIndex);
+    const after = tracking.frames.find((frame) => frame.frameIndex > expectedIndex);
+    if (!before || !after) return { mode: "missing", expectedFrameIndex: expectedIndex, beforeFrameIndex: before?.frameIndex, afterFrameIndex: after?.frameIndex };
+    if (!canInterpolateShortGap(before, after)) return { mode: "unsafe-gap", expectedFrameIndex: expectedIndex, beforeFrameIndex: before.frameIndex, afterFrameIndex: after.frameIndex };
+    const beforeTime = sourceFrameTimes[before.frameIndex];
+    const afterTime = sourceFrameTimes[after.frameIndex];
+    if (![expectedTime, beforeTime, afterTime].every(Number.isFinite) || afterTime <= beforeTime) {
+      return { mode: "unsafe-gap", expectedFrameIndex: expectedIndex, beforeFrameIndex: before.frameIndex, afterFrameIndex: after.frameIndex };
+    }
+    const progress = Math.max(0, Math.min(1, (expectedTime - beforeTime) / (afterTime - beforeTime)));
+    const nearest = progress <= .5 ? before : after;
+    return { frame: nearest, bounds: interpolateBox(before.bounds, after.bounds, progress), expectedFrameIndex: expectedIndex, mode: "interpolated", beforeFrameIndex: before.frameIndex, afterFrameIndex: after.frameIndex };
+  }
+
+  // Projects saved before sourceFrameTimes was added still contain a precise
+  // source time on every real mask. They cannot safely interpolate a missing
+  // provider frame, but can keep a freeze on its matching real mask.
+  let closest: SamTrackingFrame | undefined;
+  let distance = Number.POSITIVE_INFINITY;
+  for (const frame of tracking.frames) {
+    if (!Number.isFinite(frame.sourceTime)) continue;
+    const candidate = Math.abs((frame.sourceTime as number) - sourceTime);
+    if (candidate < distance) { closest = frame; distance = candidate; }
+  }
+  if (closest && distance <= .75 / tracking.frameRate + .001) {
+    return { frame: closest, bounds: closest.bounds, expectedFrameIndex: closest.frameIndex, mode: "exact" };
+  }
+  return { mode: "outside" };
 }
 
 export function samTrackingFrameAtTime(tracking: SamPlayerTracking | undefined, time: number) {

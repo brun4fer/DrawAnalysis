@@ -505,6 +505,7 @@ export function PowerPointExport({ slides, projectName, onClose }: Props) {
                 height={EXPORT_HEIGHT}
                 getVideoElement={getVideoElement}
                 registerCapture={registerOverlayCapture}
+                freezeFrames={activeVideo.freezeFrames}
               />
             </div>
           </div>

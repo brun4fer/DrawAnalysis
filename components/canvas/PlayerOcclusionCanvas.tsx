@@ -2,9 +2,11 @@
 
 import { forwardRef, useCallback, useEffect, useRef, useState } from "react";
 import type { DrawingObject, ObjectTransform, PlayerTrack } from "@/types/drawing";
+import type { FreezeFrame } from "@/types/slide";
 import { drawMovedPlayer, drawPlayerForeground, hidePlayerOriginal, shouldCompositePlayerForeground } from "@/utils/playerOcclusion";
-import { samplePlayerTrackAtTime, targetAvailableAtTime } from "@/utils/playerTracking";
+import { followsSamTracking, samplePlayerTrackAtTime, targetAvailableAtTime } from "@/utils/playerTracking";
 import { getObjectStateAtTime } from "@/utils/temporalRenderer";
+import { sourceTimeToTimeline, timelineTimeToSource } from "@/utils/videoTimeline";
 
 function colorWithAlpha(color: string, alpha: number) {
   const hex = color.match(/^#([0-9a-f]{6})/i)?.[1];
@@ -77,13 +79,16 @@ interface Props {
   getVideoElement?: () => HTMLVideoElement | null;
   transformOverrides?: Record<string, ObjectTransform>;
   editingPreview?: boolean;
+  freezeFrames?: FreezeFrame[];
 }
 
-export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(function PlayerOcclusionCanvas({ drawings, playerTracks, width, height, currentTime, getVideoElement, transformOverrides, editingPreview = false }, ref) {
+export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(function PlayerOcclusionCanvas({ drawings, playerTracks, width, height, currentTime, getVideoElement, transformOverrides, editingPreview = false, freezeFrames }, ref) {
   const [maskRevision, setMaskRevision] = useState(0);
   const lastRenderTimeRef = useRef(0);
   const redrawLoadedMask = useCallback(() => setMaskRevision((revision) => revision + 1), []);
   const drawAtTime = useCallback((renderTime: number) => {
+    const sourceTime = timelineTimeToSource(renderTime, freezeFrames).sourceTime;
+    const samTimelineTime = sourceTimeToTimeline(sourceTime, freezeFrames);
     lastRenderTimeRef.current = renderTime;
     const canvas = typeof ref === "object" ? ref?.current : null;
     const video = getVideoElement?.();
@@ -91,7 +96,10 @@ export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(functi
     if (!canvas || !video || !context || !video.videoWidth || !video.videoHeight) return;
     context.clearRect(0, 0, canvas.width, canvas.height);
 
-    const activeTargets = drawings.filter((drawing) => getObjectStateAtTime(drawing, renderTime).visible && targetAvailableAtTime(drawing, playerTracks, renderTime));
+    const activeTargets = drawings.filter((drawing) => getObjectStateAtTime(
+      drawing,
+      followsSamTracking(drawing, playerTracks) ? samTimelineTime : renderTime,
+    ).visible && targetAvailableAtTime(drawing, playerTracks, renderTime, sourceTime));
     const trackIds = [...new Set(activeTargets.flatMap((drawing) => {
       const ids: string[] = [];
       // The dark spotlight intentionally does not redraw its target. Every
@@ -109,7 +117,15 @@ export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(functi
       const track = playerTracks?.find((item) => item.id === trackId);
       if (!track?.samples.length) continue;
       const sample = samplePlayerTrackAtTime(track, renderTime);
-      if (!shouldCompositePlayerForeground(activeTargets, trackId, sample.mask)) continue;
+      // A SAM Ring uses the current mask solely as a clipping hole in the
+      // Ring layer.  The unaltered video already contains the player, so
+      // excluding that Ring here prevents a second, stale player cutout from
+      // being painted over it. Existing manual Rings stay on the old path.
+      const foregroundDrawings = activeTargets.filter((drawing) => !(
+        drawing.data.kind === "playerRing"
+        && followsSamTracking(drawing, playerTracks)
+      ));
+      if (!shouldCompositePlayerForeground(foregroundDrawings, trackId, sample.mask)) continue;
       const identification = activeTargets.find((drawing) => drawing.data.kind === "identifyPlayer" && drawing.target?.trackId === trackId);
       const effectOpacity = identification
         ? editingPreview ? identification.style.opacity : getObjectStateAtTime(identification, renderTime).opacity
@@ -167,7 +183,7 @@ export const PlayerOcclusionCanvas = forwardRef<HTMLCanvasElement, Props>(functi
         // The next video frame redraws this overlay automatically.
       }
     }
-  }, [drawings, editingPreview, getVideoElement, height, playerTracks, redrawLoadedMask, ref, transformOverrides, width]);
+  }, [drawings, editingPreview, freezeFrames, getVideoElement, height, playerTracks, redrawLoadedMask, ref, transformOverrides, width]);
 
   useEffect(() => {
     // Mask PNGs are loaded asynchronously. Redraw the same decoded video

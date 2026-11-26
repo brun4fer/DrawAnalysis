@@ -4,12 +4,14 @@ import { useEffect, useRef } from "react";
 import Konva from "konva";
 import { Layer, Stage } from "react-konva";
 import type { DrawingObject, PlayerTrack } from "@/types/drawing";
+import type { FreezeFrame } from "@/types/slide";
 import { getObjectStateAtTime } from "@/utils/temporalRenderer";
+import { sourceTimeToTimeline, timelineTimeToSource } from "@/utils/videoTimeline";
 import { DrawingShape } from "./DrawingShape";
 import { PlayerOcclusionCanvas } from "./PlayerOcclusionCanvas";
 import { PlayerLabelOverlay } from "./PlayerLabelOverlay";
 import { ZoomLensCanvas } from "./ZoomLensCanvas";
-import { targetAvailableAtTime, targetOffsetAtTime } from "@/utils/playerTracking";
+import { followsSamTracking, targetAvailableAtTime, targetOffsetAtTime } from "@/utils/playerTracking";
 
 interface Props {
   drawings: DrawingObject[];
@@ -18,16 +20,22 @@ interface Props {
   width: number;
   height: number;
   getVideoElement?: () => HTMLVideoElement | null;
+  freezeFrames?: FreezeFrame[];
   registerCapture?: (capture: (() => HTMLCanvasElement | null) | null) => void;
 }
 
-export function DrawingPreviewCanvas({ drawings, playerTracks, currentTime, width, height, getVideoElement, registerCapture }: Props) {
+export function DrawingPreviewCanvas({ drawings, playerTracks, currentTime, width, height, getVideoElement, registerCapture, freezeFrames }: Props) {
   const stageRef = useRef<Konva.Stage>(null);
   const labelStageRef = useRef<Konva.Stage>(null);
   const occlusionCanvasRef = useRef<HTMLCanvasElement>(null);
   const zoomCanvasRef = useRef<HTMLCanvasElement>(null);
-  const visible = drawings.filter((drawing) => getObjectStateAtTime(drawing, currentTime).visible
-    && targetAvailableAtTime(drawing, playerTracks, currentTime));
+  const sourceTime = timelineTimeToSource(currentTime, freezeFrames).sourceTime;
+  const samTimelineTime = sourceTimeToTimeline(sourceTime, freezeFrames);
+  const visible = drawings.filter((drawing) => getObjectStateAtTime(
+    drawing,
+    followsSamTracking(drawing, playerTracks) ? samTimelineTime : currentTime,
+  ).visible
+    && targetAvailableAtTime(drawing, playerTracks, currentTime, sourceTime));
 
   useEffect(() => {
     if (!registerCapture) return;
@@ -62,16 +70,18 @@ export function DrawingPreviewCanvas({ drawings, playerTracks, currentTime, widt
             onSelect={() => undefined}
             onChange={() => undefined}
             renderMode="base"
-            targetOffset={targetOffsetAtTime(object, playerTracks, currentTime)}
+            targetOffset={targetOffsetAtTime(object, playerTracks, currentTime, sourceTime)}
             playerTracks={playerTracks}
             allDrawings={drawings}
+            sourceTime={sourceTime}
+            samTimelineTime={samTimelineTime}
           />
         ))}
       </Layer>
     </Stage>
-    <PlayerOcclusionCanvas ref={occlusionCanvasRef} drawings={drawings} playerTracks={playerTracks} currentTime={currentTime} width={width} height={height} getVideoElement={getVideoElement} />
+    <PlayerOcclusionCanvas ref={occlusionCanvasRef} drawings={drawings} playerTracks={playerTracks} currentTime={currentTime} width={width} height={height} getVideoElement={getVideoElement} freezeFrames={freezeFrames} />
     <ZoomLensCanvas ref={zoomCanvasRef} drawings={drawings} currentTime={currentTime} width={width} height={height} getVideoElement={getVideoElement} />
-    <PlayerLabelOverlay ref={labelStageRef} drawings={drawings} playerTracks={playerTracks} currentTime={currentTime} width={width} height={height} />
+    <PlayerLabelOverlay ref={labelStageRef} drawings={drawings} playerTracks={playerTracks} currentTime={currentTime} width={width} height={height} freezeFrames={freezeFrames} />
     </>
   );
 }

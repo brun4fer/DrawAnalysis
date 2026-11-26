@@ -35,12 +35,31 @@ export function samplePlayerTrackAtTime(track: PlayerTrack, currentTime: number)
   };
 }
 
-export function targetOffsetAtTime(object: DrawingObject, tracks: PlayerTrack[] | undefined, currentTime: number): Point {
+/**
+ * A Ring added with Q after a SAM tracking run predates the explicit
+ * `followSamTracking` flag in a few saved projects.  Those Rings still belong
+ * to the SAM run when their own lifetime intersects it.  Treating that narrow
+ * legacy case as SAM-following keeps the Ring on the frozen source frame
+ * instead of advancing along the presentation clock.
+ */
+export function followsSamTracking(object: DrawingObject, tracks: PlayerTrack[] | undefined) {
+  if (object.target?.kind !== "player") return false;
+  const track = tracks?.find((item) => item.id === object.target?.trackId);
+  const tracking = track?.samTracking;
+  if (!tracking) return false;
+  if (object.target.followSamTracking) return true;
+  if (object.data.kind !== "playerRing") return false;
+  const tolerance = .05;
+  return object.startTime <= tracking.endTime + tolerance
+    && object.endTime >= tracking.startTime - tolerance;
+}
+
+export function targetOffsetAtTime(object: DrawingObject, tracks: PlayerTrack[] | undefined, currentTime: number, sourceTime?: number): Point {
   if (object.target?.kind !== "player" || !object.target.referenceFoot) return { x: 0, y: 0 };
   const track = tracks?.find((item) => item.id === object.target?.trackId);
   if (!track?.samples.length) return { x: 0, y: 0 };
-  if (object.target.followSamTracking) {
-    const state = samTrackedPlayerStateAtTime(track, currentTime);
+  if (followsSamTracking(object, tracks)) {
+    const state = samTrackedPlayerStateAtTime(track, currentTime, sourceTime);
     if (!state) return { x: 0, y: 0 };
     return {
       x: state.foot.x - object.target.referenceFoot.x,
@@ -55,8 +74,8 @@ export function targetOffsetAtTime(object: DrawingObject, tracks: PlayerTrack[] 
 }
 
 /** Old/manual targets are always available; SAM-following targets require a safe mask for this frame. */
-export function targetAvailableAtTime(object: DrawingObject, tracks: PlayerTrack[] | undefined, currentTime: number) {
-  if (object.target?.kind !== "player" || !object.target.followSamTracking) return true;
+export function targetAvailableAtTime(object: DrawingObject, tracks: PlayerTrack[] | undefined, currentTime: number, sourceTime?: number) {
+  if (!followsSamTracking(object, tracks)) return true;
   const track = tracks?.find((item) => item.id === object.target?.trackId);
-  return Boolean(track && samTrackedPlayerStateAtTime(track, currentTime));
+  return Boolean(track && samTrackedPlayerStateAtTime(track, currentTime, sourceTime));
 }

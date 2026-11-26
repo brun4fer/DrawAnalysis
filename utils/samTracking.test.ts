@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { SamTrackResult } from "@/types/samTracking";
 import { prepareSlidesForStorage } from "./presentationData";
-import { buildSamPlayerTracking, resolveSamTrackingFrameAtTime, samTrackingFrameAtTime, trimSamPlayerTracking } from "./samTracking";
+import { buildSamPlayerTracking, resolveSamTrackingFrameAtSourceTime, resolveSamTrackingFrameAtTime, samTrackingFrameAtTime, trimSamPlayerTracking } from "./samTracking";
 import { createSlide } from "./slideFactory";
 
 function result(): SamTrackResult {
@@ -43,6 +43,23 @@ test("uses the exact captured mediaTime map instead of assuming 25 FPS", () => {
   assert.equal(repaired.frame?.frameIndex, 1);
   assert.ok(Math.abs((repaired.bounds?.x ?? 0) - .104) < .000001);
   assert.equal(samTrackingFrameAtTime(tracking, 10.1022)?.frameIndex, 3);
+});
+
+test("keeps the original SAM mask available while a presentation freeze advances its timeline", () => {
+  const sourceFrameTimes = [10, 10.04, 10.08, 10.12];
+  const tracking = buildSamPlayerTracking(
+    result(),
+    10,
+    { x: .1, y: .2, width: .1, height: .4 },
+    undefined,
+    sourceFrameTimes,
+  );
+  // A presentation can be at 12.5 seconds while the source video remains at
+  // the first captured frame. The timeline mask would be outside; the source
+  // mask must still be the one used by the Ring.
+  assert.equal(resolveSamTrackingFrameAtTime(tracking, 12.5).mode, "outside");
+  assert.equal(resolveSamTrackingFrameAtSourceTime(tracking, 10).frame?.frameIndex, 0);
+  assert.equal(resolveSamTrackingFrameAtSourceTime(tracking, 10.04).frame?.frameIndex, 1);
 });
 
 test("accepts a presented frame using the interval on the correct side in variable-frame-rate video", () => {

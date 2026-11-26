@@ -79,6 +79,8 @@ export interface SamPlayerTracking {
   frameRate: number;
   /** Exact timeline times of every encoded frame, including frames for which SAM returned no mask. */
   frameTimes?: number[];
+  /** Exact source-video times of every encoded frame. Kept separately so a later freeze frame cannot desynchronise SAM tracking. */
+  sourceFrameTimes?: number[];
   sourceWidth: number;
   sourceHeight: number;
   frames: SamTrackingFrame[];

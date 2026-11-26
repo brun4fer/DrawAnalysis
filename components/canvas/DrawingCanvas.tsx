@@ -12,7 +12,7 @@ import { automaticLongBallControl, buildCurvedArrowGeometry, buildPolylineArrowG
 import { createId } from "@/utils/id";
 import { defaultDrawingAnimationFor, getObjectStateAtTime } from "@/utils/temporalRenderer";
 import { sourceTimeToTimeline, timelineTimeToSource } from "@/utils/videoTimeline";
-import { playerGroundPoint, samplePlayerTrackAtTime, targetAvailableAtTime, targetOffsetAtTime } from "@/utils/playerTracking";
+import { followsSamTracking, playerGroundPoint, samplePlayerTrackAtTime, targetAvailableAtTime, targetOffsetAtTime } from "@/utils/playerTracking";
 import { pointHitsSamTrackedPlayerMask, samTrackedPlayerStateAtTime } from "@/utils/samTrackedPlayer";
 import { playerRingDimensions } from "@/utils/playerRing";
 import { buildManualPlayerSample, pointHitsPlayerMask } from "@/utils/playerManualMask";
@@ -342,6 +342,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
   const activeSlide = slides.find((slide) => slide.id === selectedSlideId);
   const activeVideoContent = activeSlide?.content.kind === "video" ? activeSlide.content : null;
   const activeFreezeFrames = activeVideoContent?.freezeFrames;
+  const activeSourceTime = timelineTimeToSource(currentTime, activeFreezeFrames).sourceTime;
   const activeFreezeFramesRef = useRef(activeFreezeFrames);
   useEffect(() => { activeFreezeFramesRef.current = activeFreezeFrames; }, [activeFreezeFrames]);
 
@@ -565,7 +566,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     const candidates = (activeVideoContent?.playerTracks ?? [])
       .filter((track) => track.id !== excludedTrackId && track.samples.length)
       .map((track) => {
-        const trackedState = samTrackedPlayerStateAtTime(track, currentTime);
+        const trackedState = samTrackedPlayerStateAtTime(track, currentTime, timelineTimeToSource(currentTime, activeFreezeFramesRef.current).sourceTime);
         const savedSample = samplePlayerTrackAtTime(track, currentTime);
         return {
           track,
@@ -620,7 +621,7 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     window.setTimeout(() => setDetectionMessage(null), 1500);
     if (mode === "ring") {
       const tracking = identified.track.samTracking;
-      if (tracking && samTrackedPlayerStateAtTime(identified.track, currentTime)) {
+      if (tracking && samTrackedPlayerStateAtTime(identified.track, currentTime, timelineTimeToSource(currentTime, activeFreezeFramesRef.current).sourceTime)) {
         createRingForPlayer(identified, {
           followSamTracking: true,
           startTime: tracking.startTime,
@@ -1666,14 +1667,11 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
         origin: point,
         text: "TEXTO",
         fontSize: 0.055,
-        // New labels start with the same crisp, pitch-aligned treatment used in
-        // tactical video examples. Older drawings preserve their original preset.
-        textDesign: "pitchTactical",
-        fontFamily: "condensed",
-        letterSpacing: .012,
-        pitchScaleY: .64,
-        groundTilt: -10,
-        groundDepth: 7,
+        // Text added to a video starts as a clean, horizontal annotation.
+        // The pitch-aligned presets remain available in the inspector and
+        // existing drawings keep their saved appearance unchanged.
+        textDesign: "flat",
+        letterSpacing: 0,
       });
       return;
     }
@@ -1823,9 +1821,21 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       const renderScale = Math.max(.45, Math.min(3, Math.min(width / 960, height / 540)));
       const bodyWidth = 6 * renderScale;
       const geometry = buildCurvedArrowGeometry({ start, control, end, bodyWidth, renderScale });
-      const groundControl = automaticLongBallControl(start, end, .008, height);
-      const groundGeometry = buildCurvedArrowGeometry({ start, control: groundControl, end, bodyWidth: bodyWidth * .9, renderScale });
-      const shadowPoints = groundGeometry.polygon.map((value, index) => value + (index % 2 === 0 ? 2 * renderScale : 4 * renderScale));
+      const shadowX = 2 * renderScale;
+      const shadowY = 4 * renderScale;
+      // Match the rendered long-ball shadow: a straight, low projection on
+      // the grass whose arrowhead lands precisely under the flight arrow.
+      const groundStart = { x: start.x - shadowX, y: start.y - shadowY };
+      const groundEnd = { x: end.x - shadowX, y: end.y - shadowY };
+      const groundControl = { x: (groundStart.x + groundEnd.x) / 2, y: (groundStart.y + groundEnd.y) / 2 };
+      const groundGeometry = buildCurvedArrowGeometry({
+        start: groundStart,
+        control: groundControl,
+        end: groundEnd,
+        bodyWidth: bodyWidth * .9,
+        renderScale,
+      });
+      const shadowPoints = groundGeometry.polygon.map((value, index) => value + (index % 2 === 0 ? shadowX : shadowY));
       return (
         <Group listening={false} opacity={.92}>
           <Line points={shadowPoints} closed fill="#000000" opacity={.34} shadowColor="#000000" shadowBlur={7 * renderScale} shadowOpacity={.45} />
@@ -1848,8 +1858,12 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
     return null;
   })();
 
-  const visible = drawings.filter((drawing) => getObjectStateAtTime(drawing, currentTime).visible
-    && targetAvailableAtTime(drawing, activeVideoContent?.playerTracks, currentTime));
+  const activeSamTimelineTime = sourceTimeToTimeline(activeSourceTime, activeFreezeFrames);
+  const visible = drawings.filter((drawing) => getObjectStateAtTime(
+    drawing,
+    followsSamTracking(drawing, activeVideoContent?.playerTracks) ? activeSamTimelineTime : currentTime,
+  ).visible
+    && targetAvailableAtTime(drawing, activeVideoContent?.playerTracks, currentTime, activeSourceTime));
 
   return (
     <>
@@ -1906,7 +1920,9 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
             onChange={(patch) => updateDrawing(object.id, patch)}
             renderMode="base"
             editingPreview={!isPlaying}
-            targetOffset={targetOffsetAtTime(object, activeVideoContent?.playerTracks, currentTime)}
+            targetOffset={targetOffsetAtTime(object, activeVideoContent?.playerTracks, currentTime, activeSourceTime)}
+            sourceTime={activeSourceTime}
+            samTimelineTime={activeSamTimelineTime}
             playerTracks={activeVideoContent?.playerTracks}
             allDrawings={drawings}
             onTransformPreview={object.data.kind === "ghost" ? (transform) => setGhostTransformPreview((current) => {
@@ -1973,10 +1989,11 @@ export function DrawingCanvas({ width, height, registerCapture, getVideoElement 
       getVideoElement={getVideoElement}
       transformOverrides={ghostTransformPreview}
       editingPreview={!isPlaying}
+      freezeFrames={activeFreezeFrames}
     />
     <SamTrackingOverlayCanvas playerTracks={activeVideoContent?.playerTracks} width={width} height={height} getVideoElement={getVideoElement} onPrepared={handleSamPreviewPrepared} />
     <ZoomLensCanvas ref={zoomCanvasRef} drawings={drawings} currentTime={currentTime} width={width} height={height} getVideoElement={getVideoElement} editingPreview={!isPlaying} />
-    <PlayerLabelOverlay drawings={drawings} playerTracks={activeVideoContent?.playerTracks} currentTime={currentTime} width={width} height={height} editingPreview={!isPlaying} />
+    <PlayerLabelOverlay drawings={drawings} playerTracks={activeVideoContent?.playerTracks} currentTime={currentTime} width={width} height={height} editingPreview={!isPlaying} freezeFrames={activeFreezeFrames} />
     {tool === "sam31" && !samMaskSession && (
       <div className="sam-selection-mode" onPointerDown={(event) => event.stopPropagation()}>
         <div>

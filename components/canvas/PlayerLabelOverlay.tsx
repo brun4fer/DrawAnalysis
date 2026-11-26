@@ -4,8 +4,10 @@ import { forwardRef } from "react";
 import Konva from "konva";
 import { Layer, Stage } from "react-konva";
 import type { DrawingObject, PlayerTrack } from "@/types/drawing";
+import type { FreezeFrame } from "@/types/slide";
 import { getObjectStateAtTime } from "@/utils/temporalRenderer";
-import { targetAvailableAtTime, targetOffsetAtTime } from "@/utils/playerTracking";
+import { sourceTimeToTimeline, timelineTimeToSource } from "@/utils/videoTimeline";
+import { followsSamTracking, targetAvailableAtTime, targetOffsetAtTime } from "@/utils/playerTracking";
 import { DrawingShape } from "./DrawingShape";
 
 interface Props {
@@ -15,12 +17,15 @@ interface Props {
   width: number;
   height: number;
   editingPreview?: boolean;
+  freezeFrames?: FreezeFrame[];
 }
 
-export const PlayerLabelOverlay = forwardRef<Konva.Stage, Props>(function PlayerLabelOverlay({ drawings, playerTracks, currentTime, width, height, editingPreview = false }, ref) {
+export const PlayerLabelOverlay = forwardRef<Konva.Stage, Props>(function PlayerLabelOverlay({ drawings, playerTracks, currentTime, width, height, editingPreview = false, freezeFrames }, ref) {
+  const sourceTime = timelineTimeToSource(currentTime, freezeFrames).sourceTime;
+  const samTimelineTime = sourceTimeToTimeline(sourceTime, freezeFrames);
   const labels = drawings.filter((drawing) => (drawing.type === "playerRing" || drawing.type === "playerLabel")
-    && getObjectStateAtTime(drawing, currentTime).visible
-    && targetAvailableAtTime(drawing, playerTracks, currentTime));
+    && getObjectStateAtTime(drawing, followsSamTracking(drawing, playerTracks) ? samTimelineTime : currentTime).visible
+    && targetAvailableAtTime(drawing, playerTracks, currentTime, sourceTime));
 
   return (
     <Stage ref={ref} width={width} height={height} listening={false} className="drawing-stage player-label-stage">
@@ -38,9 +43,11 @@ export const PlayerLabelOverlay = forwardRef<Konva.Stage, Props>(function Player
             onChange={() => undefined}
             renderMode="playerLabel"
             editingPreview={editingPreview}
-            targetOffset={targetOffsetAtTime(drawing, playerTracks, currentTime)}
+            targetOffset={targetOffsetAtTime(drawing, playerTracks, currentTime, sourceTime)}
             playerTracks={playerTracks}
             allDrawings={drawings}
+            sourceTime={sourceTime}
+            samTimelineTime={samTimelineTime}
           />
         ))}
       </Layer>
